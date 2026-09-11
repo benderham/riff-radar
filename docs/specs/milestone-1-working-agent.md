@@ -117,11 +117,17 @@ Only two things cross a run boundary: the versioned taste profile, and the set o
 
 ## Trace
 
-`runs`: run_id · started_at · ended_at · cli_args · resolved_from · resolved_to · prompt_version · profile_version · action_schema_version · model_id · termination_reason · tokens_in · tokens_out · estimated_cost · shortlist_size · notion_write_performed
+`runs`: run_id · started_at · ended_at · cli_args · resolved_from · resolved_to · prompt_version · profile_version · action_schema_version · model_id · termination_reason · uncached_input_tokens · cached_input_tokens · output_tokens · estimated_cost · shortlist_size · notion_write_performed
 
-`steps`: step_id · run_id · step_index · timestamp · duration_ms · kind · model_response · proposed_action · validation_result · dispatched_action · tool_name · tool_args · tool_result · error · tokens_in · tokens_out · cost
+`steps`: step_id · run_id · step_index · timestamp · duration_ms · kind · model_response · proposed_action · validation_result · dispatched_action · tool_name · tool_args · tool_result · error · uncached_input_tokens · cached_input_tokens · output_tokens · cost
 
 Raw fetched source text is stored, since extraction is model-dependent and replay depends on it (ADR-0003).
+
+Cost is computed from three rates, not two. Cached input is ~30x cheaper than uncached, so the stable prefix — system prompt, tool definitions, taste profile — goes at the front of every request, ahead of anything that varies per step. Whether Fireworks reports cached token counts is unverified; if it does not, cost is reported as an upper bound and labelled as one.
+
+## Process model
+
+A single short-lived CLI process. No HTTP server, no listener, no callback endpoint: nothing calls in. Notion authenticates with an integration token from the environment, not an OAuth redirect.
 
 ## Notion
 
@@ -164,8 +170,8 @@ HTML cleaning is a hand-written tag stripper. The model performs extraction, so 
 |---|---|
 | Provider | Fireworks, OpenAI-compatible endpoint, called with built-in `fetch` |
 | Model | DeepSeek V4.1 Flash |
-| Model ID | **unconfirmed** — likely `accounts/fireworks/models/deepseek-v4p1-flash`; confirm from the Fireworks dashboard |
-| Price | **unconfirmed** — public sources disagree; confirm from the Fireworks dashboard before cost accounting reports real numbers |
+| Model ID | `accounts/fireworks/models/deepseek-v4p1-flash` |
+| Price per 1M tokens | 0.22 uncached input · 0.007 cached input · 0.66 output |
 | Context | ~1M tokens; compaction is not a concern at 30 steps |
 
 Actions travel as native tool calls. The model does not enforce a JSON schema on tool-call arguments, so arguments are untrusted: parse, then validate against the action schema, before every dispatch.
