@@ -2,13 +2,13 @@
 
 ## Purpose
 
-Build Riff Radar as a learning exercise in custom agent loops. Optimise for Ben's understanding, observable behaviour, and small reversible steps. The authoritative product scope is `project-brief.md`.
+Build Riff Radar as a learning exercise in custom agent loops. Optimise for Ben's understanding, observable behaviour, and small reversible steps. The authoritative product scope is `docs/project-brief.md`.
 
 ## Read before changing code
 
 Before starting work:
 
-1. Read `project-brief.md`.
+1. Read `docs/project-brief.md`.
 2. Read the active ticket or explicitly stated session outcome.
 3. Read relevant entries in `docs/decisions.md`.
 4. Check `docs/diary.md` for the latest state and next action.
@@ -108,7 +108,7 @@ Every run must make it possible to reconstruct:
 - token usage and estimated cost;
 - the termination or escalation reason.
 
-Do not claim a milestone is complete without its required evidence from `project-brief.md`.
+Do not claim a milestone is complete without its required evidence from `docs/project-brief.md`.
 
 ## Documentation
 
@@ -123,7 +123,7 @@ Keep the diary concise. It is an execution record, not a transcript.
 
 Record decisions that affect architecture, dependencies, persistence, schemas, external providers, safety boundaries, or evaluation in `docs/decisions.md` using ADR style. Include context, decision, consequences, and status. Do not create separate ADR files unless Ben changes this convention.
 
-Update `project-brief.md` only when the agreed scope or milestone definitions change.
+Update `docs/project-brief.md` only when the agreed scope or milestone definitions change.
 
 ## Completion protocol
 
@@ -136,3 +136,17 @@ Before declaring the active outcome complete:
 5. Record unresolved risks or follow-up work.
 6. Append the concise diary entry.
 7. Stop. Do not begin the next outcome.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as local markdown files under `.scratch/<feature-slug>/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage roles, recorded as a `Status:` line in each issue file. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` at the root, decisions in `docs/decisions.md`. See `docs/agents/domain.md`.

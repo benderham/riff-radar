@@ -20,7 +20,7 @@ The project is intentionally small. Its purpose is to make agent execution under
 - Manual execution and human review
 - No agent framework, sub-agents, RAG, scheduling, email, or custom UI
 
-See [project-brief.md](project-brief.md) for the complete scope and milestones. Coding agents must follow [AGENTS.md](AGENTS.md).
+See [project-brief.md](docs/project-brief.md) for the complete scope and milestones. Coding agents must follow [AGENTS.md](AGENTS.md).
 
 ## Project records
 
