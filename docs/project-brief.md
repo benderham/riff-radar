@@ -2,7 +2,7 @@
 
 ## Summary
 
-Riff Radar is a personal learning project that searches the web for newly released metal albums, verifies and enriches candidates with MusicBrainz, ranks them against a small explicit taste profile, and writes a sourced shortlist to Notion for human review. The project exists to learn how a custom agent loop works by building the loop, tool dispatch, state, recovery, evaluation, and operational evidence directly rather than adopting an agent framework.
+Riff Radar is a personal learning project that reads a fixed set of configured release sources for newly released metal albums, verifies and enriches candidates with MusicBrainz, ranks them against a small explicit taste profile, and writes a sourced shortlist to Notion for human review. The project exists to learn how a custom agent loop works by building the loop, tool dispatch, state, recovery, evaluation, and operational evidence directly rather than adopting an agent framework.
 
 ## Intended outcome
 
@@ -15,13 +15,13 @@ Produce a small agent system that:
 
 ## User and workflow
 
-The sole user is Ben. A run is started manually with a release-date range. The agent discovers candidate metal releases, enriches and validates the candidates, ranks them, and writes no more than five records to a Notion database with `Status = Proposed`. Ben decides what to listen to and records subsequent feedback. The system does not publish reviews or take consequential action without human involvement.
+The sole user is Ben. A run is started manually with a backward-looking release-date window; only releases that already exist are considered. The agent discovers candidate metal releases, enriches and validates the candidates, ranks them, and writes no more than five records to a Notion database with `Status = Proposed`. Ben decides what to listen to and records subsequent feedback. The system does not publish reviews or take consequential action without human involvement.
 
 ## Version 1 workflow
 
 1. Validate the requested date range.
 2. Ask the model to choose the next action.
-3. Search the web for release candidates when needed.
+3. Fetch the configured release sources and extract candidates. Web search is available for enrichment and disambiguation only, and never originates a candidate.
 4. Query MusicBrainz to identify or enrich candidates when possible.
 5. Normalise and deduplicate candidates.
 6. Rank candidates against the configured taste profile and retain supporting evidence.
@@ -35,7 +35,7 @@ The loop ends when the workflow succeeds, continuation would be unsafe or unsupp
 
 ### 1. Working agent
 
-The system completes the workflow from CLI input to proposed Notion records. The milestone passes when one run shows a terminating agent loop, a web search, a MusicBrainz request, enforced guardrails, deliberate memory, and a complete audit trace.
+The system completes the workflow from CLI input to proposed Notion records. The milestone passes when one run shows a terminating agent loop, a source fetch, a MusicBrainz request, enforced guardrails, deliberate memory, and a complete audit trace.
 
 ### 2. Recoverable system
 
@@ -58,7 +58,7 @@ Version 1 uses:
 - one SQLite database for run state, checkpoints, and traces;
 - a command-line entry point;
 - a small versioned taste-profile file;
-- web search, MusicBrainz, and Notion behind explicit tool interfaces;
+- configured release sources, MusicBrainz, web search, and Notion behind explicit tool interfaces;
 - structured model actions and final output;
 - manual execution and human review.
 
@@ -73,7 +73,7 @@ Version 1 excludes:
 - self-modifying prompts, tools, or memory;
 - additional music providers unless a milestone cannot be met without one.
 
-Absence from MusicBrainz is treated as missing evidence, not proof that a release is invalid. Notion writes occur only after shortlist validation and must be idempotent.
+Only releases that have already been issued are eligible; upcoming releases are out of scope for version 1. Absence from MusicBrainz is treated as missing evidence, not proof that a release is invalid. Notion writes occur only after shortlist validation and must be idempotent.
 
 ## Memory model
 
