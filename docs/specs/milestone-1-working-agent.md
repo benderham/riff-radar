@@ -87,6 +87,7 @@ Exactly one reason is recorded per run.
 | `completed_short` — `finish()` called, 1–4 valid items | yes |
 | `no_candidates` — nothing eligible found | no |
 | `validation_failed` — `finish()` called, shortlist invalid | no |
+| `invalid_action_limit` — 3 consecutive invalid actions | no |
 | `max_steps_exceeded` — 30 steps | no |
 | `budget_exceeded` — token or cost ceiling reached | no |
 | `tool_failure` — unrecoverable tool error | no |
@@ -150,6 +151,46 @@ Any one of these blocks the write entirely. Writes are all-or-nothing; there is 
 - termination reason not `completed` or `completed_short`;
 - Notion schema preflight failed;
 - missing credentials.
+
+## Technology
+
+TypeScript on Node 22.22. Dependencies: `typescript` and `tsx` (development only), `zod` (runtime). The built-in `node:test`, `node:sqlite` and `fetch` replace a test runner, a database driver and an HTTP client. `node:sqlite` warns on every run; suppress with `--disable-warning=ExperimentalWarning`, never globally.
+
+HTML cleaning is a hand-written tag stripper. The model performs extraction, so the text only needs to be roughly clean. Taking an HTML parsing dependency later requires its own ADR.
+
+### Model
+
+| | |
+|---|---|
+| Provider | Fireworks, OpenAI-compatible endpoint, called with built-in `fetch` |
+| Model | DeepSeek V4.1 Flash |
+| Model ID | **unconfirmed** — likely `accounts/fireworks/models/deepseek-v4p1-flash`; confirm from the Fireworks dashboard |
+| Price | **unconfirmed** — public sources disagree; confirm from the Fireworks dashboard before cost accounting reports real numbers |
+| Context | ~1M tokens; compaction is not a concern at 30 steps |
+
+Actions travel as native tool calls. The model does not enforce a JSON schema on tool-call arguments, so arguments are untrusted: parse, then validate against the action schema, before every dispatch.
+
+### Invalid actions
+
+A failed validation is returned to the model as that step's result, and it may try again. Three consecutive invalid actions terminate the run with `invalid_action_limit`.
+
+## Seams and testing
+
+One injection point, `Ports`, with three members:
+
+| Port | Shape |
+|---|---|
+| `model` | send a request, get a response |
+| `http` | GET a URL, return status, headers and body |
+| `clock` | `now()` |
+
+`http` is deliberately low-level. The MusicBrainz client, the Notion client, the cover art fetch and the source fetchers sit above it as ordinary code, tested for real against recorded fixture bodies.
+
+SQLite is not behind a port. Tests use a real in-memory database.
+
+Tested directly as pure functions, with no seam: action validation, candidate normalisation and deduplication, eligibility rules, ranking arithmetic, shortlist validation, cost accounting.
+
+MusicBrainz requires a descriptive User-Agent and allows 1 request per second. That rate limit lives in the MusicBrainz client above the `http` port, and shapes the loop's wall-clock time.
 
 ## Out of scope for Milestone 1
 
