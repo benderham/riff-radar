@@ -198,6 +198,33 @@ Tested directly as pure functions, with no seam: action validation, candidate no
 
 MusicBrainz requires a descriptive User-Agent and allows 1 request per second. That rate limit lives in the MusicBrainz client above the `http` port, and shapes the loop's wall-clock time.
 
+## Layout
+
+Mirrors the Flue framework's conventions where they carry over, so the cost of a later migration stays legible (ADR-0021).
+
+```
+riff-radar/
+├── config.ts               run configuration
+├── taste-profile.yaml      semantic memory, hand-edited
+└── src/
+    ├── cli.ts              entry point; replaces Flue's app.ts, no HTTP
+    ├── agents/
+    │   └── riff-radar.ts   the hand-written loop
+    ├── tools.ts            defineTool-shaped: name, description, input schema, run
+    ├── ports.ts            model · http · clock
+    ├── adapters/           the only code touching the outside world
+    ├── clients/            sources, musicbrainz, coverart, notion — above the http port
+    ├── domain/             pure functions, zero I/O
+    ├── store/              schema.sql, trace writing
+    └── prompt/             system.md, version stamping
+```
+
+One rule makes this load-bearing rather than decorative, and it is mechanically checkable: **`domain/` imports nothing from `clients/` or `adapters/`.**
+
+Each action is declared once in `tools.ts` with its schema and its implementation together; the JSON tool schema sent to the model is derived from that declaration rather than maintained separately.
+
+Tests live beside their source as `*.test.ts`, found by `node:test`. Recorded HTTP fixtures live in `test/fixtures/`.
+
 ## Out of scope for Milestone 1
 
 Absolute `--from`/`--to` dates (Milestone 3 will need them for the golden dataset), checkpoint and resume, retry classification, evaluation, and any change to the listening or rating workflow.
