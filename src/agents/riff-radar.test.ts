@@ -19,8 +19,24 @@ import { runRiffRadar } from './riff-radar.ts'
 const fixture = (name: string) =>
   readFileSync(new URL(`../../fixtures/${name}`, import.meta.url), 'utf8')
 
-/** Every source serves the same recorded page unless a test says otherwise. */
-const fixtureHttp = (body = fixture('listing.html'), status = 200): HttpPort => ({
+/**
+ * A page, invented here rather than kept in `fixtures/`, which holds captures
+ * only. The extraction call is faked in every test below, so what this body
+ * says matters less than what it is: markup, an inline script, and text the
+ * assertions can recognise on the other side of the stripper.
+ */
+const PAGE = `<!doctype html>
+<html><head><title>Recent metal</title><style>.row { color: #000 }</style></head>
+<body>
+<script>window.__TRACKING__ = { ads: true };</script>
+<ul>
+  <li class="row">2026-09-12 — Ulcerate — Cutting the Throat of God (Debemur Morti Productions)</li>
+  <li class="row">2026-09-11 — Chat Pile — Cool World (The Flenser)</li>
+</ul>
+</body></html>`
+
+/** Every source serves the same page unless a test says otherwise. */
+const fixtureHttp = (body = PAGE, status = 200): HttpPort => ({
   get: async () => ({ status, headers: { 'content-type': 'text/html' }, body }),
 })
 
@@ -472,7 +488,7 @@ test('a release listed by two sources is one candidate carrying both URLs', asyn
     get: async (url) => ({
       status: 200,
       headers: {},
-      body: url.includes('wikipedia') ? fixture('wikipedia.html') : fixture('listing.html'),
+      body: url.includes('wikipedia') ? fixture('wikipedia.html') : PAGE,
     }),
   }
 
@@ -496,7 +512,7 @@ test('a release listed by two sources is one candidate carrying both URLs', asyn
     .prepare('SELECT * FROM source_texts WHERE run_id = ? ORDER BY source_id')
     .all(outcome.runId)
   assert.deepEqual(pages.map((page) => page['source_id']), ['loudwire', 'wikipedia'])
-  assert.ok(String(pages[0]?.['raw_body']).includes('albumBlock'))
+  assert.equal(pages[0]?.['raw_body'], PAGE, 'stored exactly as served')
 })
 
 test('a source that yields nothing warns on the step and the run carries on', async () => {

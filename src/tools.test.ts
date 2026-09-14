@@ -2,8 +2,6 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { z } from 'zod'
 
-import { readFileSync } from 'node:fs'
-
 import { SOURCES } from '../config.ts'
 import type { HttpPort, ModelPort, Ports } from './ports.ts'
 import { openStore } from './store/store.ts'
@@ -12,8 +10,21 @@ import { dispatch, toolDefinitions, tools, validateAction } from './tools.ts'
 
 const call = (name: string, argumentsJson: string) => ({ id: 'call-1', name, argumentsJson })
 
-const fixture = (name: string) =>
-  readFileSync(new URL(`../fixtures/${name}`, import.meta.url), 'utf8')
+/**
+ * A page, invented here rather than kept in `fixtures/`, which holds captures
+ * only. The extraction call is faked in every test below, so what this body
+ * says matters less than what it is: markup, an inline script, and text the
+ * assertions can recognise on the other side of the stripper.
+ */
+const PAGE = `<!doctype html>
+<html><head><title>Recent metal</title><style>.row { color: #000 }</style></head>
+<body>
+<script>window.__TRACKING__ = { ads: true };</script>
+<ul>
+  <li class="row">2026-09-12 — Ulcerate — Cutting the Throat of God (Debemur Morti Productions)</li>
+  <li class="row">2026-09-11 — Chat Pile — Cool World (The Flenser)</li>
+</ul>
+</body></html>`
 
 /**
  * A context with a real store behind it, because what `fetch_source` records is
@@ -35,7 +46,7 @@ const context = (over: { http?: HttpPort; model?: ModelPort } = {}) => {
 
   const ports = {
     clock: { now: () => new Date(2026, 8, 14, 9, 0, 1) },
-    http: over.http ?? { get: async () => ({ status: 200, headers: {}, body: fixture('listing.html') }) },
+    http: over.http ?? { get: async () => ({ status: 200, headers: {}, body: PAGE }) },
     model: over.model ?? {
       complete: async () => ({
         content: JSON.stringify({
@@ -137,7 +148,7 @@ test('fetching a source records the page it read against the run', async () => {
   assert.equal(row?.['url'], SOURCES.loudwire)
   assert.equal(row?.['status'], 200)
   assert.equal(row?.['candidate_count'], 2)
-  assert.ok(String(row?.['raw_body']).includes('<div class="albumBlock">'))
+  assert.equal(row?.['raw_body'], PAGE, 'the body is stored exactly as served')
 })
 
 test('a source that yields nothing is recorded, warned about, and does not throw', async () => {

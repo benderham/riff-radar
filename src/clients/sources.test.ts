@@ -9,6 +9,22 @@ import { fetchSource } from './sources.ts'
 const fixture = (name: string) =>
   readFileSync(new URL(`../../fixtures/${name}`, import.meta.url), 'utf8')
 
+/**
+ * A page, invented here rather than kept in `fixtures/`, which holds captures
+ * only. The extraction call is faked in every test below, so what this body
+ * says matters less than what it is: markup, an inline script, and text the
+ * assertions can recognise on the other side of the stripper.
+ */
+const PAGE = `<!doctype html>
+<html><head><title>Recent metal</title><style>.row { color: #000 }</style></head>
+<body>
+<script>window.__TRACKING__ = { ads: true };</script>
+<ul>
+  <li class="row">2026-09-12 — Ulcerate — Cutting the Throat of God (Debemur Morti Productions)</li>
+  <li class="row">2026-09-11 — Chat Pile — Cool World (The Flenser)</li>
+</ul>
+</body></html>`
+
 const USAGE = { uncachedInputTokens: 900, cachedInputTokens: 0, outputTokens: 120 }
 
 /** Serves one body for any URL, and records what was asked for. */
@@ -48,7 +64,7 @@ const portsFor = (http: HttpPort, model: ModelPort): Ports => ({
 })
 
 test('the configured URL is fetched, and the cleaned page reaches the extraction call', async () => {
-  const { http, gets } = servingFixture(fixture('listing.html'))
+  const { http, gets } = servingFixture(PAGE)
   const { model, prompts } = extracting(
     extracted([
       {
@@ -69,7 +85,7 @@ test('the configured URL is fetched, and the cleaned page reaches the extraction
   // The model sees the text, not the markup.
   assert.ok(prompts[0]?.includes('Cutting the Throat of God'))
   assert.ok(!prompts[0]?.includes('<div'))
-  assert.ok(!prompts[0]?.includes('__AOTY__'), 'inline script must not reach the model')
+  assert.ok(!prompts[0]?.includes('__TRACKING__'), 'inline script must not reach the model')
   assert.deepEqual(result.candidates, [
     {
       artist: 'Ulcerate',
@@ -126,7 +142,7 @@ test('an oversized page is cut, the cut is marked, and the raw body is still who
 })
 
 test('a source that yields no candidates records a warning rather than passing quietly', async () => {
-  const { http } = servingFixture(fixture('listing.html'))
+  const { http } = servingFixture(PAGE)
   const { model } = extracting(extracted([]))
 
   const result = await fetchSource(portsFor(http, model), 'loudwire', WINDOW)
@@ -149,7 +165,7 @@ test('a non-2xx response is a warning naming the status, not an empty page', asy
 })
 
 test('extraction returning something other than JSON is a readable warning', async () => {
-  const { http } = servingFixture(fixture('listing.html'))
+  const { http } = servingFixture(PAGE)
   const { model } = extracting('I could not read that page, sorry.')
 
   const result = await fetchSource(portsFor(http, model), 'loudwire', WINDOW)
@@ -159,7 +175,7 @@ test('extraction returning something other than JSON is a readable warning', asy
 })
 
 test('extraction returning JSON of the wrong shape is a readable warning', async () => {
-  const { http } = servingFixture(fixture('listing.html'))
+  const { http } = servingFixture(PAGE)
   const { model } = extracting(JSON.stringify({ albums: ['Cool World'] }))
 
   const result = await fetchSource(portsFor(http, model), 'loudwire', WINDOW)
