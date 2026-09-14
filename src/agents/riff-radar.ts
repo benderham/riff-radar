@@ -37,7 +37,7 @@ import { resolveWindow } from '../domain/window.ts'
 import type { ModelMessage, Ports, ProposedToolCall } from '../ports.ts'
 import { runBrief, stablePrefix } from '../prompt/prompt.ts'
 import type { RecordedStep, Store } from '../store/store.ts'
-import type { Dispatch } from '../tools.ts'
+import type { Dispatch, ToolContext } from '../tools.ts'
 import { dispatch, toolDefinitions, validateAction } from '../tools.ts'
 
 export interface RunRequest {
@@ -104,6 +104,10 @@ export const runRiffRadar = async ({
 
   // The stable prefix never moves: everything that varies is appended after it.
   const messages: ModelMessage[] = [stablePrefix(profile), runBrief(window)]
+
+  // The run's working memory. Actions read and add to it; the loop only passes
+  // it along, because what the run has found is not what the loop is about.
+  const context: ToolContext = { ports, store, runId, candidates: [] }
 
   let usage: Usage = NO_USAGE
   let costIsUpperBound = false
@@ -237,7 +241,7 @@ export const runRiffRadar = async ({
 
     let outcome: Dispatch
     try {
-      outcome = dispatch(validation.name, validation.input)
+      outcome = await dispatch(validation.name, validation.input, context)
     } catch (error) {
       recordStep(
         {
@@ -292,15 +296,27 @@ export const runRiffRadar = async ({
       break
     }
 
+    // An action that called the model of its own — extraction does — is priced
+    // like any other call, on the step that dispatched it. Leaving it out would
+    // make the cost ceiling unenforceable exactly where the tokens are.
+    if (outcome.usage !== undefined) {
+      usage = addUsage(usage, outcome.usage)
+      costIsUpperBound ||= outcome.cacheReported === false
+    }
+
     recordStep(
       {
         ...step,
+        ...addUsage(response.usage, outcome.usage ?? NO_USAGE),
         proposedAction: proposed,
         validationResult: 'valid',
         dispatchedAction,
         toolName: validation.name,
         toolArgs: call.argumentsJson,
         toolResult: outcome.result,
+        // A source that yielded nothing is a warning, not a failure: the run
+        // continues on its other sources, and the trace says what was missed.
+        error: outcome.warning ?? null,
       },
       at,
       elapsed(),

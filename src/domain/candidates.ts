@@ -1,0 +1,132 @@
+/**
+ * Candidates, and what makes two of them the same release.
+ *
+ * A candidate is a release a source listed and nothing has yet judged. The
+ * model extracts them from cleaned page text (ADR-0003); everything after that
+ * — tidying the strings, refusing an unusable row, merging the same release
+ * across sources — is arithmetic, and lives here as pure functions so it can be
+ * proved without a network or a model.
+ *
+ * Identity is artist and title at this stage. MusicBrainz release-group ids are
+ * the reliable identity (CONTEXT.md) but no lookup has happened yet in ticket
+ * 02, so this is deliberately the weaker half of the rule and ticket 04
+ * strengthens it.
+ */
+
+import { z } from 'zod'
+
+/** What the extraction call is asked to return. Every field is untrusted text. */
+export const extractionSchema = z.object({
+  candidates: z.array(
+    z.object({
+      artist: z.string(),
+      title: z.string(),
+      /** `YYYY-MM-DD` as the source stated it. Anything else is refused below. */
+      releaseDate: z.string(),
+      label: z.string().optional(),
+      /** What the source called it: `full-length`, `EP`, `live album`. */
+      format: z.string().optional(),
+    }),
+  ),
+})
+
+export type ExtractedCandidate = z.infer<typeof extractionSchema>['candidates'][number]
+
+export interface Candidate {
+  readonly artist: string
+  readonly title: string
+  /** Every distinct date any source gave, ascending. More than one is a disagreement. */
+  readonly releaseDates: readonly string[]
+  readonly sourceUrls: readonly string[]
+  readonly label?: string
+  readonly format?: string
+}
+
+const tidy = (value: string | undefined): string => (value ?? '').replaceAll(/\s+/g, ' ').trim()
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+/** A real calendar date, not merely a string shaped like one: `2026-13-01` is not. */
+const isCalendarDate = (value: string): boolean => {
+  if (!ISO_DATE.test(value)) return false
+  const at = new Date(`${value}T00:00:00Z`)
+  return !Number.isNaN(at.getTime()) && at.toISOString().startsWith(value)
+}
+
+/**
+ * One extracted row as a candidate, or nothing.
+ *
+ * A row without an artist, a title or a usable date is refused rather than
+ * repaired: a run covers an absolute window, so a release whose date cannot be
+ * read cannot be placed in or out of it, and guessing at `September 12, 2026`
+ * would put an invention into the trace. The caller counts what it dropped.
+ */
+export const normaliseCandidate = (
+  raw: ExtractedCandidate,
+  sourceUrl: string,
+): Candidate | undefined => {
+  const artist = tidy(raw.artist)
+  const title = tidy(raw.title)
+  const releaseDate = tidy(raw.releaseDate)
+  if (artist === '' || title === '' || !isCalendarDate(releaseDate)) return undefined
+
+  const label = tidy(raw.label)
+  const format = tidy(raw.format)
+
+  return {
+    artist,
+    title,
+    releaseDates: [releaseDate],
+    sourceUrls: [sourceUrl],
+    ...(label === '' ? {} : { label }),
+    ...(format === '' ? {} : { format }),
+  }
+}
+
+/** Release identity before MusicBrainz: artist and title, case- and space-insensitive. */
+export const candidateIdentity = (candidate: Candidate): string =>
+  `${candidate.artist.trim().toLowerCase()}|${candidate.title.trim().toLowerCase()}`
+
+export const hasDateDisagreement = (candidate: Candidate): boolean =>
+  candidate.releaseDates.length > 1
+
+const distinct = (values: readonly string[]): string[] => [...new Set(values)]
+
+/**
+ * The same release listed by several sources is one candidate carrying all of
+ * them. Disagreements are kept, never resolved: a release the Wikipedia page
+ * dates a day earlier than Loudwire stays one candidate with both dates, and
+ * whoever reads the trace can see that the sources differed.
+ */
+export const mergeCandidates = (
+  existing: readonly Candidate[],
+  incoming: readonly Candidate[],
+): Candidate[] => {
+  const byIdentity = new Map<string, Candidate>()
+
+  for (const candidate of [...existing, ...incoming]) {
+    const identity = candidateIdentity(candidate)
+    const held = byIdentity.get(identity)
+
+    byIdentity.set(
+      identity,
+      held === undefined
+        ? candidate
+        : {
+            ...held,
+            releaseDates: distinct([...held.releaseDates, ...candidate.releaseDates]).sort(),
+            sourceUrls: distinct([...held.sourceUrls, ...candidate.sourceUrls]),
+            // First source to state one wins: later sources fill gaps rather
+            // than overwrite, so a merge never rewrites a fact already recorded.
+            ...(held.label === undefined && candidate.label !== undefined
+              ? { label: candidate.label }
+              : {}),
+            ...(held.format === undefined && candidate.format !== undefined
+              ? { format: candidate.format }
+              : {}),
+          },
+    )
+  }
+
+  return [...byIdentity.values()]
+}

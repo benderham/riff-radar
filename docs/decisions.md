@@ -220,3 +220,23 @@ So the constraint is asked for twice: of the provider, which honours it, and of 
 Settles the question ADR-0020 left open. A live call confirms that Fireworks returns `usage.prompt_tokens_details.cached_tokens`, and that the cache behaves as the stable-prefix design assumed: a first request billed 1411 uncached input tokens, and the next identical prefix billed 129 uncached and 1282 cached. Cost accounting is therefore a measurement rather than an upper bound, and `cost_is_upper_bound` should read 0 on every run against this provider.
 
 **Consequences:** The `cost_is_upper_bound` flag and the code that sets it stay, because they cost nothing and a provider can change what it reports without telling anyone — a run that stops seeing the breakdown labels itself rather than silently misreporting by up to thirty times. The prefix ordering is now evidence rather than theory: roughly 90% of a step's input tokens are served from cache, so the ordering rule in ADR-0020 is load-bearing and not a precaution.
+
+## ADR-0029: Extraction is a nested model call inside `fetch_source`, not the loop's own reading
+
+**Status:** PROPOSED
+
+ADR-0003 says the model extracts candidates from fetched page text. That leaves open *which* call does it. Two readings were available: the loop's own model reads the page text returned by `fetch_source` and holds candidates in its head, or `fetch_source` makes a separate, toolless model call whose only job is to turn one page into a JSON array of candidates and hand structured data back.
+
+The second was chosen. Ticket 02 requires candidates to be normalised and deduplicated on release identity, tested directly as pure functions, and requires a source that yields none to record a warning. None of that is possible unless candidates exist as data in our own code; under the first reading there is nothing to deduplicate and nothing to count. It is not a sub-agent: no loop, no tool choice, no termination reason — one page in, one JSON object out.
+
+**Consequences:** A run makes more model calls than it takes steps, so the usage returned by an action is added to the step that dispatched it; an extraction billed to nobody would make the cost ceiling unenforceable exactly where the tokens are. Page text is large, so cleaned text is capped at `MAX_SOURCE_TEXT_CHARS` and the cut is marked rather than hidden — raising the cap never requires refetching, because the raw body is stored whole. The loop's model never sees page text at all: it receives candidates, which is both cheaper and the reason the loop's own context stays small over a run.
+
+## ADR-0030: A disappointing source is a warning, not a failed run
+
+**Status:** PROPOSED
+
+A source that returns a non-2xx status, lists nothing, or produces an extraction that will not parse does not end the run. It records a warning on the step that fetched it, the warning is handed back to the model, and the run continues on its other sources. Only a fetch that throws — no network, a timeout — is a tool failure that ends the run.
+
+Three sources exist so that no one of them is critical. Ending a run because Loudwire was briefly behind a bot wall would throw away two sources that worked, and a redesign at Album of the Year would take the whole project offline until someone noticed.
+
+**Consequences:** `no candidates from this source` is a phrase the trace has to be read for, since nothing stops. That is the detector ADR-0003 promised, so it is recorded in two places: the step's `error` column, and the `warning` column of the `source_texts` row alongside the body that produced it. The risk accepted is a quietly degraded run — two sources reporting and one silently empty week after week — which `npm run smoke:sources` exists to catch.

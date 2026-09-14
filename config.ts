@@ -9,7 +9,7 @@
  */
 
 /** Versions stamped onto every run, so a trace says which configuration produced it. */
-export const PROMPT_VERSION = 1
+export const PROMPT_VERSION = 2
 export const ACTION_SCHEMA_VERSION = 1
 
 /**
@@ -76,3 +76,18 @@ export const SOURCES = {
 } as const
 
 export type SourceId = keyof typeof SOURCES
+
+/** Identifies the project to the sites it reads, rather than pretending to be a browser. */
+export const USER_AGENT = 'riff-radar/0.1 (personal listening project)'
+
+export const HTTP_TIMEOUT_MS = 20_000
+
+/**
+ * The ceiling on cleaned source text handed to the extraction call.
+ *
+ * A release calendar is a long page, and the whole of one costs more than the
+ * run's ceiling allows. Text past the cap is cut and the cut is marked, so a
+ * truncated extraction is visible rather than inferred. The raw body is stored
+ * whole either way, so raising this never requires refetching.
+ */
+export const MAX_SOURCE_TEXT_CHARS = 40_000

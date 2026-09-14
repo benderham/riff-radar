@@ -1,6 +1,6 @@
 -- The trace.
 --
--- Two tables: one row per run, one row per step. Everything is plain columns of
+-- Three tables: one row per run, one row per step, one row per source fetch. Everything is plain columns of
 -- text, integers and reals so that a run can be read back with a SQL client and
 -- nothing else.
 --
@@ -65,3 +65,23 @@ CREATE TABLE IF NOT EXISTS steps (
 );
 
 CREATE INDEX IF NOT EXISTS steps_by_run ON steps (run_id, step_index);
+
+-- What a source actually served, kept because extraction is a model call and so
+-- is not byte-reproducible (ADR-0003): an extraction that looks wrong is
+-- re-examined from the stored body rather than by fetching the page again, by
+-- which time it may have changed. The body is stored raw; the cleaned text the
+-- model saw is a pure function of it and is reproduced rather than duplicated.
+CREATE TABLE IF NOT EXISTS source_texts (
+  source_text_id  TEXT PRIMARY KEY,
+  run_id          TEXT NOT NULL REFERENCES runs(run_id),
+  source_id       TEXT NOT NULL,
+  url             TEXT NOT NULL,
+  fetched_at      TEXT NOT NULL,
+  status          INTEGER NOT NULL,
+  raw_body        TEXT NOT NULL,
+  truncated       INTEGER NOT NULL DEFAULT 0 CHECK (truncated IN (0, 1)),
+  candidate_count INTEGER NOT NULL DEFAULT 0,
+  warning         TEXT
+);
+
+CREATE INDEX IF NOT EXISTS source_texts_by_run ON source_texts (run_id, fetched_at);

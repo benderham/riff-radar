@@ -6,17 +6,17 @@ A Candidate may only ever originate from a configured Source.
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** needs-review
 
 ## Acceptance criteria
 
-- [ ] The `http` port returns status, headers and body, and its adapter is the only code performing the request
-- [ ] All three Sources from the specification are configured and fetchable; the excluded upcoming-releases site is absent
-- [ ] HTML is reduced by a hand-written tag stripper — no parsing dependency
-- [ ] The model extracts Candidates from cleaned text; there is no per-Source parser
-- [ ] The raw fetched text of every Source is persisted against the Run
-- [ ] A Source that normally yields Candidates and yields none records a warning on the Run
-- [ ] Candidates are normalised and deduplicated on Release Identity, and a Candidate seen on several Sources retains every Source URL
-- [ ] Where Sources disagree on a release date, every date is retained and the disagreement recorded rather than silently resolved
-- [ ] Source clients are tested for real against recorded fixture bodies through the `http` port, not stubbed out
-- [ ] Normalisation and deduplication are tested directly as pure functions
+- [x] The `http` port returns status, headers and body, and its adapter is the only code performing the request
+- [x] All three Sources from the specification are configured and fetchable; the excluded upcoming-releases site is absent
+- [x] HTML is reduced by a hand-written tag stripper — no parsing dependency
+- [x] The model extracts Candidates from cleaned text; there is no per-Source parser
+- [x] The raw fetched text of every Source is persisted against the Run
+- [x] A Source that normally yields Candidates and yields none records a warning on the Run
+- [x] Candidates are normalised and deduplicated on Release Identity, and a Candidate seen on several Sources retains every Source URL
+- [x] Where Sources disagree on a release date, every date is retained and the disagreement recorded rather than silently resolved
+- [x] Source clients are tested for real against recorded fixture bodies through the `http` port, not stubbed out
+- [x] Normalisation and deduplication are tested directly as pure functions

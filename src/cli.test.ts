@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { runCli } from './cli.ts'
-import type { ClockPort, ModelPort } from './ports.ts'
+import type { ClockPort, HttpPort, ModelPort } from './ports.ts'
 import { openStore } from './store/store.ts'
 
 const clock: ClockPort = { now: () => new Date(2026, 8, 14, 9, 0, 0) }
@@ -16,6 +16,13 @@ const model: ModelPort = {
     cacheReported: true,
     raw: {},
   }),
+}
+
+/** The CLI test never reaches a source: its model finishes on the first step. */
+const http: HttpPort = {
+  get: async (url) => {
+    throw new Error(`unexpected fetch of ${url}`)
+  },
 }
 
 const env = {
@@ -37,7 +44,7 @@ const harness = () => {
       return storesOpened
     },
     deps: {
-      ports: { clock, model },
+      ports: { clock, model, http },
       openStore: () => {
         storesOpened += 1
         const opened = openStore(':memory:')
