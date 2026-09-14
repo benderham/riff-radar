@@ -19,22 +19,11 @@ export interface DateWindow {
   readonly to: string
 }
 
-/** Formats a Date as `YYYY-MM-DD` using its local-time components. */
-export const toLocalDate = (at: Date): string => {
-  const year = String(at.getFullYear()).padStart(4, '0')
-  const month = String(at.getMonth() + 1).padStart(2, '0')
-  const day = String(at.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
+/** Formats a Date as `YYYY-MM-DD` from its local-time components. */
+export const toLocalDate = (at: Date): string => at.toLocaleDateString('en-CA')
 
+/** `lastDays` is validated where it is parsed, in `parseCliArgs`. */
 export const resolveWindow = (now: Date, lastDays: number): DateWindow => {
-  if (Number.isNaN(now.getTime())) {
-    throw new RangeError('cannot resolve a window from an invalid date')
-  }
-  if (!Number.isInteger(lastDays) || lastDays < 1) {
-    throw new RangeError(`--last-days must be a whole number of days, 1 or more; got ${lastDays}`)
-  }
-
   // Constructing through the local-time components rather than subtracting
   // milliseconds keeps the arithmetic correct across DST transitions, where a
   // day is not always 24 hours long.

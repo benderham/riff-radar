@@ -6,9 +6,6 @@
   "engines": {
     "node": ">=22.22.0"
   },
-  "bin": {
-    "riff-radar": "./src/cli.ts"
-  },
   "scripts": {
     "riff-radar": "node --disable-warning=ExperimentalWarning --import tsx src/cli.ts",
     "test": "node --disable-warning=ExperimentalWarning --import tsx --test \"src/**/*.test.ts\" \"scripts/**/*.test.ts\" \"*.test.ts\"",

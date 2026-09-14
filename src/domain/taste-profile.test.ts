@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 import { TASTE_PROFILE_PATH } from '../../config.ts'
-import { describeTasteProfileError, parseTasteProfile } from './taste-profile.ts'
+import { tasteProfileSchema } from './taste-profile.ts'
 
 const minimal = {
   version: 1,
@@ -15,13 +15,13 @@ const minimal = {
 }
 
 test('a well-formed profile parses, keeping its version', () => {
-  const profile = parseTasteProfile({ ...minimal, version: 4 })
+  const profile = tasteProfileSchema.parse({ ...minimal, version: 4 })
   assert.equal(profile.version, 4)
   assert.deepEqual(profile.artists.always, [])
 })
 
 test('artist tiers are read as written', () => {
-  const profile = parseTasteProfile({
+  const profile = tasteProfileSchema.parse({
     ...minimal,
     artists: { always: ['Blood Incantation'], watch: ['Chat Pile'], exclude: ['Nickelback'] },
   })
@@ -34,30 +34,19 @@ test('artist tiers are read as written', () => {
 
 test('a missing section is refused rather than silently loaded as empty', () => {
   const { artists, ...withoutArtists } = minimal
-  assert.throws(() => parseTasteProfile(withoutArtists), /artists/)
+  assert.throws(() => tasteProfileSchema.parse(withoutArtists), /artists/)
 })
 
 test('a profile without a version is refused', () => {
   const { version, ...withoutVersion } = minimal
-  assert.throws(() => parseTasteProfile(withoutVersion), /version/)
+  assert.throws(() => tasteProfileSchema.parse(withoutVersion), /version/)
 })
 
 test('a non-integer version is refused', () => {
-  assert.throws(() => parseTasteProfile({ ...minimal, version: 1.5 }))
-})
-
-test('a parse failure describes each problem on its own line', () => {
-  try {
-    parseTasteProfile({ ...minimal, version: 'one' })
-    assert.fail('expected a refusal')
-  } catch (error) {
-    const described = describeTasteProfileError(error)
-    assert.match(described, /version: /)
-    assert.doesNotMatch(described, /invalid_type/, 'should read as prose, not as a Zod dump')
-  }
+  assert.throws(() => tasteProfileSchema.parse({ ...minimal, version: 1.5 }))
 })
 
 test('the checked-in profile is valid and is what a run would stamp', () => {
-  const profile = parseTasteProfile(JSON.parse(readFileSync(TASTE_PROFILE_PATH, 'utf8')))
+  const profile = tasteProfileSchema.parse(JSON.parse(readFileSync(TASTE_PROFILE_PATH, 'utf8')))
   assert.ok(Number.isInteger(profile.version))
 })

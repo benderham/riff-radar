@@ -16,6 +16,8 @@ export interface CliArgs {
   readonly command: 'run'
   readonly lastDays: number
   readonly dryRun: boolean
+  /** What was typed, for the trace. The resolved window records the rest. */
+  readonly raw: string
 }
 
 export const DEFAULT_LAST_DAYS = 7
@@ -54,11 +56,5 @@ export const parseCliArgs = (argv: readonly string[]): CliArgs => {
     throw new UsageError(`unknown argument "${argument}". ${USAGE}`)
   }
 
-  return { command, lastDays, dryRun }
+  return { command, lastDays, dryRun, raw: argv.join(' ') }
 }
-
-/** Renders parsed arguments back to a canonical command line, for the trace. */
-export const formatCliArgs = (args: CliArgs): string =>
-  [args.command, '--last-days', String(args.lastDays), ...(args.dryRun ? ['--dry-run'] : [])].join(
-    ' ',
-  )

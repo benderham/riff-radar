@@ -12,7 +12,7 @@
  * more than it is worth.
  */
 
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
 
@@ -23,17 +23,16 @@ export interface LayeringViolation {
   readonly importPath: string
 }
 
-// Three forms reach another module: `... from '…'`, a bare side-effect
-// `import '…'`, and a dynamic `import('…')`. All three count.
-const IMPORT_SPECIFIER =
-  /(?:^|\s)(?:import|export)\s[^'"`;]*?from\s*['"]([^'"]+)['"]|(?:^|\s)import\s*['"]([^'"]+)['"]|(?:^|[^.\w])import\s*\(\s*['"]([^'"]+)['"]\s*\)/gm
+// Catches all three forms that reach another module: `… from '…'`, a bare
+// side-effect `import '…'`, and a dynamic `import('…')`. Only relative
+// specifiers are judged, which is what keeps ordinary strings out of it.
+const IMPORT_SPECIFIER = /\b(?:import|export)\b[^'"\n]*['"]([^'"]+)['"]/g
 
-const typescriptFilesIn = (directory: string): string[] =>
-  readdirSync(directory).flatMap((entry) => {
-    const path = join(directory, entry)
-    if (statSync(path).isDirectory()) return typescriptFilesIn(path)
-    return path.endsWith('.ts') && !path.endsWith('.test.ts') ? [path] : []
-  })
+const typescriptFilesIn = (root: string): string[] =>
+  readdirSync(root, { recursive: true })
+    .map(String)
+    .filter((path) => path.endsWith('.ts') && !path.endsWith('.test.ts'))
+    .map((path) => join(root, path))
 
 export const findLayeringViolations = (root: string): LayeringViolation[] => {
   const violations: LayeringViolation[] = []
@@ -44,7 +43,7 @@ export const findLayeringViolations = (root: string): LayeringViolation[] => {
 
     const source = readFileSync(file, 'utf8')
     for (const match of source.matchAll(IMPORT_SPECIFIER)) {
-      const importPath = match[1] ?? match[2] ?? match[3]
+      const importPath = match[1]
       if (importPath === undefined || !importPath.startsWith('.')) continue
 
       // Resolve against the importing file rather than reading the specifier

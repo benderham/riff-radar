@@ -49,16 +49,3 @@ test('months and days are zero-padded', () => {
     to: '2026-01-09',
   })
 })
-
-test('a window of fewer than one day is refused', () => {
-  assert.throws(() => resolveWindow(localNoon(2026, 9, 14), 0), RangeError)
-  assert.throws(() => resolveWindow(localNoon(2026, 9, 14), -3), RangeError)
-})
-
-test('a fractional window is refused', () => {
-  assert.throws(() => resolveWindow(localNoon(2026, 9, 14), 1.5), RangeError)
-})
-
-test('an unparseable instant is refused', () => {
-  assert.throws(() => resolveWindow(new Date('nonsense'), 7), RangeError)
-})

@@ -1,10 +1,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { UsageError, formatCliArgs, parseCliArgs } from './cli-args.ts'
+import { UsageError, parseCliArgs } from './cli-args.ts'
 
 test('the bare run command defaults to seven days and a real write', () => {
-  assert.deepEqual(parseCliArgs(['run']), { command: 'run', lastDays: 7, dryRun: false })
+  assert.deepEqual(parseCliArgs(['run']), {
+    command: 'run',
+    lastDays: 7,
+    dryRun: false,
+    raw: 'run',
+  })
 })
 
 test('--last-days overrides the default window', () => {
@@ -25,6 +30,7 @@ test('flags may appear in either order', () => {
     command: 'run',
     lastDays: 3,
     dryRun: true,
+    raw: 'run --dry-run --last-days 3',
   })
 })
 
@@ -59,11 +65,6 @@ test('--last-days without a value is a usage error', () => {
   assert.throws(() => parseCliArgs(['run', '--last-days']), UsageError)
 })
 
-test('the parsed arguments render back as the canonical command line', () => {
-  // The trace stores this string; it must read as something you could retype.
-  assert.equal(
-    formatCliArgs({ command: 'run', lastDays: 14, dryRun: true }),
-    'run --last-days 14 --dry-run',
-  )
-  assert.equal(formatCliArgs({ command: 'run', lastDays: 7, dryRun: false }), 'run --last-days 7')
+test('what was typed is kept verbatim for the trace', () => {
+  assert.equal(parseCliArgs(['run', '--last-days', '14', '--dry-run']).raw, 'run --last-days 14 --dry-run')
 })

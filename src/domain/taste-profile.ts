@@ -24,14 +24,3 @@ export const tasteProfileSchema = z.object({
 })
 
 export type TasteProfile = z.infer<typeof tasteProfileSchema>
-
-export const parseTasteProfile = (value: unknown): TasteProfile =>
-  tasteProfileSchema.parse(value)
-
-/** Renders a parse failure as one readable line per problem, for the CLI. */
-export const describeTasteProfileError = (error: unknown): string => {
-  if (!(error instanceof z.ZodError)) return error instanceof Error ? error.message : String(error)
-  return error.issues
-    .map((issue) => `  ${issue.path.join('.') || '(root)'}: ${issue.message}`)
-    .join('\n')
-}

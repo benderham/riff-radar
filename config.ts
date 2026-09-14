@@ -28,47 +28,13 @@ export const REQUIRED_CREDENTIALS = [
   'NOTION_DATABASE_ID',
 ] as const
 
-export interface Credentials {
-  readonly fireworksApiKey: string
-  readonly notionToken: string
-  readonly notionDatabaseId: string
-}
-
-export class MissingCredentialsError extends Error {
-  override readonly name = 'MissingCredentialsError'
-  readonly missing: readonly string[]
-
-  constructor(missing: readonly string[]) {
-    super(
-      `cannot start: ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} not set in the environment`,
-    )
-    this.missing = missing
-  }
-}
-
 /**
- * Reads the credentials a run needs, or refuses.
+ * The names of the credentials a run needs and does not have.
  *
  * All three are required even for a dry run: a dry run still reads Notion to
  * suppress releases already proposed (ADR-0009), and still calls the model.
- * Refusing here means finding out before the model has been billed, rather than
- * halfway through. The error names the variables and never their values.
+ * Checking here means finding out before the model has been billed. Names are
+ * returned, never values, so nothing secret can reach a log.
  */
-export const loadCredentials = (env: Record<string, string | undefined>): Credentials => {
-  const present = new Map<string, string>()
-  const missing: string[] = []
-
-  for (const name of REQUIRED_CREDENTIALS) {
-    const value = env[name]?.trim()
-    if (value === undefined || value === '') missing.push(name)
-    else present.set(name, value)
-  }
-
-  if (missing.length > 0) throw new MissingCredentialsError(missing)
-
-  return {
-    fireworksApiKey: present.get('FIREWORKS_API_KEY') as string,
-    notionToken: present.get('NOTION_TOKEN') as string,
-    notionDatabaseId: present.get('NOTION_DATABASE_ID') as string,
-  }
-}
+export const missingCredentials = (env: Record<string, string | undefined>): string[] =>
+  REQUIRED_CREDENTIALS.filter((name) => !env[name]?.trim())

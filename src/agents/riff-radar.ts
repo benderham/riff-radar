@@ -14,9 +14,8 @@ import { randomUUID } from 'node:crypto'
 
 import { ACTION_SCHEMA_VERSION, MODEL_ID, PROMPT_VERSION } from '../../config.ts'
 import type { CliArgs } from '../domain/cli-args.ts'
-import { formatCliArgs } from '../domain/cli-args.ts'
 import type { TerminationReason } from '../domain/run.ts'
-import { NO_TOKENS, permitsNotionWrite } from '../domain/run.ts'
+import { WRITE_PERMITTED } from '../domain/run.ts'
 import type { TasteProfile } from '../domain/taste-profile.ts'
 import type { DateWindow } from '../domain/window.ts'
 import { resolveWindow } from '../domain/window.ts'
@@ -48,7 +47,7 @@ export const runRiffRadar = ({ args, ports, store, profile }: RunRequest): RunOu
   store.startRun({
     runId,
     startedAt: startedAt.toISOString(),
-    cliArgs: formatCliArgs(args),
+    cliArgs: args.raw,
     resolvedFrom: window.from,
     resolvedTo: window.to,
     promptVersion: PROMPT_VERSION,
@@ -67,7 +66,7 @@ export const runRiffRadar = ({ args, ports, store, profile }: RunRequest): RunOu
   // a reason that does not permit a write are both blocks; with no shortlist to
   // write there is nothing to do either way.
   const notionWritePerformed =
-    !args.dryRun && permitsNotionWrite(terminationReason) && shortlistSize > 0
+    !args.dryRun && shortlistSize > 0 && WRITE_PERMITTED.includes(terminationReason)
 
   store.finishRun({
     runId,
@@ -75,7 +74,9 @@ export const runRiffRadar = ({ args, ports, store, profile }: RunRequest): RunOu
     terminationReason,
     // No model has been called, so the accounting is genuinely zero rather than
     // unmeasured. Real token counts arrive with the loop.
-    ...NO_TOKENS,
+    uncachedInputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
     estimatedCost: 0,
     shortlistSize,
     notionWritePerformed,

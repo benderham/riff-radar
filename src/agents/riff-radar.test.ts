@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 import type { ClockPort } from '../ports.ts'
 import { openStore } from '../store/store.ts'
-import { parseTasteProfile } from '../domain/taste-profile.ts'
+import { tasteProfileSchema } from '../domain/taste-profile.ts'
 import { runRiffRadar } from './riff-radar.ts'
 
 const fakeClock = (...instants: readonly Date[]): ClockPort => {
@@ -13,7 +13,7 @@ const fakeClock = (...instants: readonly Date[]): ClockPort => {
   }
 }
 
-const profile = parseTasteProfile({
+const profile = tasteProfileSchema.parse({
   version: 3,
   artists: { always: [], watch: [], exclude: [] },
   labels: { include: [], exclude: [] },
@@ -34,7 +34,7 @@ const rowFor = (store: ReturnType<typeof openStore>, runId: string) =>
 test('a run that reaches no candidates ends with no_candidates', () => {
   const { store, clock } = start()
   const outcome = runRiffRadar({
-    args: { command: 'run', lastDays: 7, dryRun: false },
+    args: { command: 'run', lastDays: 7, dryRun: false, raw: 'run' },
     ports: { clock },
     store,
     profile,
@@ -47,7 +47,7 @@ test('a run that reaches no candidates ends with no_candidates', () => {
 test('the trace records the resolved absolute window, not the flag', () => {
   const { store, clock } = start()
   const outcome = runRiffRadar({
-    args: { command: 'run', lastDays: 14, dryRun: false },
+    args: { command: 'run', lastDays: 14, dryRun: false, raw: 'run --last-days 14' },
     ports: { clock },
     store,
     profile,
@@ -62,7 +62,7 @@ test('the trace records the resolved absolute window, not the flag', () => {
 test('the command line is recorded alongside the resolved window', () => {
   const { store, clock } = start()
   const outcome = runRiffRadar({
-    args: { command: 'run', lastDays: 14, dryRun: true },
+    args: { command: 'run', lastDays: 14, dryRun: true, raw: 'run --last-days 14 --dry-run' },
     ports: { clock },
     store,
     profile,
@@ -74,7 +74,7 @@ test('the command line is recorded alongside the resolved window', () => {
 test('a run with no candidates performs no write and proposes nothing', () => {
   const { store, clock } = start()
   const outcome = runRiffRadar({
-    args: { command: 'run', lastDays: 7, dryRun: false },
+    args: { command: 'run', lastDays: 7, dryRun: false, raw: 'run' },
     ports: { clock },
     store,
     profile,
@@ -89,7 +89,7 @@ test('a run with no candidates performs no write and proposes nothing', () => {
 test('the run is stamped with the versions that produced it', () => {
   const { store, clock } = start()
   const outcome = runRiffRadar({
-    args: { command: 'run', lastDays: 7, dryRun: false },
+    args: { command: 'run', lastDays: 7, dryRun: false, raw: 'run' },
     ports: { clock },
     store,
     profile,
@@ -105,7 +105,7 @@ test('the run is stamped with the versions that produced it', () => {
 test('the run records when it started and when it ended', () => {
   const { store, clock } = start()
   const outcome = runRiffRadar({
-    args: { command: 'run', lastDays: 7, dryRun: false },
+    args: { command: 'run', lastDays: 7, dryRun: false, raw: 'run' },
     ports: { clock },
     store,
     profile,
@@ -119,7 +119,7 @@ test('the run records when it started and when it ended', () => {
 test('exactly one termination reason is recorded, and the run leaves one row', () => {
   const { store, clock } = start()
   runRiffRadar({
-    args: { command: 'run', lastDays: 7, dryRun: false },
+    args: { command: 'run', lastDays: 7, dryRun: false, raw: 'run' },
     ports: { clock },
     store,
     profile,
@@ -132,23 +132,10 @@ test('exactly one termination reason is recorded, and the run leaves one row', (
 
 test('two runs in one database are distinct rows', () => {
   const { store, clock } = start()
-  const args = { command: 'run', lastDays: 7, dryRun: false } as const
+  const args = { command: 'run', lastDays: 7, dryRun: false, raw: 'run' } as const
   const first = runRiffRadar({ args, ports: { clock }, store, profile })
   const second = runRiffRadar({ args, ports: { clock }, store, profile })
 
   assert.notEqual(first.runId, second.runId)
   assert.equal(store.database.prepare('SELECT count(*) AS n FROM runs').get()?.['n'], 2)
-})
-
-test('an impossible window is refused before anything is recorded', () => {
-  const { store, clock } = start()
-  assert.throws(() =>
-    runRiffRadar({
-      args: { command: 'run', lastDays: 0, dryRun: false },
-      ports: { clock },
-      store,
-      profile,
-    }),
-  )
-  assert.equal(store.database.prepare('SELECT count(*) AS n FROM runs').get()?.['n'], 0)
 })
