@@ -55,10 +55,10 @@ export const htmlToText = (html: string): string =>
       .replaceAll(/<!--[\s\S]*?-->/g, '')
       .replaceAll(INVISIBLE, ' ')
       .replaceAll(BLOCK, '\n')
-      // Every remaining tag is inline, including an unclosed one at the very end
-      // of a truncated page, which must not swallow the text before it.
-      .replaceAll(/<[^>]*>/g, ' ')
-      .replaceAll(/<[^>]*$/g, ' '),
+      // Every remaining tag is inline. The `$` branch catches an unclosed tag
+      // at the very end of a truncated page, which must not swallow the text
+      // before it.
+      .replaceAll(/<[^>]*(?:>|$)/g, ' '),
   )
     .replaceAll(/[^\S\n]+/g, ' ')
     .replaceAll(/ ?\n ?/g, '\n')

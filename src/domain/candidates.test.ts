@@ -5,7 +5,6 @@ import type { Candidate } from './candidates.ts'
 import {
   candidateIdentity,
   extractionSchema,
-  hasDateDisagreement,
   mergeCandidates,
   normaliseCandidate,
   withinWindow,
@@ -86,8 +85,7 @@ test('the same release on two sources becomes one candidate carrying both URLs',
 
   assert.equal(merged.length, 1)
   assert.deepEqual(merged[0]?.sourceUrls, [AOTY, WIKIPEDIA])
-  assert.deepEqual(merged[0]?.releaseDates, ['2026-09-12'])
-  assert.equal(hasDateDisagreement(merged[0]!), false)
+  assert.deepEqual(merged[0]?.releaseDates, ['2026-09-12'], 'one date: the sources agree')
 })
 
 test('sources that disagree on a date keep every date, and the disagreement shows', () => {
@@ -102,7 +100,6 @@ test('sources that disagree on a date keep every date, and the disagreement show
   assert.equal(merged.length, 1)
   assert.deepEqual(merged[0]?.releaseDates, ['2026-09-11', '2026-09-12'])
   assert.deepEqual(merged[0]?.sourceUrls, [AOTY, WIKIPEDIA, LOUDWIRE])
-  assert.equal(hasDateDisagreement(merged[0]!), true)
 })
 
 test('merging preserves first-seen order and appends genuinely new releases', () => {

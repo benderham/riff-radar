@@ -44,7 +44,7 @@ export interface Candidate {
   readonly format?: string
 }
 
-const tidy = (value: string | undefined): string => (value ?? '').replaceAll(/\s+/g, ' ').trim()
+const tidy = (value: string): string => value.replaceAll(/\s+/g, ' ').trim()
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -72,8 +72,8 @@ export const normaliseCandidate = (
   const releaseDate = tidy(raw.releaseDate)
   if (artist === '' || title === '' || !isCalendarDate(releaseDate)) return undefined
 
-  const label = tidy(raw.label)
-  const format = tidy(raw.format)
+  const label = tidy(raw.label ?? '')
+  const format = tidy(raw.format ?? '')
 
   return {
     artist,
@@ -89,9 +89,6 @@ export const normaliseCandidate = (
 export const candidateIdentity = (candidate: Candidate): string =>
   `${candidate.artist.trim().toLowerCase()}|${candidate.title.trim().toLowerCase()}`
 
-export const hasDateDisagreement = (candidate: Candidate): boolean =>
-  candidate.releaseDates.length > 1
-
 /**
  * A candidate belongs to a run when *any* source places it inside the window.
  *
@@ -105,13 +102,12 @@ export const hasDateDisagreement = (candidate: Candidate): boolean =>
 export const withinWindow = (candidate: Candidate, window: DateWindow): boolean =>
   candidate.releaseDates.some((date) => date >= window.from && date <= window.to)
 
-const distinct = (values: readonly string[]): string[] => [...new Set(values)]
-
 /**
  * The same release listed by several sources is one candidate carrying all of
  * them. Disagreements are kept, never resolved: a release the Wikipedia page
  * dates a day earlier than Loudwire stays one candidate with both dates, and
- * whoever reads the trace can see that the sources differed.
+ * whoever reads the trace can see that the sources differed. More than one date
+ * is what a disagreement is; nothing else records it.
  */
 export const mergeCandidates = (
   existing: readonly Candidate[],
@@ -128,17 +124,14 @@ export const mergeCandidates = (
       held === undefined
         ? candidate
         : {
+            // Spread order is the gap-filling rule: the first source to state a
+            // label or a format keeps it, and a later one fills only what is
+            // absent, because `normaliseCandidate` omits an absent optional
+            // rather than setting it undefined.
+            ...candidate,
             ...held,
-            releaseDates: distinct([...held.releaseDates, ...candidate.releaseDates]).sort(),
-            sourceUrls: distinct([...held.sourceUrls, ...candidate.sourceUrls]),
-            // First source to state one wins: later sources fill gaps rather
-            // than overwrite, so a merge never rewrites a fact already recorded.
-            ...(held.label === undefined && candidate.label !== undefined
-              ? { label: candidate.label }
-              : {}),
-            ...(held.format === undefined && candidate.format !== undefined
-              ? { format: candidate.format }
-              : {}),
+            releaseDates: [...new Set([...held.releaseDates, ...candidate.releaseDates])].sort(),
+            sourceUrls: [...new Set([...held.sourceUrls, ...candidate.sourceUrls])],
           },
     )
   }

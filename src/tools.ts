@@ -24,7 +24,7 @@ import type { SourceId } from '../config.ts'
 import { SOURCES } from '../config.ts'
 import { fetchSource } from './clients/sources.ts'
 import type { Candidate } from './domain/candidates.ts'
-import { hasDateDisagreement, mergeCandidates } from './domain/candidates.ts'
+import { mergeCandidates } from './domain/candidates.ts'
 import type { Usage } from './domain/cost.ts'
 import type { ShortlistItem } from './domain/shortlist.ts'
 import { shortlistItemSchema } from './domain/shortlist.ts'
@@ -112,15 +112,13 @@ export const tools = {
           source: fetched.sourceId,
           url: fetched.url,
           found: fetched.candidates.length,
-          dropped: fetched.droppedRows,
-          outsideWindow: fetched.outsideWindow,
           truncated: fetched.truncated,
           newThisFetch: context.candidates.length - before,
           totalCandidates: context.candidates.length,
           ...warning,
           candidates: context.candidates.map((candidate) => ({
             ...candidate,
-            ...(hasDateDisagreement(candidate)
+            ...(candidate.releaseDates.length > 1
               ? { dateDisagreement: `sources disagree: ${candidate.releaseDates.join(', ')}` }
               : {}),
           })),
