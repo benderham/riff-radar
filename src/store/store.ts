@@ -69,9 +69,41 @@ export interface Store {
   close(): void
 }
 
+const columnsOf = (database: DatabaseSync, table: string) =>
+  database.prepare(`PRAGMA table_info(${table})`).all().map((row) => row['name'] as string)
+
+// `CREATE TABLE IF NOT EXISTS` leaves an older file untouched, so a database
+// written before a schema change is missing columns and fails later with a bare
+// "no such column". Compare it against a fresh in-memory copy of the schema and
+// say so at open time instead. No migrations: the trace is reproducible by
+// re-running, so deleting the file is the documented fix.
+const assertSchemaIsCurrent = (database: DatabaseSync, path: string): void => {
+  const expected = new DatabaseSync(':memory:')
+  expected.exec(SCHEMA)
+  const tables = expected
+    .prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`)
+    .all()
+    .map((row) => row['name'] as string)
+
+  for (const table of tables) {
+    const missing = columnsOf(expected, table).filter(
+      (column) => !columnsOf(database, table).includes(column),
+    )
+    if (missing.length > 0) {
+      expected.close()
+      throw new Error(
+        `${path} was written by an older schema (${table} is missing ${missing.join(', ')}). ` +
+          `Delete the file and run again.`,
+      )
+    }
+  }
+  expected.close()
+}
+
 export const openStore = (path: string): Store => {
   const database = new DatabaseSync(path)
   database.exec(SCHEMA)
+  assertSchemaIsCurrent(database, path)
 
   return {
     database,

@@ -1,6 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
+import { rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 
 import { TERMINATION_REASONS } from '../domain/run.ts'
 import type { RecordedStep } from './store.ts'
@@ -187,4 +189,14 @@ test('two steps of one run cannot share an index', () => {
   store.recordStep(step)
 
   assert.throws(() => store.recordStep({ ...step, stepId: 'step-2' }))
+})
+
+test('a database written by an older schema is reported at open time', () => {
+  const path = `${tmpdir()}/riff-radar-stale-${process.pid}.db`
+  const stale = new DatabaseSync(path)
+  stale.exec('CREATE TABLE runs (run_id TEXT PRIMARY KEY)')
+  stale.close()
+
+  assert.throws(() => openStore(path), /older schema \(runs is missing .*cost_is_upper_bound/)
+  rmSync(path)
 })
