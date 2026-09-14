@@ -35,13 +35,22 @@ Requires Node 22.22 or later.
 npm install
 ```
 
-Three environment variables must be set before a run will start:
+Three credentials must be set before a run will start. Copy the example file and
+fill it in:
 
 ```sh
-export FIREWORKS_API_KEY=...     # the model provider
-export NOTION_TOKEN=...          # Notion integration token
-export NOTION_DATABASE_ID=...    # the database proposals are written to
+cp .env.example .env
 ```
+
+```sh
+FIREWORKS_API_KEY=...     # the model provider
+NOTION_TOKEN=...          # Notion integration token
+NOTION_DATABASE_ID=...    # the database proposals are written to
+```
+
+`.env` is gitignored and read by Node itself — no dependency, no loader. Exported
+shell variables still work and take precedence over the file, which is what makes
+a one-off override possible without editing it.
 
 Then:
 
