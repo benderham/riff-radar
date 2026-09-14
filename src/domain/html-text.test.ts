@@ -80,3 +80,44 @@ test('a whole real page fits under the cap, so nothing a run wants is cut', () =
     `a real page cleans to ${text.length} characters, against a cap of ${MAX_SOURCE_TEXT_CHARS}`,
   )
 })
+
+test('the real Wikipedia year page reduces to its album tables', () => {
+  const text = htmlToText(
+    readFileSync(new URL('../../fixtures/wikipedia.html', import.meta.url), 'utf8'),
+  )
+
+  // A table row keeps its day, artist and album together, which is the whole
+  // reason `td` and `th` are treated as inline.
+  assert.ok(text.includes('September\n[ edit ]\nDay\nArtist\nAlbum'))
+  assert.ok(text.includes('Archgoat\nNightbringer, Lightbringer'))
+  assert.ok(!text.includes('<table'), 'no markup of the page\'s own survives')
+  assert.ok(!text.includes('<div'))
+
+  // The page does contain angle brackets afterwards, and should: one section
+  // quotes raw wikitext, where `&lt;ref&gt;` is text a reader sees rather than
+  // a tag. Decoding happens after stripping, so escaped markup stays content.
+  assert.ok(text.includes('</ref>'))
+
+  // This page is larger than the cap, so it will be cut — but its tables run
+  // January to December well before the references, so the cut takes the
+  // apparatus and leaves the releases. The assertion is what makes a future
+  // redesign that moves the tables down the page fail here rather than live.
+  assert.ok(text.length > MAX_SOURCE_TEXT_CHARS)
+  assert.ok(
+    text.indexOf('September\n[ edit ]') < MAX_SOURCE_TEXT_CHARS,
+    'the September table must survive truncation',
+  )
+})
+
+test('a bot challenge page is text, and says nothing about releases', () => {
+  const text = htmlToText(
+    readFileSync(new URL('../../fixtures/aoty-challenge.html', import.meta.url), 'utf8'),
+  )
+
+  // What Album of the Year actually served on 14 September 2026: a Cloudflare
+  // interstitial behind a 403. The client never hands it to the model, because
+  // it never reaches a 2xx — but if the status ever changed, a challenge page
+  // reduces to nothing at all. Its only words are in the `<title>`, and a
+  // title is not page text; everything else is the challenge script.
+  assert.equal(text, '')
+})

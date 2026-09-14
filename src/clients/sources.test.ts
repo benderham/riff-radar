@@ -82,16 +82,23 @@ test('the configured URL is fetched, and the cleaned page reaches the extraction
   ])
 })
 
-test('the raw body is kept whole, alongside the cleaned text', async () => {
+test('the raw body is kept whole even when the text handed on was cut', async () => {
   const body = fixture('wikipedia.html')
   const { http } = servingFixture(body)
   const { model } = extracting(extracted([]))
 
   const result = await fetchSource(portsFor(http, model), 'wikipedia', WINDOW)
 
+  // 1.5 MB of page, stored exactly as served, so an extraction that looks wrong
+  // can be re-examined against what was actually read.
   assert.equal(result.rawBody, body)
-  assert.ok(result.cleanedText.includes('Absolute Elsewhere'))
-  assert.equal(result.truncated, false)
+  assert.equal(result.rawBody.length > result.cleanedText.length * 10, true)
+
+  // The real page is larger than the cap: cut, marked, and still carrying the
+  // release tables, which sit long before the references.
+  assert.equal(result.truncated, true)
+  assert.ok(result.cleanedText.endsWith('[truncated: the page is longer than this]'))
+  assert.ok(result.cleanedText.includes('Archgoat'))
 })
 
 test('the extraction call is priced into the run', async () => {
