@@ -6,7 +6,7 @@ This is the largest ticket in the milestone and the one the project exists to te
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** ready-for-agent (part A complete, commit 037c41a; part B outstanding)
 
 ## Session break
 
@@ -20,14 +20,14 @@ Two sittings. Part A stands alone and is demoable without a model; part B is the
 
 ### Part A
 
-- [ ] TypeScript on Node 22.22 with `typescript`, `tsx` and `zod` as the only dependencies; `node:test` is the test runner and `node:sqlite` the database
-- [ ] The `node:sqlite` experimental warning is suppressed with `--disable-warning=ExperimentalWarning`, never globally
-- [ ] Directory layout follows the one in the specification, with the CLI entry point in place of an HTTP app
-- [ ] A check that can be run from the command line fails when anything in `domain/` imports from `clients/` or `adapters/`
-- [ ] `--last-days` defaults to 7; the resolved absolute range is what the trace records, not the flag
-- [ ] The Run refuses to start and writes nothing when required credentials are absent from the environment
-- [ ] `runs` and `steps` tables carry every column named in the specification
-- [ ] A Run that reaches no candidates ends with `no_candidates` and performs no write
+- [x] TypeScript on Node 22.22 with `typescript`, `tsx` and `zod` as the only dependencies; `node:test` is the test runner and `node:sqlite` the database
+- [x] The `node:sqlite` experimental warning is suppressed with `--disable-warning=ExperimentalWarning`, never globally
+- [x] Directory layout follows the one in the specification, with the CLI entry point in place of an HTTP app
+- [x] A check that can be run from the command line fails when anything in `domain/` imports from `clients/` or `adapters/`
+- [x] `--last-days` defaults to 7; the resolved absolute range is what the trace records, not the flag
+- [x] The Run refuses to start and writes nothing when required credentials are absent from the environment
+- [x] `runs` and `steps` tables carry every column named in the specification
+- [x] A Run that reaches no candidates ends with `no_candidates` and performs no write
 
 ### Part B
 
