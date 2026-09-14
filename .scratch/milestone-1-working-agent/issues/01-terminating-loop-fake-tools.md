@@ -6,7 +6,7 @@ This is the largest ticket in the milestone and the one the project exists to te
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-review (part A complete, commit 037c41a; part B complete bar the live smoke run)
+**Status:** needs-review (part A complete, commit 037c41a; part B complete)
 
 ## Session break
 
@@ -47,7 +47,7 @@ Two sittings. Part A stands alone and is demoable without a model; part B is the
 - [x] Every step records its duration
 - [x] Uncached input, cached input and output tokens are counted separately per step and per Run, and estimated cost is computed from all three rates
 - [x] The stable prefix — system prompt, tool definitions, taste profile — is sent ahead of anything that varies per step
-- [ ] Whether the provider reports cached token counts is settled against a real response; if it does not, cost is recorded as an upper bound and labelled as one — **blocked: no `FIREWORKS_API_KEY` available. The mechanism and the `cost_is_upper_bound` column are built and tested both ways; `npm run smoke:model` settles it in one call.**
+- [x] Whether the provider reports cached token counts is settled against a real response; if it does not, cost is recorded as an upper bound and labelled as one — settled live: Fireworks reports them (ADR-0028), so cost is a measurement
 - [x] Prompt version, profile version, action schema version and model identifier are recorded on the Run
 - [x] Exactly one Termination Reason is recorded per Run
 - [x] A live smoke test against the model provider exists, invoked separately and excluded from the automated suite

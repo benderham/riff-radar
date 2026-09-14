@@ -128,7 +128,7 @@ Only two things cross a run boundary: the versioned taste profile, and the set o
 
 Raw fetched source text is stored, since extraction is model-dependent and replay depends on it (ADR-0003).
 
-Cost is computed from three rates, not two. Cached input is ~30x cheaper than uncached, so the stable prefix — system prompt, tool definitions, taste profile — goes at the front of every request, ahead of anything that varies per step. Whether Fireworks reports cached token counts is unverified; if it does not, cost is reported as an upper bound and labelled as one.
+Cost is computed from three rates, not two. Cached input is ~30x cheaper than uncached, so the stable prefix — system prompt, tool definitions, taste profile — goes at the front of every request, ahead of anything that varies per step. Fireworks reports cached token counts in `usage.prompt_tokens_details.cached_tokens`, confirmed live (ADR-0028), so cost is a measurement. A run that receives no breakdown prices all input as uncached and labels itself an upper bound.
 
 ## Process model
 

@@ -67,6 +67,11 @@ export const fireworksModel = (apiKey: string): ModelPort => ({
           },
         })),
         tool_choice: 'auto',
+        // One action per step is the loop's shape, and the model does not
+        // honour the prompt's request for it: left to itself it proposes all
+        // three source fetches at once, which the loop refuses as an invalid
+        // action. Asking the provider is the reliable half of that guardrail.
+        parallel_tool_calls: false,
         messages: messages.map(wireMessage),
       }),
     })

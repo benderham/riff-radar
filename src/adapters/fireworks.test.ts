@@ -121,6 +121,9 @@ test('the request carries the key, the derived tool definitions and the messages
   const sent = JSON.parse(String(call?.init.body))
   assert.equal(sent.model, 'accounts/fireworks/models/deepseek-v4p1-flash')
   assert.equal(sent.tools.length, 4)
+  // Confirmed against the live provider: without this the model proposes all
+  // three source fetches in one response, which the loop refuses.
+  assert.equal(sent.parallel_tool_calls, false)
   assert.equal(sent.tools[0].function.name, 'fetch_source')
   assert.ok(sent.tools[0].function.parameters, 'the derived JSON schema travels with the tool')
   assert.deepEqual(sent.messages, [

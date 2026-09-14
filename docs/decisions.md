@@ -202,3 +202,21 @@ Runs also carry `cost_is_upper_bound`. ADR-0020 left open whether the provider r
 The specification names "token or cost ceiling"; only the cost ceiling is implemented, because cost is what the tokens are counted for and a token ceiling would be a second number expressing the same limit less directly.
 
 **Consequences:** A run that legitimately needs more than a quarter of a dollar is terminated, which at thirty steps cannot happen without something being wrong. The ceiling is in `config.ts` and moves without touching the loop. A single run whose first response omits the breakdown flags the whole run, deliberately: a cost that is partly measured and partly bounded is a bound.
+
+## ADR-0027: One tool call per response is asked of the provider, not only of the prompt
+
+**Status:** ACCEPTED
+
+Requests set `parallel_tool_calls: false`. The loop's shape is one action per step, and the system prompt says so, but the first live call against DeepSeek V4.1 Flash returned three `fetch_source` calls in a single response — one per configured source, which is a sensible thing for a model to do and exactly what the loop cannot accept. Refusing them is correct and already implemented, but a run that refuses the model's first reasonable move three times in a row terminates with `invalid_action_limit` before it fetches anything.
+
+So the constraint is asked for twice: of the provider, which honours it, and of the model in the prompt, which did not. The client-side refusal stays as the guardrail behind both, because a provider flag is a request and not a guarantee.
+
+**Consequences:** A run takes one step per source rather than fetching all three at once, which is slower and is the price of a loop whose every step is separately validated, recorded and interruptible. The multi-call rejection is now a guardrail that should never fire in normal operation; the test that drives it is what keeps it honest. If a later ticket wants genuine parallelism it needs its own decision, because the step model — one proposed action, one validation, one dispatch, one row — assumes it away.
+
+## ADR-0028: Fireworks reports cached token counts, so cost is a measurement
+
+**Status:** ACCEPTED
+
+Settles the question ADR-0020 left open. A live call confirms that Fireworks returns `usage.prompt_tokens_details.cached_tokens`, and that the cache behaves as the stable-prefix design assumed: a first request billed 1411 uncached input tokens, and the next identical prefix billed 129 uncached and 1282 cached. Cost accounting is therefore a measurement rather than an upper bound, and `cost_is_upper_bound` should read 0 on every run against this provider.
+
+**Consequences:** The `cost_is_upper_bound` flag and the code that sets it stay, because they cost nothing and a provider can change what it reports without telling anyone — a run that stops seeing the breakdown labels itself rather than silently misreporting by up to thirty times. The prefix ordering is now evidence rather than theory: roughly 90% of a step's input tokens are served from cache, so the ordering rule in ADR-0020 is load-bearing and not a precaution.
