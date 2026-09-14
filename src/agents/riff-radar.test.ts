@@ -20,7 +20,7 @@ const fixture = (name: string) =>
   readFileSync(new URL(`../../fixtures/${name}`, import.meta.url), 'utf8')
 
 /** Every source serves the same recorded page unless a test says otherwise. */
-const fixtureHttp = (body = fixture('aoty.html'), status = 200): HttpPort => ({
+const fixtureHttp = (body = fixture('listing.html'), status = 200): HttpPort => ({
   get: async () => ({ status, headers: { 'content-type': 'text/html' }, body }),
 })
 
@@ -257,13 +257,15 @@ test('exactly one termination reason is recorded per run', async () => {
 
 test('a rejected action is visible: proposed and unvalidated, never dispatched', async () => {
   const model = scriptedModel(
-    proposes('fetch_source', '{"source_id": "metal-archives"}'),
+    // Album of the Year is no longer a configured source (ADR-0031), so asking
+    // for it is exactly the rejection this test is about.
+    proposes('fetch_source', '{"source_id": "aoty"}'),
     finishes(items(1)),
   )
   const { stepRows } = await run(model.port)
 
   const rejected = stepRows[0]
-  assert.match(String(rejected?.['proposed_action']), /metal-archives/)
+  assert.match(String(rejected?.['proposed_action']), /aoty/)
   assert.ok(rejected?.['validation_result'], 'the reason it was rejected is recorded')
   assert.equal(rejected?.['dispatched_action'], null, 'nothing was dispatched')
 
@@ -284,7 +286,7 @@ test('the model may correct itself: the invalid counter resets on a valid action
   const model = scriptedModel(
     proposes('web_search', 'not json'),
     proposes('web_search', 'still not json'),
-    proposes('fetch_source', '{"source_id": "aoty"}'),
+    proposes('fetch_source', '{"source_id": "loudwire"}'),
     proposes('web_search', 'not json again'),
     proposes('web_search', 'nor this'),
     finishes(items(1)),
@@ -308,7 +310,7 @@ test('a failed validation is returned to the model as that step result', async (
 })
 
 test('a dispatched action returns its result to the model', async () => {
-  const model = scriptedModel(proposes('fetch_source', '{"source_id": "aoty"}'), finishes(items(1)))
+  const model = scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes(items(1)))
   const { stepRows } = await run(model.port)
 
   assert.match(String(stepRows[0]?.['tool_result']), /Cutting the Throat of God/)
@@ -319,7 +321,7 @@ test('a dispatched action returns its result to the model', async () => {
 })
 
 test('every step records its duration', async () => {
-  const model = scriptedModel(proposes('fetch_source', '{"source_id": "aoty"}'), finishes(items(1)))
+  const model = scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes(items(1)))
   const { stepRows } = await run(model.port)
 
   assert.equal(stepRows.length, 2)
@@ -334,7 +336,7 @@ test('every step records its duration', async () => {
 
 test('the stable prefix leads every request and never moves', async () => {
   const model = scriptedModel(
-    proposes('fetch_source', '{"source_id": "aoty"}'),
+    proposes('fetch_source', '{"source_id": "loudwire"}'),
     proposes('web_search', '{"query": "ulcerate"}'),
     finishes(items(1)),
   )
@@ -358,7 +360,7 @@ test('the stable prefix leads every request and never moves', async () => {
 })
 
 test('tokens are counted three ways per step and summed onto the run', async () => {
-  const model = scriptedModel(proposes('fetch_source', '{"source_id": "aoty"}'), finishes(items(1)))
+  const model = scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes(items(1)))
   const { outcome, runRow, stepRows } = await run(model.port)
 
   for (const step of stepRows) {
@@ -470,12 +472,12 @@ test('a release listed by two sources is one candidate carrying both URLs', asyn
     get: async (url) => ({
       status: 200,
       headers: {},
-      body: url.includes('wikipedia') ? fixture('wikipedia.html') : fixture('aoty.html'),
+      body: url.includes('wikipedia') ? fixture('wikipedia.html') : fixture('listing.html'),
     }),
   }
 
   const model = scriptedModel(
-    proposes('fetch_source', '{"source_id": "aoty"}'),
+    proposes('fetch_source', '{"source_id": "loudwire"}'),
     proposes('fetch_source', '{"source_id": "wikipedia"}'),
     finishes(items(1)),
   )
@@ -487,13 +489,13 @@ test('a release listed by two sources is one candidate carrying both URLs', asyn
   const second = JSON.parse(String(stepRows[1]?.['tool_result']))
   assert.equal(second.totalCandidates, 1)
   assert.equal(second.newThisFetch, 0)
-  assert.deepEqual(second.candidates[0].sourceUrls, [SOURCES.aoty, SOURCES.wikipedia])
+  assert.deepEqual(second.candidates[0].sourceUrls, [SOURCES.loudwire, SOURCES.wikipedia])
 
   // And both pages are in the trace, whole, against the run.
   const pages = store.database
     .prepare('SELECT * FROM source_texts WHERE run_id = ? ORDER BY source_id')
     .all(outcome.runId)
-  assert.deepEqual(pages.map((page) => page['source_id']), ['aoty', 'wikipedia'])
+  assert.deepEqual(pages.map((page) => page['source_id']), ['loudwire', 'wikipedia'])
   assert.ok(String(pages[0]?.['raw_body']).includes('albumBlock'))
 })
 
@@ -519,7 +521,7 @@ test('a source that yields nothing warns on the step and the run carries on', as
 })
 
 test('a source fetch that throws ends the run as a tool failure', async () => {
-  const model = scriptedModel(proposes('fetch_source', '{"source_id": "aoty"}'), finishes(items(1)))
+  const model = scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes(items(1)))
   const { outcome, stepRows } = await run(model.port, {
     http: {
       get: async () => {

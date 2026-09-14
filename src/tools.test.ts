@@ -35,7 +35,7 @@ const context = (over: { http?: HttpPort; model?: ModelPort } = {}) => {
 
   const ports = {
     clock: { now: () => new Date(2026, 8, 14, 9, 0, 1) },
-    http: over.http ?? { get: async () => ({ status: 200, headers: {}, body: fixture('aoty.html') }) },
+    http: over.http ?? { get: async () => ({ status: 200, headers: {}, body: fixture('listing.html') }) },
     model: over.model ?? {
       complete: async () => ({
         content: JSON.stringify({
@@ -99,12 +99,14 @@ test('well-formed JSON of the wrong shape is an ordinary failure', () => {
 })
 
 test('an unconfigured source is rejected before anything is fetched', () => {
-  const result = validateAction(call('fetch_source', '{"source_id": "metal-archives"}'))
+  // Album of the Year, dropped in ADR-0031, and Metal Archives, never a source.
+  assert.equal(validateAction(call('fetch_source', '{"source_id": "metal-archives"}')).ok, false)
+  const result = validateAction(call('fetch_source', '{"source_id": "aoty"}'))
   assert.equal(result.ok, false)
 })
 
 test('fetching a source returns its candidates and prices its own model call', async () => {
-  const result = validateAction(call('fetch_source', '{"source_id": "aoty"}'))
+  const result = validateAction(call('fetch_source', '{"source_id": "loudwire"}'))
   assert.ok(result.ok)
 
   const { toolContext } = context()
@@ -124,15 +126,15 @@ test('fetching a source returns its candidates and prices its own model call', a
 })
 
 test('fetching a source records the page it read against the run', async () => {
-  const result = validateAction(call('fetch_source', '{"source_id": "aoty"}'))
+  const result = validateAction(call('fetch_source', '{"source_id": "loudwire"}'))
   assert.ok(result.ok)
 
   const { toolContext, store } = context()
   await dispatch(result.name, result.input, toolContext)
 
   const row = store.database.prepare('SELECT * FROM source_texts WHERE run_id = ?').get('run-1')
-  assert.equal(row?.['source_id'], 'aoty')
-  assert.equal(row?.['url'], SOURCES.aoty)
+  assert.equal(row?.['source_id'], 'loudwire')
+  assert.equal(row?.['url'], SOURCES.loudwire)
   assert.equal(row?.['status'], 200)
   assert.equal(row?.['candidate_count'], 2)
   assert.ok(String(row?.['raw_body']).includes('<div class="albumBlock">'))
@@ -155,7 +157,7 @@ test('a source that yields nothing is recorded, warned about, and does not throw
 })
 
 test('the same release from two sources stays one candidate with both URLs', async () => {
-  const result = validateAction(call('fetch_source', '{"source_id": "aoty"}'))
+  const result = validateAction(call('fetch_source', '{"source_id": "loudwire"}'))
   assert.ok(result.ok)
   const second = validateAction(call('fetch_source', '{"source_id": "wikipedia"}'))
   assert.ok(second.ok)
@@ -165,7 +167,7 @@ test('the same release from two sources stays one candidate with both URLs', asy
   await dispatch(second.name, second.input, toolContext)
 
   assert.equal(toolContext.candidates.length, 2)
-  assert.deepEqual(toolContext.candidates[0]?.sourceUrls, [SOURCES.aoty, SOURCES.wikipedia])
+  assert.deepEqual(toolContext.candidates[0]?.sourceUrls, [SOURCES.loudwire, SOURCES.wikipedia])
 })
 
 test('finish hands its items back to the loop rather than judging them', async () => {

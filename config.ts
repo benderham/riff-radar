@@ -65,12 +65,15 @@ export const SHORTLIST_SIZE = 5
  * these; web search never originates a candidate. Metal Archives is excluded
  * because it lists upcoming releases only (ADR-0002).
  *
- * The fetching lives in ticket 02; the identifiers are here because the action
- * schema names them, so an unknown source is a rejected action rather than a
- * failed request.
+ * Album of the Year was the third. It answers every request with a bot
+ * challenge and cannot be read without pretending to be a browser on a site
+ * that has said no, so it is not configured and a run does not spend a step
+ * knocking (ADR-0031). Its URL is in that decision, one line from returning.
+ *
+ * The identifiers are what the action schema names, so an unknown source is a
+ * rejected action rather than a failed request.
  */
 export const SOURCES = {
-  aoty: 'https://www.albumoftheyear.org/genre/40-metal/recent/',
   wikipedia: 'https://en.wikipedia.org/wiki/2026_in_heavy_metal_music',
   loudwire: 'https://loudwire.com/2026-hard-rock-metal-album-release-calendar/',
 } as const

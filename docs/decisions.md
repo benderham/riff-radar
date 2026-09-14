@@ -4,7 +4,7 @@ ADR-style log of architectural decisions for Riff Radar. Newest at the bottom. E
 
 ## ADR-0001: Discover from fixed configured sources, not open web search
 
-**Status:** ACCEPTED
+**Status:** ACCEPTED — amended by ADR-0031, which drops one of the three sources
 
 The brief says the agent searches the web, but Ben's actual workflow reads four known sites. We discover from a fixed, configured source list and keep open web search as a secondary enrichment action only; a candidate may never originate from a search. Fixed sources are reproducible, which the Milestone 3 golden dataset requires and open search cannot provide, and they match the sources Ben already trusts.
 
@@ -245,12 +245,12 @@ Three sources exist so that no one of them is critical. Ending a run because Lou
 
 The rule the specification states is narrower — a source that *normally* yields candidates and yields none — and nothing here knows what a source normally does, because no run's results are ever fed to another (ADR-0009). So every empty source warns, including a genuinely quiet page, and the warning says the page may have changed shape rather than asserting that it has. The risk accepted is a quietly degraded run — two sources reporting and one silently empty week after week — which `npm run smoke:sources` exists to catch.
 
-## ADR-0031: Album of the Year is behind a bot challenge, and stays a source unread
+## ADR-0031: Album of the Year is behind a bot challenge; version 1 runs on two sources
 
-**Status:** PROPOSED — needs Ben's approval
+**Status:** ACCEPTED — amends ADR-0001
 
 ADR-0001 names three sources. Two of them read fine. The third, Album of the Year, answers every request with HTTP 403 and a Cloudflare interstitial — `fixtures/aoty-challenge.html` is what it served on 14 September 2026 — and no ordinary request gets past it. Reading it would mean impersonating a browser and solving a challenge designed to stop exactly that, which is not something this project should be doing to a site that has said no.
 
-So the source stays configured and stays unread. Every run fetches it, records the 403 as a warning against the `source_texts` row, and carries on with the other two (ADR-0030). Nothing is faked and nothing pretends the coverage is complete.
+So version 1 runs on two sources. Album of the Year is not configured at all, rather than configured and failing: a run has thirty steps, and spending one of them knocking on a door that is shut buys nothing but a warning we already know the text of. Its URL lives in this decision, which is one line away from putting it back. Nothing is faked and nothing pretends the coverage is complete.
 
 **Consequences:** Discovery runs on two sources, and a run's coverage is narrower than the specification assumed. Ben has three ways out and this decision commits to none of them: accept two sources and amend ADR-0001; replace Album of the Year with another source that permits reading; or ask them for access. The warning is in every run's trace until one of those happens, which is the point — a source quietly producing nothing is the failure mode ADR-0003 was most worried about, and this one is loud.

@@ -139,7 +139,7 @@ The milestone passes when a single Run demonstrates all seven outcomes, evidence
 
 **Invalid actions.** A validation failure is returned to the model as that step's result and it may retry. Three consecutive invalid actions terminate the Run with `invalid_action_limit` and no write. (ADR-0017)
 
-**Discovery.** Three configured Sources: Album of the Year's recent metal page, the Wikipedia year-in-heavy-metal page, and the Loudwire release calendar. Metal Archives' upcoming page is excluded because a backward-looking window cannot use it. A Candidate may never originate from a web search. (ADR-0001, ADR-0002)
+**Discovery.** Three configured Sources: Album of the Year's recent metal page, the Wikipedia year-in-heavy-metal page, and the Loudwire release calendar. *Amended by ADR-0031: Album of the Year serves a bot challenge and is not configured, so version 1 discovers from two.* Metal Archives' upcoming page is excluded because a backward-looking window cannot use it. A Candidate may never originate from a web search. (ADR-0001, ADR-0002)
 
 **Extraction.** The model extracts Candidates from cleaned page text rather than a per-Source parser. Raw fetched text is stored so extraction is replayable. A Source that normally yields Candidates and yields none is recorded as a warning. (ADR-0003)
 

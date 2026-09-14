@@ -48,7 +48,7 @@ const portsFor = (http: HttpPort, model: ModelPort): Ports => ({
 })
 
 test('the configured URL is fetched, and the cleaned page reaches the extraction call', async () => {
-  const { http, gets } = servingFixture(fixture('aoty.html'))
+  const { http, gets } = servingFixture(fixture('listing.html'))
   const { model, prompts } = extracting(
     extracted([
       {
@@ -61,10 +61,10 @@ test('the configured URL is fetched, and the cleaned page reaches the extraction
     ]),
   )
 
-  const result = await fetchSource(portsFor(http, model), 'aoty', WINDOW)
+  const result = await fetchSource(portsFor(http, model), 'loudwire', WINDOW)
 
-  assert.deepEqual(gets, [SOURCES.aoty])
-  assert.equal(result.url, SOURCES.aoty)
+  assert.deepEqual(gets, [SOURCES.loudwire])
+  assert.equal(result.url, SOURCES.loudwire)
   assert.equal(result.status, 200)
   // The model sees the text, not the markup.
   assert.ok(prompts[0]?.includes('Cutting the Throat of God'))
@@ -75,7 +75,7 @@ test('the configured URL is fetched, and the cleaned page reaches the extraction
       artist: 'Ulcerate',
       title: 'Cutting the Throat of God',
       releaseDates: ['2026-09-12'],
-      sourceUrls: [SOURCES.aoty],
+      sourceUrls: [SOURCES.loudwire],
       label: 'Debemur Morti Productions',
       format: 'LP',
     },
@@ -117,7 +117,7 @@ test('an oversized page is cut, the cut is marked, and the raw body is still who
   const { http } = servingFixture(body)
   const { model, prompts } = extracting(extracted([]))
 
-  const result = await fetchSource(portsFor(http, model), 'aoty', WINDOW)
+  const result = await fetchSource(portsFor(http, model), 'loudwire', WINDOW)
 
   assert.equal(result.truncated, true)
   assert.equal(result.rawBody, body)
@@ -126,21 +126,21 @@ test('an oversized page is cut, the cut is marked, and the raw body is still who
 })
 
 test('a source that yields no candidates records a warning rather than passing quietly', async () => {
-  const { http } = servingFixture(fixture('aoty.html'))
+  const { http } = servingFixture(fixture('listing.html'))
   const { model } = extracting(extracted([]))
 
-  const result = await fetchSource(portsFor(http, model), 'aoty', WINDOW)
+  const result = await fetchSource(portsFor(http, model), 'loudwire', WINDOW)
 
   assert.deepEqual(result.candidates, [])
   assert.match(result.warning ?? '', /no candidates/i)
-  assert.ok(result.warning?.includes(SOURCES.aoty))
+  assert.ok(result.warning?.includes(SOURCES.loudwire))
 })
 
 test('a non-2xx response is a warning naming the status, not an empty page', async () => {
   const { http } = servingFixture('go away', 403)
   const { model, prompts } = extracting(extracted([]))
 
-  const result = await fetchSource(portsFor(http, model), 'aoty', WINDOW)
+  const result = await fetchSource(portsFor(http, model), 'loudwire', WINDOW)
 
   assert.equal(result.status, 403)
   assert.deepEqual(result.candidates, [])
@@ -149,20 +149,20 @@ test('a non-2xx response is a warning naming the status, not an empty page', asy
 })
 
 test('extraction returning something other than JSON is a readable warning', async () => {
-  const { http } = servingFixture(fixture('aoty.html'))
+  const { http } = servingFixture(fixture('listing.html'))
   const { model } = extracting('I could not read that page, sorry.')
 
-  const result = await fetchSource(portsFor(http, model), 'aoty', WINDOW)
+  const result = await fetchSource(portsFor(http, model), 'loudwire', WINDOW)
 
   assert.deepEqual(result.candidates, [])
   assert.match(result.warning ?? '', /not valid JSON/i)
 })
 
 test('extraction returning JSON of the wrong shape is a readable warning', async () => {
-  const { http } = servingFixture(fixture('aoty.html'))
+  const { http } = servingFixture(fixture('listing.html'))
   const { model } = extracting(JSON.stringify({ albums: ['Cool World'] }))
 
-  const result = await fetchSource(portsFor(http, model), 'aoty', WINDOW)
+  const result = await fetchSource(portsFor(http, model), 'loudwire', WINDOW)
 
   assert.deepEqual(result.candidates, [])
   assert.match(result.warning ?? '', /candidates/)

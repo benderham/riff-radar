@@ -163,7 +163,7 @@ const step: RecordedStep = {
   validationResult: 'valid',
   dispatchedAction: '{"name":"fetch_source"}',
   toolName: 'fetch_source',
-  toolArgs: '{"source_id":"aoty"}',
+  toolArgs: '{"source_id":"loudwire"}',
   toolResult: 'cleaned text',
   error: null,
   warning: null,
@@ -219,8 +219,8 @@ test('a fetched page is readable back against its run, body intact', () => {
   store.recordSourceText({
     sourceTextId: 'text-1',
     runId: 'run-1',
-    sourceId: 'aoty',
-    url: 'https://www.albumoftheyear.org/genre/40-metal/recent/',
+    sourceId: 'wikipedia',
+    url: 'https://en.wikipedia.org/wiki/2026_in_heavy_metal_music',
     fetchedAt: '2026-09-14T09:00:01.000Z',
     status: 200,
     rawBody: '<html><body>Ulcerate</body></html>',
@@ -263,7 +263,7 @@ test('a source text cannot be recorded against a run that does not exist', () =>
     store.recordSourceText({
       sourceTextId: 'text-3',
       runId: 'no-such-run',
-      sourceId: 'aoty',
+      sourceId: 'wikipedia',
       url: 'https://example.test/',
       fetchedAt: '2026-09-14T09:00:03.000Z',
       status: 200,

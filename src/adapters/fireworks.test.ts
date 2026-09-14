@@ -19,7 +19,7 @@ const body = (usage: Record<string, unknown>) => ({
           {
             id: 'call_abc',
             type: 'function',
-            function: { name: 'fetch_source', arguments: '{"source_id": "aoty"}' },
+            function: { name: 'fetch_source', arguments: '{"source_id": "loudwire"}' },
           },
         ],
       },
@@ -106,7 +106,7 @@ test('a tool call is carried through as untrusted text', async () => {
   const response = await fireworksModel('fw-key').complete({ messages, tools: toolDefinitions })
 
   assert.deepEqual(response.toolCalls, [
-    { id: 'call_abc', name: 'fetch_source', argumentsJson: '{"source_id": "aoty"}' },
+    { id: 'call_abc', name: 'fetch_source', argumentsJson: '{"source_id": "loudwire"}' },
   ])
 })
 

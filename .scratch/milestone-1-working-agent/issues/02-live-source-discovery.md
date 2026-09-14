@@ -11,7 +11,7 @@ A Candidate may only ever originate from a configured Source.
 ## Acceptance criteria
 
 - [x] The `http` port returns status, headers and body, and its adapter is the only code performing the request
-- [x] All three Sources from the specification are configured and fetchable; the excluded upcoming-releases site is absent
+- [x] The Sources from the specification are configured and fetchable; the excluded upcoming-releases site is absent — **two, not three**: Album of the Year answers every request with a bot challenge and was dropped (ADR-0031)
 - [x] HTML is reduced by a hand-written tag stripper — no parsing dependency
 - [x] The model extracts Candidates from cleaned text; there is no per-Source parser
 - [x] The raw fetched text of every Source is persisted against the Run
