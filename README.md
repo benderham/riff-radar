@@ -29,4 +29,39 @@ See [project-brief.md](docs/project-brief.md) for the complete scope and milesto
 
 ## Getting started
 
-Implementation commands and environment setup will be added when the initial technology decisions are recorded.
+Requires Node 22.22 or later.
+
+```sh
+npm install
+```
+
+Three environment variables must be set before a run will start:
+
+```sh
+export FIREWORKS_API_KEY=...     # the model provider
+export NOTION_TOKEN=...          # Notion integration token
+export NOTION_DATABASE_ID=...    # the database proposals are written to
+```
+
+Then:
+
+```sh
+npm run riff-radar -- run                      # the past seven days
+npm run riff-radar -- run --last-days 14       # a wider window
+npm run riff-radar -- run --dry-run            # everything except the Notion write
+```
+
+A run appends one row to `riff-radar.db`, readable with any SQL client:
+
+```sh
+sqlite3 riff-radar.db 'SELECT run_id, resolved_from, resolved_to, termination_reason FROM runs'
+```
+
+## Development
+
+```sh
+npm test              # node:test, beside the source
+npm run typecheck     # tsc --noEmit
+npm run check:layering  # domain/ imports nothing from clients/ or adapters/
+npm run check         # all three
+```

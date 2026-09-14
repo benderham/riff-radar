@@ -1,0 +1,27 @@
+{
+  "name": "riff-radar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.22.0"
+  },
+  "bin": {
+    "riff-radar": "./src/cli.ts"
+  },
+  "scripts": {
+    "riff-radar": "node --disable-warning=ExperimentalWarning --import tsx src/cli.ts",
+    "test": "node --disable-warning=ExperimentalWarning --import tsx --test \"src/**/*.test.ts\" \"scripts/**/*.test.ts\" \"*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "check:layering": "node --import tsx scripts/check-layering.ts",
+    "check": "npm run typecheck && npm run check:layering && npm test"
+  },
+  "dependencies": {
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}
