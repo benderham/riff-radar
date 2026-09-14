@@ -27,6 +27,27 @@ export interface StartedRun {
   readonly modelId: string
 }
 
+export interface RecordedStep {
+  readonly stepId: string
+  readonly runId: string
+  readonly stepIndex: number
+  readonly timestamp: string
+  readonly durationMs: number
+  readonly kind: 'action' | 'invalid_action' | 'finish' | 'model_error' | 'tool_error'
+  readonly modelResponse: string | null
+  readonly proposedAction: string | null
+  readonly validationResult: string | null
+  readonly dispatchedAction: string | null
+  readonly toolName: string | null
+  readonly toolArgs: string | null
+  readonly toolResult: string | null
+  readonly error: string | null
+  readonly uncachedInputTokens: number
+  readonly cachedInputTokens: number
+  readonly outputTokens: number
+  readonly cost: number
+}
+
 export interface FinishedRun {
   readonly runId: string
   readonly endedAt: string
@@ -37,11 +58,13 @@ export interface FinishedRun {
   readonly estimatedCost: number
   readonly shortlistSize: number
   readonly notionWritePerformed: boolean
+  readonly costIsUpperBound: boolean
 }
 
 export interface Store {
   readonly database: DatabaseSync
   startRun(run: StartedRun): void
+  recordStep(step: RecordedStep): void
   finishRun(run: FinishedRun): void
   close(): void
 }
@@ -74,6 +97,38 @@ export const openStore = (path: string): Store => {
         )
     },
 
+    recordStep(step) {
+      database
+        .prepare(
+          `INSERT INTO steps (
+             step_id, run_id, step_index, timestamp, duration_ms, kind,
+             model_response, proposed_action, validation_result, dispatched_action,
+             tool_name, tool_args, tool_result, error,
+             uncached_input_tokens, cached_input_tokens, output_tokens, cost
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          step.stepId,
+          step.runId,
+          step.stepIndex,
+          step.timestamp,
+          step.durationMs,
+          step.kind,
+          step.modelResponse,
+          step.proposedAction,
+          step.validationResult,
+          step.dispatchedAction,
+          step.toolName,
+          step.toolArgs,
+          step.toolResult,
+          step.error,
+          step.uncachedInputTokens,
+          step.cachedInputTokens,
+          step.outputTokens,
+          step.cost,
+        )
+    },
+
     finishRun(run) {
       // The WHERE clause carries the guarantee: a run already holding a reason
       // matches nothing, so a second ending changes no row and is reported.
@@ -82,7 +137,8 @@ export const openStore = (path: string): Store => {
           `UPDATE runs SET
              ended_at = ?, termination_reason = ?,
              uncached_input_tokens = ?, cached_input_tokens = ?, output_tokens = ?,
-             estimated_cost = ?, shortlist_size = ?, notion_write_performed = ?
+             estimated_cost = ?, shortlist_size = ?, notion_write_performed = ?,
+             cost_is_upper_bound = ?
            WHERE run_id = ? AND termination_reason IS NULL`,
         )
         .run(
@@ -94,6 +150,7 @@ export const openStore = (path: string): Store => {
           run.estimatedCost,
           run.shortlistSize,
           run.notionWritePerformed ? 1 : 0,
+          run.costIsUpperBound ? 1 : 0,
           run.runId,
         )
 

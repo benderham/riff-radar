@@ -38,3 +38,41 @@ export const REQUIRED_CREDENTIALS = [
  */
 export const missingCredentials = (env: Record<string, string | undefined>): string[] =>
   REQUIRED_CREDENTIALS.filter((name) => !env[name]?.trim())
+
+/** The provider's OpenAI-compatible endpoint (ADR-0014). */
+export const MODEL_ENDPOINT = 'https://api.fireworks.ai/inference/v1/chat/completions'
+
+/**
+ * Price in US dollars per million tokens (ADR-0020). Cached input is ~30x
+ * cheaper than uncached, so the three are priced separately and never summed.
+ */
+export const PRICE_PER_MILLION = {
+  uncachedInput: 0.22,
+  cachedInput: 0.007,
+  output: 0.66,
+} as const
+
+/** The loop's ceilings. Each maps to exactly one termination reason. */
+export const MAX_STEPS = 30
+export const INVALID_ACTION_LIMIT = 3
+export const MAX_RUN_COST_USD = 0.25
+
+/** Fixed in configuration, never a flag. */
+export const SHORTLIST_SIZE = 5
+
+/**
+ * The configured release sources (ADR-0001). Discovery reads these and only
+ * these; web search never originates a candidate. Metal Archives is excluded
+ * because it lists upcoming releases only (ADR-0002).
+ *
+ * The fetching lives in ticket 02; the identifiers are here because the action
+ * schema names them, so an unknown source is a rejected action rather than a
+ * failed request.
+ */
+export const SOURCES = {
+  aoty: 'https://www.albumoftheyear.org/genre/40-metal/recent/',
+  wikipedia: 'https://en.wikipedia.org/wiki/2026_in_heavy_metal_music',
+  loudwire: 'https://loudwire.com/2026-hard-rock-metal-album-release-calendar/',
+} as const
+
+export type SourceId = keyof typeof SOURCES

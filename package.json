@@ -11,7 +11,8 @@
     "test": "node --disable-warning=ExperimentalWarning --import tsx --test \"src/**/*.test.ts\" \"scripts/**/*.test.ts\" \"*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "check:layering": "node --import tsx scripts/check-layering.ts",
-    "check": "npm run typecheck && npm run check:layering && npm test"
+    "check": "npm run typecheck && npm run check:layering && npm test",
+    "smoke:model": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --import tsx scripts/smoke-model.ts"
   },
   "dependencies": {
     "zod": "^4.1.13"

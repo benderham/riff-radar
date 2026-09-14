@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 
 import { TERMINATION_REASONS } from '../domain/run.ts'
+import type { RecordedStep } from './store.ts'
 import { openStore } from './store.ts'
 
 // The specification names these columns. A trace that drops one cannot be
@@ -11,7 +12,7 @@ const RUN_COLUMNS = [
   'run_id', 'started_at', 'ended_at', 'cli_args', 'resolved_from', 'resolved_to',
   'prompt_version', 'profile_version', 'action_schema_version', 'model_id',
   'termination_reason', 'uncached_input_tokens', 'cached_input_tokens', 'output_tokens',
-  'estimated_cost', 'shortlist_size', 'notion_write_performed',
+  'estimated_cost', 'shortlist_size', 'notion_write_performed', 'cost_is_upper_bound',
 ]
 
 const STEP_COLUMNS = [
@@ -72,6 +73,7 @@ test('finishing a run records its reason, its end and its accounting', () => {
     estimatedCost: 0.000079,
     shortlistSize: 0,
     notionWritePerformed: false,
+    costIsUpperBound: false,
   })
 
   const row = store.database.prepare('SELECT * FROM runs WHERE run_id = ?').get('run-1')
@@ -94,6 +96,7 @@ test('a run cannot be given a second termination reason', () => {
     estimatedCost: 0,
     shortlistSize: 0,
     notionWritePerformed: false,
+    costIsUpperBound: false,
   }
   store.finishRun(ending)
 
@@ -130,6 +133,7 @@ test('every documented termination reason is accepted by the schema', () => {
       estimatedCost: 0,
       shortlistSize: 0,
       notionWritePerformed: false,
+      costIsUpperBound: false,
     })
   }
   assert.equal(store.database.prepare('SELECT count(*) AS n FROM runs').get()?.['n'], TERMINATION_REASONS.length)
@@ -142,4 +146,45 @@ test('a step cannot reference a run that does not exist', () => {
       .prepare('INSERT INTO steps (step_id, run_id, step_index, timestamp, kind) VALUES (?, ?, ?, ?, ?)')
       .run('step-1', 'no-such-run', 0, started.startedAt, 'model'),
   )
+})
+
+const step: RecordedStep = {
+  stepId: 'step-1',
+  runId: 'run-1',
+  stepIndex: 0,
+  timestamp: started.startedAt,
+  durationMs: 412,
+  kind: 'action',
+  modelResponse: '{"choices":[]}',
+  proposedAction: '{"name":"fetch_source"}',
+  validationResult: 'valid',
+  dispatchedAction: '{"name":"fetch_source"}',
+  toolName: 'fetch_source',
+  toolArgs: '{"source_id":"aoty"}',
+  toolResult: 'cleaned text',
+  error: null,
+  uncachedInputTokens: 100,
+  cachedInputTokens: 20,
+  outputTokens: 10,
+  cost: 0.00003,
+}
+
+test('a recorded step is readable with plain SQL', () => {
+  const store = openStore(':memory:')
+  store.startRun(started)
+  store.recordStep(step)
+
+  const row = store.database.prepare('SELECT * FROM steps WHERE step_id = ?').get('step-1')
+  assert.equal(row?.['duration_ms'], 412)
+  assert.equal(row?.['validation_result'], 'valid')
+  assert.equal(row?.['tool_result'], 'cleaned text')
+  assert.equal(row?.['cached_input_tokens'], 20)
+})
+
+test('two steps of one run cannot share an index', () => {
+  const store = openStore(':memory:')
+  store.startRun(started)
+  store.recordStep(step)
+
+  assert.throws(() => store.recordStep({ ...step, stepId: 'step-2' }))
 })
