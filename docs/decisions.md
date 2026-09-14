@@ -163,3 +163,22 @@ Other people on Ben's team use the Flue framework, and Riff Radar may migrate to
 Earlier drafts of the Milestone 1 specification showed the taste profile as `taste-profile.yaml`. Node has no built-in YAML parser, and ADR-0013 caps the runtime dependency budget at `zod` alone, so YAML would mean either taking a parsing dependency or hand-writing a parser for a narrow subset. The profile is a small, flat, hand-edited structure of lists; JSON expresses it adequately and `JSON.parse` reads it for free. The file becomes `taste-profile.json`.
 
 **Consequences:** The profile loses comments, which YAML would have allowed beside each entry — if annotation turns out to matter, an explicit `note` field is cheaper than reopening the format. `docs/specs/milestone-1-working-agent.md` is updated to match. Validation is still Zod's, so a malformed profile fails with a useful error rather than silently loading empty lists.
+## ADR-0023: The date window resolves in local time
+
+**Status:** ACCEPTED
+
+`--last-days N` resolves to a pair of `YYYY-MM-DD` local calendar dates, inclusive at both ends, with `N` counting days including today: a seven-day run on Monday the 14th covers the 8th to the 14th. Resolution happens once at the start of a run and the resolved pair is what the trace records; the flag means something different every day and a stored `7` would tell a later reader nothing.
+
+Local time rather than UTC, because the window means "the week Ben just lived through". For most of an Australian working day the UTC date is a day behind, so a Friday-morning run resolved in UTC would quietly end on Thursday. Dates rather than instants, because releases carry dates and not times, which also makes range comparison ordinary string comparison.
+
+**Consequences:** A run started either side of midnight covers different windows, which is correct but means a run is not reproducible from its flag alone — only from its recorded range, which is why the range is recorded. Milestone 3's golden dataset will need absolute `--from`/`--to` dates that bypass resolution entirely; nothing here blocks that.
+
+## ADR-0024: `@types/node` is a fourth development dependency
+
+**Status:** PENDING — needs Ben's approval
+
+ADR-0013 budgets three dependencies: `typescript`, `tsx`, `zod`. Type checking the code requires a fourth, `@types/node`, because TypeScript ships no declarations for Node's built-ins and the project deliberately leans on `node:sqlite`, `node:test`, `node:fs` and `fetch` in place of libraries. Without it `tsc --noEmit` cannot resolve a single import and the static check the completion protocol requires does not run at all.
+
+It is development-only, types-only, and emits no runtime code. The alternative is hand-written declaration stubs for the Node surface we use, which is more code to maintain and less correct than the published types.
+
+**Consequences:** The dependency budget reads as three runtime-and-build packages plus their type declarations, rather than three packages absolutely. If Ben would rather hold the line at three, the fallback is dropping `npm run typecheck` from the checks, which costs more than the dependency does.

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "artists": {
+    "always": [],
+    "watch": [],
+    "exclude": []
+  },
+  "labels": { "include": [], "exclude": [] },
+  "genres": { "include": [], "exclude": [] },
+  "personnel": { "include": [], "exclude": [] },
+  "vibe_notes": { "include": [], "exclude": [] }
+}
