@@ -64,6 +64,7 @@ A run appends one row to `riff-radar.db`, readable with any SQL client:
 
 ```sh
 sqlite3 riff-radar.db 'SELECT run_id, resolved_from, resolved_to, termination_reason FROM runs'
+sqlite3 riff-radar.db 'SELECT step_index, kind, tool_name, validation_result FROM steps ORDER BY step_index'
 ```
 
 ## Development
@@ -73,4 +74,5 @@ npm test              # node:test, beside the source
 npm run typecheck     # tsc --noEmit
 npm run check:layering  # domain/ imports nothing from clients/ or adapters/
 npm run check         # all three
+npm run smoke:model   # one live call to the model provider, never in the suite
 ```

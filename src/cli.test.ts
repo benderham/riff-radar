@@ -2,10 +2,21 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { runCli } from './cli.ts'
-import type { ClockPort } from './ports.ts'
+import type { ClockPort, ModelPort } from './ports.ts'
 import { openStore } from './store/store.ts'
 
 const clock: ClockPort = { now: () => new Date(2026, 8, 14, 9, 0, 0) }
+
+/** Finishes immediately with nothing: the CLI's job is wiring, not choosing. */
+const model: ModelPort = {
+  complete: async () => ({
+    content: '',
+    toolCalls: [{ id: 'call-1', name: 'finish', argumentsJson: '{"shortlist": []}' }],
+    usage: { uncachedInputTokens: 120, cachedInputTokens: 30, outputTokens: 12 },
+    cacheReported: true,
+    raw: {},
+  }),
+}
 
 const env = {
   FIREWORKS_API_KEY: 'fw-key',
@@ -26,7 +37,7 @@ const harness = () => {
       return storesOpened
     },
     deps: {
-      ports: { clock },
+      ports: { clock, model },
       openStore: () => {
         storesOpened += 1
         const opened = openStore(':memory:')
@@ -40,19 +51,20 @@ const harness = () => {
   }
 }
 
-test('a bare run succeeds and reports its window and reason', () => {
+test('a bare run succeeds and reports its window and reason', async () => {
   const h = harness()
-  const code = runCli({ argv: ['run'], env, ...h.deps })
+  const code = await runCli({ argv: ['run'], env, ...h.deps })
 
   assert.equal(code, 0)
   assert.equal(h.store?.database.prepare('SELECT count(*) AS n FROM runs').get()?.['n'], 1)
   assert.match(h.lines.join('\n'), /2026-09-08.+2026-09-14/s)
   assert.match(h.lines.join('\n'), /no_candidates/)
+  assert.match(h.lines.join('\n'), /120 uncached \+ 30 cached input, 12 output tokens/)
 })
 
-test('missing credentials refuse the run and write nothing at all', () => {
+test('missing credentials refuse the run and write nothing at all', async () => {
   const h = harness()
-  const code = runCli({ argv: ['run'], env: { FIREWORKS_API_KEY: 'fw-key' }, ...h.deps })
+  const code = await runCli({ argv: ['run'], env: { FIREWORKS_API_KEY: 'fw-key' }, ...h.deps })
 
   assert.equal(code, 2)
   assert.equal(h.storesOpened, 0, 'the database must not even be opened')
@@ -61,36 +73,36 @@ test('missing credentials refuse the run and write nothing at all', () => {
   assert.match(h.lines.join('\n'), /NOTION_DATABASE_ID/)
 })
 
-test('the refusal never prints a credential value', () => {
+test('the refusal never prints a credential value', async () => {
   const h = harness()
-  runCli({ argv: ['run'], env: { ...env, NOTION_TOKEN: '' }, ...h.deps })
+  await runCli({ argv: ['run'], env: { ...env, NOTION_TOKEN: '' }, ...h.deps })
   assert.doesNotMatch(h.lines.join('\n'), /fw-key|db-id/)
 })
 
-test('a usage error refuses the run and writes nothing', () => {
+test('a usage error refuses the run and writes nothing', async () => {
   const h = harness()
-  const code = runCli({ argv: ['run', '--last-days', 'seven'], env, ...h.deps })
+  const code = await runCli({ argv: ['run', '--last-days', 'seven'], env, ...h.deps })
 
   assert.equal(code, 2)
   assert.equal(h.storesOpened, 0)
   assert.match(h.lines.join('\n'), /--last-days/)
 })
 
-test('an unknown command prints usage', () => {
+test('an unknown command prints usage', async () => {
   const h = harness()
-  assert.equal(runCli({ argv: ['fly'], env, ...h.deps }), 2)
+  assert.equal(await runCli({ argv: ['fly'], env, ...h.deps }), 2)
   assert.match(h.lines.join('\n'), /usage: riff-radar run/)
 })
 
-test('a dry run is reported as one', () => {
+test('a dry run is reported as one', async () => {
   const h = harness()
-  assert.equal(runCli({ argv: ['run', '--dry-run'], env, ...h.deps }), 0)
+  assert.equal(await runCli({ argv: ['run', '--dry-run'], env, ...h.deps }), 0)
   assert.match(h.lines.join('\n'), /dry run/i)
 })
 
-test('a malformed taste profile refuses the run and writes nothing', () => {
+test('a malformed taste profile refuses the run and writes nothing', async () => {
   const h = harness()
-  const code = runCli({
+  const code = await runCli({
     argv: ['run'],
     env,
     ...h.deps,
@@ -102,11 +114,11 @@ test('a malformed taste profile refuses the run and writes nothing', () => {
   assert.match(h.lines.join('\n'), /taste-profile\.json/)
 })
 
-test('an unusable command line is reported before missing credentials', () => {
+test('an unusable command line is reported before missing credentials', async () => {
   // Both are wrong here. Parsing costs nothing and its message is the more
   // specific of the two, so it is the one that surfaces.
   const h = harness()
-  const code = runCli({ argv: ['run', '--last-days', '0'], env: {}, ...h.deps })
+  const code = await runCli({ argv: ['run', '--last-days', '0'], env: {}, ...h.deps })
 
   assert.equal(code, 2)
   assert.match(h.lines.join('\n'), /--last-days/)

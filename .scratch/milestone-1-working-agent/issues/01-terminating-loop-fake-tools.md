@@ -6,7 +6,7 @@ This is the largest ticket in the milestone and the one the project exists to te
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent (part A complete, commit 037c41a; part B outstanding)
+**Status:** needs-review (part A complete, commit 037c41a; part B complete)
 
 ## Session break
 
@@ -31,24 +31,24 @@ Two sittings. Part A stands alone and is demoable without a model; part B is the
 
 ### Part B
 
-- [ ] The model is reached over the provider's OpenAI-compatible endpoint using built-in `fetch`, with no provider SDK
-- [ ] The loop is readable top to bottom in a single file
-- [ ] All four actions are declared once each — name, description, input schema, implementation together — and the JSON tool schema sent to the model is derived from those declarations rather than maintained separately
-- [ ] Tool-call arguments are treated as untrusted: parsed, then validated against the action schema, before every dispatch
-- [ ] Malformed JSON and well-formed JSON of the wrong shape are both handled as ordinary failures
-- [ ] A failed validation is returned to the model as that step's result and the model may correct itself
-- [ ] Three consecutive invalid actions end the Run with `invalid_action_limit` and no write
-- [ ] Thirty steps end the Run with `max_steps_exceeded` and no write
-- [ ] A token or cost ceiling ends the Run with `budget_exceeded` and no write
-- [ ] `finish` with 5 valid items ends the Run `completed`; with 1–4 valid items, `completed_short`; with an invalid shortlist, `validation_failed`
-- [ ] Shortlist validation is a pure function: 1–5 items, no two sharing a Release Identity, and each item carrying artist, album title, a release date inside the resolved range, at least one Source URL, a rank, a Rationale, and either a MusicBrainz ID or an explicit `unverified: true`
-- [ ] A missing Source URL invalidates an item; a missing MusicBrainz ID does not
-- [ ] Every step records its proposed action, its validation result and its dispatched action in separate columns, so a rejected action is visible rather than absent
-- [ ] Every step records its duration
-- [ ] Uncached input, cached input and output tokens are counted separately per step and per Run, and estimated cost is computed from all three rates
-- [ ] The stable prefix — system prompt, tool definitions, taste profile — is sent ahead of anything that varies per step
-- [ ] Whether the provider reports cached token counts is settled against a real response; if it does not, cost is recorded as an upper bound and labelled as one
-- [ ] Prompt version, profile version, action schema version and model identifier are recorded on the Run
-- [ ] Exactly one Termination Reason is recorded per Run
-- [ ] A live smoke test against the model provider exists, invoked separately and excluded from the automated suite
-- [ ] Every Termination Reason reachable in this ticket is covered by a test driven through the injected ports
+- [x] The model is reached over the provider's OpenAI-compatible endpoint using built-in `fetch`, with no provider SDK
+- [x] The loop is readable top to bottom in a single file
+- [x] All four actions are declared once each — name, description, input schema, implementation together — and the JSON tool schema sent to the model is derived from those declarations rather than maintained separately
+- [x] Tool-call arguments are treated as untrusted: parsed, then validated against the action schema, before every dispatch
+- [x] Malformed JSON and well-formed JSON of the wrong shape are both handled as ordinary failures
+- [x] A failed validation is returned to the model as that step's result and the model may correct itself
+- [x] Three consecutive invalid actions end the Run with `invalid_action_limit` and no write
+- [x] Thirty steps end the Run with `max_steps_exceeded` and no write
+- [x] A token or cost ceiling ends the Run with `budget_exceeded` and no write
+- [x] `finish` with 5 valid items ends the Run `completed`; with 1–4 valid items, `completed_short`; with an invalid shortlist, `validation_failed`
+- [x] Shortlist validation is a pure function: 1–5 items, no two sharing a Release Identity, and each item carrying artist, album title, a release date inside the resolved range, at least one Source URL, a rank, a Rationale, and either a MusicBrainz ID or an explicit `unverified: true`
+- [x] A missing Source URL invalidates an item; a missing MusicBrainz ID does not
+- [x] Every step records its proposed action, its validation result and its dispatched action in separate columns, so a rejected action is visible rather than absent
+- [x] Every step records its duration
+- [x] Uncached input, cached input and output tokens are counted separately per step and per Run, and estimated cost is computed from all three rates
+- [x] The stable prefix — system prompt, tool definitions, taste profile — is sent ahead of anything that varies per step
+- [x] Whether the provider reports cached token counts is settled against a real response; if it does not, cost is recorded as an upper bound and labelled as one — settled live: Fireworks reports them (ADR-0028), so cost is a measurement
+- [x] Prompt version, profile version, action schema version and model identifier are recorded on the Run
+- [x] Exactly one Termination Reason is recorded per Run
+- [x] A live smoke test against the model provider exists, invoked separately and excluded from the automated suite
+- [x] Every Termination Reason reachable in this ticket is covered by a test driven through the injected ports

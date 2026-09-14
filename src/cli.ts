@@ -13,6 +13,7 @@ import process from 'node:process'
 import { z } from 'zod'
 
 import { DATABASE_PATH, TASTE_PROFILE_PATH, missingCredentials } from '../config.ts'
+import { fireworksModel } from './adapters/fireworks.ts'
 import { runRiffRadar } from './agents/riff-radar.ts'
 import { UsageError, parseCliArgs } from './domain/cli-args.ts'
 import { tasteProfileSchema } from './domain/taste-profile.ts'
@@ -32,14 +33,14 @@ export interface CliDependencies {
   readonly readTasteProfile?: () => unknown
 }
 
-export const runCli = ({
+export const runCli = async ({
   argv,
   env,
   ports,
   openStore: open,
   log,
   readTasteProfile = () => JSON.parse(readFileSync(TASTE_PROFILE_PATH, 'utf8')),
-}: CliDependencies): number => {
+}: CliDependencies): Promise<number> => {
   let args
   try {
     args = parseCliArgs(argv)
@@ -66,7 +67,7 @@ export const runCli = ({
   const store = open()
 
   try {
-    const outcome = runRiffRadar({ args, ports, store, profile: profile.data })
+    const outcome = await runRiffRadar({ args, ports, store, profile: profile.data })
 
     log(`run ${outcome.runId}`)
     log(`window ${outcome.window.from} to ${outcome.window.to}${args.dryRun ? ' (dry run)' : ''}`)
@@ -76,6 +77,13 @@ export const runCli = ({
         outcome.notionWritePerformed ? 'yes' : 'no'
       }`,
     )
+    log(
+      `${outcome.stepCount} steps; ${outcome.usage.uncachedInputTokens} uncached + ${
+        outcome.usage.cachedInputTokens
+      } cached input, ${outcome.usage.outputTokens} output tokens; ${
+        outcome.costIsUpperBound ? 'at most ' : ''
+      }$${outcome.estimatedCost.toFixed(4)}`,
+    )
     return EXIT_OK
   } finally {
     store.close()
@@ -83,10 +91,15 @@ export const runCli = ({
 }
 
 if (process.argv[1]?.endsWith('cli.ts')) {
-  process.exitCode = runCli({
+  process.exitCode = await runCli({
     argv: process.argv.slice(2),
     env: process.env,
-    ports: { clock: { now: () => new Date() } },
+    ports: {
+      clock: { now: () => new Date() },
+      // Empty rather than asserted: `runCli` refuses a missing credential
+      // before it starts a run, so the port is never reached without one.
+      model: fireworksModel(process.env['FIREWORKS_API_KEY'] ?? ''),
+    },
     openStore: () => openStore(DATABASE_PATH),
     log: (line) => console.log(line),
   })

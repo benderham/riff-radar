@@ -32,12 +32,16 @@ CREATE TABLE IF NOT EXISTS runs (
   output_tokens         INTEGER NOT NULL DEFAULT 0,
   estimated_cost        REAL NOT NULL DEFAULT 0,
   shortlist_size        INTEGER NOT NULL DEFAULT 0,
-  notion_write_performed INTEGER NOT NULL DEFAULT 0 CHECK (notion_write_performed IN (0, 1))
+  notion_write_performed INTEGER NOT NULL DEFAULT 0 CHECK (notion_write_performed IN (0, 1)),
+  -- 1 when the provider reported no cached-token breakdown, so every input
+  -- token was priced as uncached and estimated_cost is a ceiling (ADR-0020).
+  cost_is_upper_bound   INTEGER NOT NULL DEFAULT 0 CHECK (cost_is_upper_bound IN (0, 1))
 );
 
 -- The proposed action, the validation result and the dispatched action are
 -- separate columns so that a rejected action is visible rather than absent
--- (ADR-0012). No step rows are written yet; the loop arrives in part B.
+-- (ADR-0012): a step whose proposed_action failed validation has no
+-- dispatched_action, and the reason sits between them.
 CREATE TABLE IF NOT EXISTS steps (
   step_id               TEXT PRIMARY KEY,
   run_id                TEXT NOT NULL REFERENCES runs(run_id),

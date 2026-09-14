@@ -182,3 +182,41 @@ ADR-0013 budgets three dependencies: `typescript`, `tsx`, `zod`. Type checking t
 It is development-only, types-only, and emits no runtime code. The alternative is hand-written declaration stubs for the Node surface we use, which is more code to maintain and less correct than the published types.
 
 **Consequences:** The dependency budget reads as three runtime-and-build packages plus their type declarations, rather than three packages absolutely. If Ben would rather hold the line at three, the fallback is dropping `npm run typecheck` from the checks, which costs more than the dependency does.
+
+## ADR-0025: An empty shortlist is `no_candidates`, not a failed validation
+
+**Status:** ACCEPTED
+
+`finish` with zero items ends the run with `no_candidates`. The shortlist validator requires between one and five items, so an empty shortlist would otherwise be `validation_failed` — the reason reserved for a model that proposed something broken. A quiet release week is not a broken proposal, and the termination reason is the field a later reader uses to tell "the agent misbehaved" from "there was nothing to find".
+
+**Consequences:** Zero items is the one shortlist size checked in the loop rather than by the validator, which stays pure and keeps its 1–5 rule. Neither reason permits a Notion write, so the distinction costs nothing operationally and everything diagnostically. The system prompt tells the model to call `finish` with an empty shortlist when nothing is eligible, rather than leaving it to stall until `max_steps_exceeded`.
+
+## ADR-0026: A per-run cost ceiling of USD 0.25, and cost labelled when it is a ceiling
+
+**Status:** ACCEPTED
+
+`budget_exceeded` needs a number and the specification gives none. The ceiling is USD 0.25 per run, checked before each model call rather than after, so it is a ceiling rather than a line the run notices it has already crossed. At the confirmed prices that is roughly a million uncached input tokens: far beyond an honest thirty-step run, and reached only by something runaway, which is what the guardrail is for.
+
+Runs also carry `cost_is_upper_bound`. ADR-0020 left open whether the provider reports a cached-token breakdown; when a response does not, every input token in it is priced as uncached and the run is flagged. The flag is a column rather than a note, because Milestone 4's economics evidence has to distinguish a measured cost from a ceiling without reading prose.
+
+The specification names "token or cost ceiling"; only the cost ceiling is implemented, because cost is what the tokens are counted for and a token ceiling would be a second number expressing the same limit less directly.
+
+**Consequences:** A run that legitimately needs more than a quarter of a dollar is terminated, which at thirty steps cannot happen without something being wrong. The ceiling is in `config.ts` and moves without touching the loop. A single run whose first response omits the breakdown flags the whole run, deliberately: a cost that is partly measured and partly bounded is a bound.
+
+## ADR-0027: One tool call per response is asked of the provider, not only of the prompt
+
+**Status:** ACCEPTED
+
+Requests set `parallel_tool_calls: false`. The loop's shape is one action per step, and the system prompt says so, but the first live call against DeepSeek V4.1 Flash returned three `fetch_source` calls in a single response — one per configured source, which is a sensible thing for a model to do and exactly what the loop cannot accept. Refusing them is correct and already implemented, but a run that refuses the model's first reasonable move three times in a row terminates with `invalid_action_limit` before it fetches anything.
+
+So the constraint is asked for twice: of the provider, which honours it, and of the model in the prompt, which did not. The client-side refusal stays as the guardrail behind both, because a provider flag is a request and not a guarantee.
+
+**Consequences:** A run takes one step per source rather than fetching all three at once, which is slower and is the price of a loop whose every step is separately validated, recorded and interruptible. The multi-call rejection is now a guardrail that should never fire in normal operation; the test that drives it is what keeps it honest. If a later ticket wants genuine parallelism it needs its own decision, because the step model — one proposed action, one validation, one dispatch, one row — assumes it away.
+
+## ADR-0028: Fireworks reports cached token counts, so cost is a measurement
+
+**Status:** ACCEPTED
+
+Settles the question ADR-0020 left open. A live call confirms that Fireworks returns `usage.prompt_tokens_details.cached_tokens`, and that the cache behaves as the stable-prefix design assumed: a first request billed 1411 uncached input tokens, and the next identical prefix billed 129 uncached and 1282 cached. Cost accounting is therefore a measurement rather than an upper bound, and `cost_is_upper_bound` should read 0 on every run against this provider.
+
+**Consequences:** The `cost_is_upper_bound` flag and the code that sets it stay, because they cost nothing and a provider can change what it reports without telling anyone — a run that stops seeing the breakdown labels itself rather than silently misreporting by up to thirty times. The prefix ordering is now evidence rather than theory: roughly 90% of a step's input tokens are served from cache, so the ordering rule in ADR-0020 is load-bearing and not a precaution.
