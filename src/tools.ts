@@ -93,14 +93,18 @@ export const tools = {
       const before = context.candidates.length
       context.candidates = mergeCandidates(context.candidates, fetched.candidates)
 
+      const warning = fetched.warning === undefined ? {} : { warning: fetched.warning }
+
       return {
         done: false,
         usage: fetched.usage,
         cacheReported: fetched.cacheReported,
-        ...(fetched.warning === undefined ? {} : { warning: fetched.warning }),
-        // The model is handed candidates rather than the page: the page has
-        // already been read, and resending it every step would cost more than
-        // the run is allowed to spend.
+        ...warning,
+        // The model is handed candidates rather than the page. The candidates
+        // are the merged set rather than this page's, because `finish` needs
+        // every source URL a release was seen on — but a page is an order of
+        // magnitude larger than the releases on it, and it would be resent on
+        // every subsequent step rather than on the three that fetch.
         result: JSON.stringify({
           source: fetched.sourceId,
           url: fetched.url,
@@ -109,7 +113,7 @@ export const tools = {
           truncated: fetched.truncated,
           newThisFetch: context.candidates.length - before,
           totalCandidates: context.candidates.length,
-          ...(fetched.warning === undefined ? {} : { warning: fetched.warning }),
+          ...warning,
           candidates: context.candidates.map((candidate) => ({
             ...candidate,
             ...(hasDateDisagreement(candidate)

@@ -75,6 +75,7 @@ const EMPTY_STEP: StepFields = {
   toolArgs: null,
   toolResult: null,
   error: null,
+  warning: null,
   ...NO_USAGE,
 }
 
@@ -314,9 +315,10 @@ export const runRiffRadar = async ({
         toolName: validation.name,
         toolArgs: call.argumentsJson,
         toolResult: outcome.result,
-        // A source that yielded nothing is a warning, not a failure: the run
-        // continues on its other sources, and the trace says what was missed.
-        error: outcome.warning ?? null,
+        // A source that yielded nothing is a warning, not a failure (ADR-0030):
+        // the run continues on its other sources, and the trace says what was
+        // missed in a column of its own, so nothing reads it as a failed step.
+        warning: outcome.warning ?? null,
       },
       at,
       elapsed(),

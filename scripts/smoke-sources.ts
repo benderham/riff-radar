@@ -9,10 +9,9 @@
  * yields candidates and suddenly yields none says so here.
  */
 
-import { readFileSync } from 'node:fs'
 import process from 'node:process'
 
-import { SOURCES, TASTE_PROFILE_PATH } from '../config.ts'
+import { SOURCES } from '../config.ts'
 import type { SourceId } from '../config.ts'
 import { fireworksModel } from '../src/adapters/fireworks.ts'
 import { httpAdapter } from '../src/adapters/http.ts'
@@ -25,9 +24,6 @@ if (!apiKey) {
   console.error('FIREWORKS_API_KEY is not set')
   process.exit(2)
 }
-
-// Read only so that the script fails the same way a run would if it is missing.
-readFileSync(TASTE_PROFILE_PATH, 'utf8')
 
 const ports: Ports = {
   clock: { now: () => new Date() },

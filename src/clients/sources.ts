@@ -4,7 +4,7 @@
  * Fetch, reduce to text, and hand the text to the model to extract candidates
  * (ADR-0003). There is no parser per source: four bespoke scrapers would be
  * four things to maintain on a project whose subject is agent loops, and they
- * break the week a site is redesigned.
+ * break the week a source is redesigned.
  *
  * The extraction call is a plain completion with no tools, not an agent: one
  * page in, one JSON object out, nothing chosen. Its cost is returned so that
@@ -13,7 +13,7 @@
  * Nothing here throws for a source that disappoints. A page that 403s, a page
  * that lists nothing, an extraction that comes back malformed — each is a
  * `warning` the run records and the loop hands to the model, because losing one
- * of three sources is a degraded run and not a failed one.
+ * of three sources is a degraded run and not a failed one (ADR-0030).
  */
 
 import { readFileSync } from 'node:fs'

@@ -56,7 +56,11 @@ CREATE TABLE IF NOT EXISTS steps (
   tool_name             TEXT,
   tool_args             TEXT,
   tool_result           TEXT,
+  -- A step that failed sets `error`; a step that succeeded on a source that
+  -- disappointed sets `warning` (ADR-0030). Separate columns because a SQL
+  -- reader must be able to tell a broken run from a quiet one without joining.
   error                 TEXT,
+  warning               TEXT,
   uncached_input_tokens INTEGER NOT NULL DEFAULT 0,
   cached_input_tokens   INTEGER NOT NULL DEFAULT 0,
   output_tokens         INTEGER NOT NULL DEFAULT 0,

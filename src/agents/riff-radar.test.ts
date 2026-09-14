@@ -507,7 +507,8 @@ test('a source that yields nothing warns on the step and the run carries on', as
   })
 
   assert.equal(outcome.terminationReason, 'completed_short', 'a lost source is not a lost run')
-  assert.match(String(stepRows[0]?.['error']), /403/)
+  assert.match(String(stepRows[0]?.['warning']), /403/)
+  assert.equal(stepRows[0]?.['error'], null, 'a warning is not an error')
   assert.equal(stepRows[0]?.['kind'], 'action', 'a warning is not a failed step')
 
   const page = store.database

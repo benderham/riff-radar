@@ -20,7 +20,8 @@ const RUN_COLUMNS = [
 const STEP_COLUMNS = [
   'step_id', 'run_id', 'step_index', 'timestamp', 'duration_ms', 'kind', 'model_response',
   'proposed_action', 'validation_result', 'dispatched_action', 'tool_name', 'tool_args',
-  'tool_result', 'error', 'uncached_input_tokens', 'cached_input_tokens', 'output_tokens', 'cost',
+  'tool_result', 'error', 'warning', 'uncached_input_tokens', 'cached_input_tokens', 'output_tokens',
+  'cost',
 ]
 
 const columnsOf = (database: DatabaseSync, table: string) =>
@@ -165,6 +166,7 @@ const step: RecordedStep = {
   toolArgs: '{"source_id":"aoty"}',
   toolResult: 'cleaned text',
   error: null,
+  warning: null,
   uncachedInputTokens: 100,
   cachedInputTokens: 20,
   outputTokens: 10,

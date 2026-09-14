@@ -34,6 +34,14 @@ One release on the shortlist, carrying its rank, its rationale, and the sources 
 What makes two records the same release. A MusicBrainz release-group identifier where one exists; otherwise the release is marked unverified and identity falls back to artist and title.
 _Avoid_: key, dedup key
 
+**Date Disagreement**:
+Two or more sources stating different release dates for the same release. Every stated date is kept; none is chosen on the sources' behalf.
+_Avoid_: date conflict, mismatch
+
+**Source Text**:
+The page a source served, stored exactly as received so that an extraction can be re-examined without fetching again.
+_Avoid_: snapshot, cache, scrape
+
 **Unverified**:
 A release the agent could not find in MusicBrainz. Unverified means missing evidence, never invalidity.
 _Avoid_: unknown, invalid, unmatched

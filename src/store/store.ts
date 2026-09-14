@@ -42,6 +42,8 @@ export interface RecordedStep {
   readonly toolArgs: string | null
   readonly toolResult: string | null
   readonly error: string | null
+  /** Recorded, not stopped for: a source that returned nothing usable. */
+  readonly warning: string | null
   readonly uncachedInputTokens: number
   readonly cachedInputTokens: number
   readonly outputTokens: number
@@ -149,9 +151,9 @@ export const openStore = (path: string): Store => {
           `INSERT INTO steps (
              step_id, run_id, step_index, timestamp, duration_ms, kind,
              model_response, proposed_action, validation_result, dispatched_action,
-             tool_name, tool_args, tool_result, error,
+             tool_name, tool_args, tool_result, error, warning,
              uncached_input_tokens, cached_input_tokens, output_tokens, cost
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           step.stepId,
@@ -168,6 +170,7 @@ export const openStore = (path: string): Store => {
           step.toolArgs,
           step.toolResult,
           step.error,
+          step.warning,
           step.uncachedInputTokens,
           step.cachedInputTokens,
           step.outputTokens,
