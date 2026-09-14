@@ -52,7 +52,13 @@ const context = (over: { http?: HttpPort; model?: ModelPort } = {}) => {
     },
   } as Ports
 
-  const toolContext: ToolContext = { ports, store, runId: 'run-1', candidates: [] }
+  const toolContext: ToolContext = {
+    ports,
+    store,
+    runId: 'run-1',
+    window: { from: '2026-09-08', to: '2026-09-14' },
+    candidates: [],
+  }
   return { toolContext, store }
 }
 

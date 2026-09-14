@@ -85,9 +85,15 @@ export const HTTP_TIMEOUT_MS = 20_000
 /**
  * The ceiling on cleaned source text handed to the extraction call.
  *
- * A release calendar is a long page, and the whole of one costs more than the
- * run's ceiling allows. Text past the cap is cut and the cut is marked, so a
- * truncated extraction is visible rather than inferred. The raw body is stored
- * whole either way, so raising this never requires refetching.
+ * Sized from the real pages, not guessed: the Loudwire calendar cleans to about
+ * 47,000 characters, and it lists the coming months first and the weeks just
+ * gone at the very end. A cap below the whole page therefore cuts off exactly
+ * the releases a backward-looking run is asking about. 80,000 leaves room for a
+ * page to grow through the year, and costs roughly USD 0.003 an extraction
+ * against a run ceiling of USD 0.25 (ADR-0029).
+ *
+ * Text past the cap is cut and the cut is marked, so a truncated extraction is
+ * visible rather than inferred. The raw body is stored whole either way, so
+ * raising this never requires refetching.
  */
-export const MAX_SOURCE_TEXT_CHARS = 40_000
+export const MAX_SOURCE_TEXT_CHARS = 80_000

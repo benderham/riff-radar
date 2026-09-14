@@ -28,6 +28,7 @@ import { hasDateDisagreement, mergeCandidates } from './domain/candidates.ts'
 import type { Usage } from './domain/cost.ts'
 import type { ShortlistItem } from './domain/shortlist.ts'
 import { shortlistItemSchema } from './domain/shortlist.ts'
+import type { DateWindow } from './domain/window.ts'
 import type { Ports, ProposedToolCall, ToolDefinition } from './ports.ts'
 import type { Store } from './store/store.ts'
 
@@ -53,6 +54,8 @@ export interface ToolContext {
   readonly ports: Ports
   readonly store: Store
   readonly runId: string
+  /** The dates this run covers. Discovery is scoped to it. */
+  readonly window: DateWindow
   /** The run's candidates, deduplicated on release identity. Actions may add. */
   candidates: readonly Candidate[]
 }
@@ -73,7 +76,7 @@ export const tools = {
       source_id: z.enum(Object.keys(SOURCES) as [SourceId, ...SourceId[]]),
     }),
     run: async ({ source_id }, context) => {
-      const fetched = await fetchSource(context.ports, source_id)
+      const fetched = await fetchSource(context.ports, source_id, context.window)
 
       // Recorded before anything is returned, so a page that produced a bad
       // extraction is still in the trace to be re-examined.
@@ -110,6 +113,7 @@ export const tools = {
           url: fetched.url,
           found: fetched.candidates.length,
           dropped: fetched.droppedRows,
+          outsideWindow: fetched.outsideWindow,
           truncated: fetched.truncated,
           newThisFetch: context.candidates.length - before,
           totalCandidates: context.candidates.length,

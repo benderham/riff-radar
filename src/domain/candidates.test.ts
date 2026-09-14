@@ -8,6 +8,7 @@ import {
   hasDateDisagreement,
   mergeCandidates,
   normaliseCandidate,
+  withinWindow,
 } from './candidates.ts'
 
 const AOTY = 'https://www.albumoftheyear.org/genre/40-metal/recent/'
@@ -139,6 +140,23 @@ test('the extraction schema rejects anything that is not a candidate array', () 
   assert.equal(extractionSchema.safeParse({ candidates: [{ artist: 'x' }] }).success, false)
   assert.equal(
     extractionSchema.safeParse({ candidates: [{ artist: 'x', title: 'y', releaseDate: 'z' }] }).success,
+    true,
+  )
+})
+
+test('a candidate is in the window when any source places it there', () => {
+  const window = { from: '2026-09-08', to: '2026-09-14' }
+
+  assert.equal(withinWindow(candidate(AOTY, { releaseDates: ['2026-09-12'] }), window), true)
+  assert.equal(withinWindow(candidate(AOTY, { releaseDates: ['2026-09-08'] }), window), true, 'inclusive')
+  assert.equal(withinWindow(candidate(AOTY, { releaseDates: ['2026-09-14'] }), window), true, 'inclusive')
+  assert.equal(withinWindow(candidate(AOTY, { releaseDates: ['2026-10-02'] }), window), false)
+  assert.equal(withinWindow(candidate(AOTY, { releaseDates: ['2026-09-07'] }), window), false)
+
+  // Sources disagree by a day routinely; one of them putting it in the window
+  // is enough, because the release is still the one the run is asking about.
+  assert.equal(
+    withinWindow(candidate(AOTY, { releaseDates: ['2026-09-07', '2026-09-08'] }), window),
     true,
   )
 })

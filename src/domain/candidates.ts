@@ -15,6 +15,8 @@
 
 import { z } from 'zod'
 
+import type { DateWindow } from './window.ts'
+
 /** What the extraction call is asked to return. Every field is untrusted text. */
 export const extractionSchema = z.object({
   candidates: z.array(
@@ -89,6 +91,19 @@ export const candidateIdentity = (candidate: Candidate): string =>
 
 export const hasDateDisagreement = (candidate: Candidate): boolean =>
   candidate.releaseDates.length > 1
+
+/**
+ * A candidate belongs to a run when *any* source places it inside the window.
+ *
+ * Any, not all: sources disagree by a day or two routinely, and a release one
+ * of them dates a day early is still the release the run is asking about. The
+ * disagreement is already recorded; this is not the place to resolve it.
+ *
+ * A run is backward-looking and a release calendar covers a year, so filtering
+ * here is what keeps a fetch from handing the loop twelve months of releases.
+ */
+export const withinWindow = (candidate: Candidate, window: DateWindow): boolean =>
+  candidate.releaseDates.some((date) => date >= window.from && date <= window.to)
 
 const distinct = (values: readonly string[]): string[] => [...new Set(values)]
 

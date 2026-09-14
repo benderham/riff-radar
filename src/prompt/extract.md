@@ -9,5 +9,6 @@ Return a single JSON object and no other text:
 - `artist` and `title` exactly as the page gives them, without the surrounding punctuation of the listing.
 - `releaseDate` as `YYYY-MM-DD`. The page will often give a day under a month heading, or a date in prose; convert it, using the year stated on the page. If the page gives no date for a row, omit that row entirely rather than guessing.
 - `label` and `format` only when the page states them. `format` is the page's own word: `LP`, `EP`, `live`, `compilation`, `reissue`.
-- List every release on the page, including ones that look ineligible. Eligibility is decided later, elsewhere.
+- You are given a date range. Return only the releases dated inside it, and skip the rest of the page: a release calendar covers a year and the run is asking about one week of it.
+- Inside that range, list every release, including ones that look ineligible. Eligibility is decided later, elsewhere.
 - A page listing nothing returns `{ "candidates": [] }`.

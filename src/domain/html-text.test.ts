@@ -1,6 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
+import { readFileSync } from 'node:fs'
+
+import { MAX_SOURCE_TEXT_CHARS } from '../../config.ts'
 import { htmlToText } from './html-text.ts'
 
 test('tags are removed and their text kept in order', () => {
@@ -47,4 +50,33 @@ test('whitespace is collapsed and blank lines are not repeated', () => {
 
 test('an unclosed tag does not swallow the rest of the page', () => {
   assert.equal(htmlToText('<p>kept<div'), 'kept')
+})
+
+test('the real Loudwire calendar reduces to its release rows', () => {
+  const text = htmlToText(
+    readFileSync(new URL('../../fixtures/loudwire.html', import.meta.url), 'utf8'),
+  )
+
+  // A row survives as one line of artist, title and label.
+  assert.ok(text.includes('Anthrax - Cursum Perficio (Megaforce)'))
+  assert.ok(text.includes('September 18, 2026'))
+  // And the page's machinery does not.
+  assert.ok(!text.includes('<'))
+  assert.ok(!text.includes('function('))
+  assert.ok(!text.includes('livedesign-design-option'))
+})
+
+test('a whole real page fits under the cap, so nothing a run wants is cut', () => {
+  const text = htmlToText(
+    readFileSync(new URL('../../fixtures/loudwire.html', import.meta.url), 'utf8'),
+  )
+
+  // Loudwire lists the coming months first and the weeks just gone last, so a
+  // cap that cut this page would cut exactly the releases a backward-looking
+  // run is asking about. The cap is sized from this number.
+  assert.ok(text.includes('September 4, 2026'), 'the past weeks are at the end of the page')
+  assert.ok(
+    text.length < MAX_SOURCE_TEXT_CHARS,
+    `a real page cleans to ${text.length} characters, against a cap of ${MAX_SOURCE_TEXT_CHARS}`,
+  )
 })

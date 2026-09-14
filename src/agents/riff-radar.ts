@@ -108,7 +108,7 @@ export const runRiffRadar = async ({
 
   // The run's working memory. Actions read and add to it; the loop only passes
   // it along, because what the run has found is not what the loop is about.
-  const context: ToolContext = { ports, store, runId, candidates: [] }
+  const context: ToolContext = { ports, store, runId, window, candidates: [] }
 
   let usage: Usage = NO_USAGE
   let costIsUpperBound = false

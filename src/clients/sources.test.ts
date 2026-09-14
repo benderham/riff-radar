@@ -38,6 +38,9 @@ const extracting = (content: string) => {
 
 const extracted = (candidates: readonly unknown[]) => JSON.stringify({ candidates })
 
+/** The window every test in this file runs in, unless it says otherwise. */
+const WINDOW = { from: '2026-09-08', to: '2026-09-14' }
+
 const portsFor = (http: HttpPort, model: ModelPort): Ports => ({
   http,
   model,
@@ -58,7 +61,7 @@ test('the configured URL is fetched, and the cleaned page reaches the extraction
     ]),
   )
 
-  const result = await fetchSource(portsFor(http, model), 'aoty')
+  const result = await fetchSource(portsFor(http, model), 'aoty', WINDOW)
 
   assert.deepEqual(gets, [SOURCES.aoty])
   assert.equal(result.url, SOURCES.aoty)
@@ -84,7 +87,7 @@ test('the raw body is kept whole, alongside the cleaned text', async () => {
   const { http } = servingFixture(body)
   const { model } = extracting(extracted([]))
 
-  const result = await fetchSource(portsFor(http, model), 'wikipedia')
+  const result = await fetchSource(portsFor(http, model), 'wikipedia', WINDOW)
 
   assert.equal(result.rawBody, body)
   assert.ok(result.cleanedText.includes('Absolute Elsewhere'))
@@ -95,7 +98,7 @@ test('the extraction call is priced into the run', async () => {
   const { http } = servingFixture(fixture('loudwire.html'))
   const { model } = extracting(extracted([]))
 
-  const result = await fetchSource(portsFor(http, model), 'loudwire')
+  const result = await fetchSource(portsFor(http, model), 'loudwire', WINDOW)
   assert.deepEqual(result.usage, USAGE)
   assert.equal(result.cacheReported, true)
 })
@@ -107,7 +110,7 @@ test('an oversized page is cut, the cut is marked, and the raw body is still who
   const { http } = servingFixture(body)
   const { model, prompts } = extracting(extracted([]))
 
-  const result = await fetchSource(portsFor(http, model), 'aoty')
+  const result = await fetchSource(portsFor(http, model), 'aoty', WINDOW)
 
   assert.equal(result.truncated, true)
   assert.equal(result.rawBody, body)
@@ -119,7 +122,7 @@ test('a source that yields no candidates records a warning rather than passing q
   const { http } = servingFixture(fixture('aoty.html'))
   const { model } = extracting(extracted([]))
 
-  const result = await fetchSource(portsFor(http, model), 'aoty')
+  const result = await fetchSource(portsFor(http, model), 'aoty', WINDOW)
 
   assert.deepEqual(result.candidates, [])
   assert.match(result.warning ?? '', /no candidates/i)
@@ -130,7 +133,7 @@ test('a non-2xx response is a warning naming the status, not an empty page', asy
   const { http } = servingFixture('go away', 403)
   const { model, prompts } = extracting(extracted([]))
 
-  const result = await fetchSource(portsFor(http, model), 'aoty')
+  const result = await fetchSource(portsFor(http, model), 'aoty', WINDOW)
 
   assert.equal(result.status, 403)
   assert.deepEqual(result.candidates, [])
@@ -142,7 +145,7 @@ test('extraction returning something other than JSON is a readable warning', asy
   const { http } = servingFixture(fixture('aoty.html'))
   const { model } = extracting('I could not read that page, sorry.')
 
-  const result = await fetchSource(portsFor(http, model), 'aoty')
+  const result = await fetchSource(portsFor(http, model), 'aoty', WINDOW)
 
   assert.deepEqual(result.candidates, [])
   assert.match(result.warning ?? '', /not valid JSON/i)
@@ -152,7 +155,7 @@ test('extraction returning JSON of the wrong shape is a readable warning', async
   const { http } = servingFixture(fixture('aoty.html'))
   const { model } = extracting(JSON.stringify({ albums: ['Cool World'] }))
 
-  const result = await fetchSource(portsFor(http, model), 'aoty')
+  const result = await fetchSource(portsFor(http, model), 'aoty', WINDOW)
 
   assert.deepEqual(result.candidates, [])
   assert.match(result.warning ?? '', /candidates/)
@@ -164,7 +167,7 @@ test('a fenced JSON block is read rather than refused', async () => {
     `\`\`\`json\n${extracted([{ artist: 'Sumac', title: 'The Healer', releaseDate: '2026-09-13' }])}\n\`\`\``,
   )
 
-  const result = await fetchSource(portsFor(http, model), 'loudwire')
+  const result = await fetchSource(portsFor(http, model), 'loudwire', WINDOW)
   assert.equal(result.candidates.length, 1)
   assert.equal(result.warning, undefined)
 })
@@ -178,8 +181,39 @@ test('rows the extraction could not date are dropped and counted', async () => {
     ]),
   )
 
-  const result = await fetchSource(portsFor(http, model), 'wikipedia')
+  const result = await fetchSource(portsFor(http, model), 'wikipedia', WINDOW)
 
   assert.equal(result.candidates.length, 1)
   assert.equal(result.droppedRows, 1)
+})
+
+test('releases outside the run\'s window are dropped and counted', async () => {
+  const { http } = servingFixture(fixture('loudwire.html'))
+  const { model, prompts } = extracting(
+    extracted([
+      { artist: 'Ulcerate', title: 'Cutting the Throat of God', releaseDate: '2026-09-12' },
+      { artist: 'Amon Amarth', title: 'The Allfather Awakens', releaseDate: '2026-10-02' },
+    ]),
+  )
+
+  const result = await fetchSource(portsFor(http, model), 'loudwire', WINDOW)
+
+  // Asked of the model, and then enforced here: a year-long calendar would
+  // otherwise reach the loop whole.
+  assert.ok(prompts[0]?.includes('2026-09-08 to 2026-09-14'))
+  assert.deepEqual(result.candidates.map((each) => each.artist), ['Ulcerate'])
+  assert.equal(result.outsideWindow, 1)
+  assert.equal(result.droppedRows, 0)
+})
+
+test('a page that listed releases, none of them this week, says so', async () => {
+  const { http } = servingFixture(fixture('loudwire.html'))
+  const { model } = extracting(
+    extracted([{ artist: 'Amon Amarth', title: 'The Allfather Awakens', releaseDate: '2026-10-02' }]),
+  )
+
+  const result = await fetchSource(portsFor(http, model), 'loudwire', WINDOW)
+
+  assert.deepEqual(result.candidates, [])
+  assert.match(result.warning ?? '', /none inside 2026-09-08\.\.2026-09-14/)
 })
