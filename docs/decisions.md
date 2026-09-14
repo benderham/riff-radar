@@ -223,7 +223,7 @@ Settles the question ADR-0020 left open. A live call confirms that Fireworks ret
 
 ## ADR-0029: Extraction is a nested model call inside `fetch_source`, not the loop's own reading
 
-**Status:** PROPOSED — needs Ben's approval
+**Status:** ACCEPTED
 
 ADR-0003 says the model extracts candidates from fetched page text. That leaves open *which* call does it. Two readings were available: the loop's own model reads the page text returned by `fetch_source` and holds candidates in its head, or `fetch_source` makes a separate, toolless model call whose only job is to turn one page into a JSON array of candidates and hand structured data back.
 
@@ -235,7 +235,7 @@ ADR-0026 checks the cost ceiling before each of the loop's calls, and an action'
 
 ## ADR-0030: A disappointing source is a warning, not a failed run
 
-**Status:** PROPOSED — needs Ben's approval
+**Status:** ACCEPTED
 
 A source that returns a non-2xx status, lists nothing, or produces an extraction that will not parse does not end the run. It records a warning on the step that fetched it, the warning is handed back to the model, and the run continues on its other sources. Only a fetch that throws — no network, a timeout — is a tool failure that ends the run.
 
