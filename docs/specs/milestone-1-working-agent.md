@@ -50,19 +50,24 @@ Where sources disagree on the date, the release is eligible if any credible sour
 
 ## Taste profile
 
-Versioned, hand-edited, at a fixed path. Never written by the agent.
+Versioned, hand-edited, at a fixed path, stored as JSON (ADR-0022). Never written by the agent.
 
-```yaml
-artists:
-  always:  []   # guaranteed a shortlist slot
-  watch:   []   # guaranteed entry into ranking
-  exclude: []   # never surfaced
-
-labels:    { include: [], exclude: [] }
-genres:    { include: [], exclude: [] }
-personnel: { include: [], exclude: [] }
-vibe_notes:{ include: [], exclude: [] }
+```json
+{
+  "version": 1,
+  "artists": {
+    "always": [],
+    "watch": [],
+    "exclude": []
+  },
+  "labels": { "include": [], "exclude": [] },
+  "genres": { "include": [], "exclude": [] },
+  "personnel": { "include": [], "exclude": [] },
+  "vibe_notes": { "include": [], "exclude": [] }
+}
 ```
+
+`version` is hand-incremented on every edit and is what the run records as `profile_version`. `artists.always` guarantees a shortlist slot, `artists.watch` guarantees entry into ranking, `artists.exclude` is never surfaced.
 
 The first four match release attributes deterministically. `vibe_notes` is the only model judgement, and requires a citation. Artist `exclude` is a hard filter; genre and label `exclude` are negative weights (ADR-0007).
 
@@ -205,7 +210,7 @@ Mirrors the Flue framework's conventions where they carry over, so the cost of a
 ```
 riff-radar/
 ├── config.ts               run configuration
-├── taste-profile.yaml      semantic memory, hand-edited
+├── taste-profile.json      semantic memory, hand-edited
 └── src/
     ├── cli.ts              entry point; replaces Flue's app.ts, no HTTP
     ├── agents/

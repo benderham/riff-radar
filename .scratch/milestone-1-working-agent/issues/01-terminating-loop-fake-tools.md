@@ -1,0 +1,54 @@
+# 01: A terminating agent loop over fake tools
+
+**What to build:** `riff-radar run [--last-days N] [--dry-run]` starts, resolves its window to absolute dates, drives a hand-written agent loop in which the model chooses one action per step, and stops with exactly one recorded Termination Reason. Every action is faked — `fetch_source`, `lookup_release` and `web_search` return canned data, and `finish` is real — so the loop, its guardrails and its trace can be exercised end to end before any live integration exists. Afterwards a Run can be read back out of SQLite with no tooling beyond a SQL client.
+
+This is the largest ticket in the milestone and the one the project exists to teach. It is deliberately not split: a loop without its guardrails is not a terminating loop, and retrofitting validation into working code costs more than building it in.
+
+**Blocked by:** None (can start immediately)
+
+**Status:** ready-for-agent
+
+## Session break
+
+Two sittings. Part A stands alone and is demoable without a model; part B is the loop itself.
+
+**Part A — the run exists.** Project scaffolding, CLI, configuration, store, trace schema. A Run with no loop at all starts, resolves its window, writes a `runs` record with `termination_reason = no_candidates`, and exits.
+
+**Part B — the loop runs.** Model adapter, action declarations, validation, dispatch, step records, limits, cost accounting.
+
+## Acceptance criteria
+
+### Part A
+
+- [ ] TypeScript on Node 22.22 with `typescript`, `tsx` and `zod` as the only dependencies; `node:test` is the test runner and `node:sqlite` the database
+- [ ] The `node:sqlite` experimental warning is suppressed with `--disable-warning=ExperimentalWarning`, never globally
+- [ ] Directory layout follows the one in the specification, with the CLI entry point in place of an HTTP app
+- [ ] A check that can be run from the command line fails when anything in `domain/` imports from `clients/` or `adapters/`
+- [ ] `--last-days` defaults to 7; the resolved absolute range is what the trace records, not the flag
+- [ ] The Run refuses to start and writes nothing when required credentials are absent from the environment
+- [ ] `runs` and `steps` tables carry every column named in the specification
+- [ ] A Run that reaches no candidates ends with `no_candidates` and performs no write
+
+### Part B
+
+- [ ] The model is reached over the provider's OpenAI-compatible endpoint using built-in `fetch`, with no provider SDK
+- [ ] The loop is readable top to bottom in a single file
+- [ ] All four actions are declared once each — name, description, input schema, implementation together — and the JSON tool schema sent to the model is derived from those declarations rather than maintained separately
+- [ ] Tool-call arguments are treated as untrusted: parsed, then validated against the action schema, before every dispatch
+- [ ] Malformed JSON and well-formed JSON of the wrong shape are both handled as ordinary failures
+- [ ] A failed validation is returned to the model as that step's result and the model may correct itself
+- [ ] Three consecutive invalid actions end the Run with `invalid_action_limit` and no write
+- [ ] Thirty steps end the Run with `max_steps_exceeded` and no write
+- [ ] A token or cost ceiling ends the Run with `budget_exceeded` and no write
+- [ ] `finish` with 5 valid items ends the Run `completed`; with 1–4 valid items, `completed_short`; with an invalid shortlist, `validation_failed`
+- [ ] Shortlist validation is a pure function: 1–5 items, no two sharing a Release Identity, and each item carrying artist, album title, a release date inside the resolved range, at least one Source URL, a rank, a Rationale, and either a MusicBrainz ID or an explicit `unverified: true`
+- [ ] A missing Source URL invalidates an item; a missing MusicBrainz ID does not
+- [ ] Every step records its proposed action, its validation result and its dispatched action in separate columns, so a rejected action is visible rather than absent
+- [ ] Every step records its duration
+- [ ] Uncached input, cached input and output tokens are counted separately per step and per Run, and estimated cost is computed from all three rates
+- [ ] The stable prefix — system prompt, tool definitions, taste profile — is sent ahead of anything that varies per step
+- [ ] Whether the provider reports cached token counts is settled against a real response; if it does not, cost is recorded as an upper bound and labelled as one
+- [ ] Prompt version, profile version, action schema version and model identifier are recorded on the Run
+- [ ] Exactly one Termination Reason is recorded per Run
+- [ ] A live smoke test against the model provider exists, invoked separately and excluded from the automated suite
+- [ ] Every Termination Reason reachable in this ticket is covered by a test driven through the injected ports
