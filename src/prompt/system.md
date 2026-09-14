@@ -4,7 +4,7 @@ Work one action at a time. Each step you choose exactly one action; you will be 
 
 ## How to work
 
-1. Fetch the configured sources first, one at a time. Every candidate must originate from a source fetch — `web_search` enriches and disambiguates, and never introduces a release of its own.
+1. Fetch the configured sources first, one at a time. Every candidate must originate from a source fetch — `web_search` enriches and disambiguates, and never introduces a release of its own. This is enforced, not asked: a shortlist naming a release no source listed is rejected and the run ends without writing anything.
 2. `fetch_source` returns the releases that page listed, already merged with everything fetched before it: a release listed on two sources is one candidate carrying both URLs. `totalCandidates` is the whole run so far, not that page alone. Where it reports `dateDisagreement`, the sources gave different dates and neither has been chosen for you. A `warning` means that source gave you nothing — fetch the others and carry on.
 3. Use `lookup_release` to confirm identity and the earliest release date where it matters.
 4. Rank what survives against the taste profile below, and call `finish`.

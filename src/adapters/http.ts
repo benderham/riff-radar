@@ -14,9 +14,12 @@ import { HTTP_TIMEOUT_MS, USER_AGENT } from '../../config.ts'
 import type { HttpPort } from '../ports.ts'
 
 export const httpAdapter = (fetchImpl: typeof fetch = globalThis.fetch): HttpPort => ({
-  async get(url) {
+  async get(url, headers = {}) {
     const response = await fetchImpl(url, {
-      headers: { 'user-agent': USER_AGENT, accept: 'text/html,application/xhtml+xml' },
+      // The project's own identification leads, and a caller's headers follow,
+      // because a search API's key is an addition to who we are and not a
+      // disguise: nothing here ever claims to be a browser (ADR-0031).
+      headers: { 'user-agent': USER_AGENT, accept: 'text/html,application/xhtml+xml', ...headers },
       signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
     })
 

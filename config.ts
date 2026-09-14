@@ -24,6 +24,7 @@ export const DATABASE_PATH = 'riff-radar.db'
 
 export const REQUIRED_CREDENTIALS = [
   'FIREWORKS_API_KEY',
+  'BRAVE_API_KEY',
   'NOTION_TOKEN',
   'NOTION_DATABASE_ID',
 ] as const
@@ -31,7 +32,7 @@ export const REQUIRED_CREDENTIALS = [
 /**
  * The names of the credentials a run needs and does not have.
  *
- * All three are required even for a dry run: a dry run still reads Notion to
+ * All four are required even for a dry run: a dry run still reads Notion to
  * suppress releases already proposed (ADR-0009), and still calls the model.
  * Checking here means finding out before the model has been billed. Names are
  * returned, never values, so nothing secret can reach a log.
@@ -79,6 +80,18 @@ export const SOURCES = {
 } as const
 
 export type SourceId = keyof typeof SOURCES
+
+/**
+ * Web search, for disambiguation only (ADR-0032). Brave's API answers with
+ * JSON over a plain GET and authenticates with a key in a header, so it needs
+ * nothing of the `http` port but one additional header, and a search never
+ * originates a candidate whatever it returns.
+ *
+ * Five results: a disambiguation is settled by the first page or not at all,
+ * and every result is resent to the model on every later step.
+ */
+export const SEARCH_ENDPOINT = 'https://api.search.brave.com/res/v1/web/search'
+export const SEARCH_RESULT_COUNT = 5
 
 /** Identifies the project to the sites it reads, rather than pretending to be a browser. */
 export const USER_AGENT = 'riff-radar/0.1 (personal listening project)'

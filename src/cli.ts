@@ -68,7 +68,14 @@ export const runCli = async ({
   const store = open()
 
   try {
-    const outcome = await runRiffRadar({ args, ports, store, profile: profile.data })
+    const outcome = await runRiffRadar({
+      args,
+      ports,
+      store,
+      profile: profile.data,
+      // Present: `missingCredentials` refused the run above if it were not.
+      searchApiKey: env['BRAVE_API_KEY'] ?? '',
+    })
 
     log(`run ${outcome.runId}`)
     log(`window ${outcome.window.from} to ${outcome.window.to}${args.dryRun ? ' (dry run)' : ''}`)

@@ -112,9 +112,12 @@ Item level, all required:
 - artist; album title; release date inside the resolved range;
 - at least one source URL;
 - rank; rationale;
-- a MusicBrainz ID, or an explicit `unverified: true` marker.
+- a MusicBrainz ID, or an explicit `unverified: true` marker;
+- a release the run discovered: the item must match a candidate a configured source listed.
 
 A missing MusicBrainz ID is valid; a missing source URL is not. Provenance is the thing that cannot be reconstructed later.
+
+The last condition is where "a candidate may never originate from a web search" stops being an instruction and becomes a rule (ADR-0032). Only `fetch_source` adds to the run's candidates, so a shortlist naming anything else — a release met in a search, or one the model remembered — ends the run `validation_failed` with no write.
 
 ## Memory across runs
 

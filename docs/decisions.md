@@ -254,3 +254,21 @@ ADR-0001 names three sources. Two of them read fine. The third, Album of the Yea
 So version 1 runs on two sources. Album of the Year is not configured at all, rather than configured and failing: a run has thirty steps, and spending one of them knocking on a door that is shut buys nothing but a warning we already know the text of. Its URL lives in this decision, which is one line away from putting it back. Nothing is faked and nothing pretends the coverage is complete.
 
 **Consequences:** Discovery runs on two sources, and a run's coverage is narrower than the specification assumed. Ben has three ways out and this decision commits to none of them: accept two sources and amend ADR-0001; replace Album of the Year with another source that permits reading; or ask them for access. The warning is in every run's trace until one of those happens, which is the point — a source quietly producing nothing is the failure mode ADR-0003 was most worried about, and this one is loud.
+
+## ADR-0032: Web search is Brave's API, and the search-to-shortlist path is closed in code
+
+**Status:** ACCEPTED — implements the enrichment half of ADR-0001. Brave was Ben's choice over the two alternatives below, asked and answered on 14 September 2026, which is the approval AGENTS.md requires before an external provider is added.
+
+`web_search` searches Brave's API: JSON over a plain GET, authenticated by a key in a header. The `http` port gains an optional `headers` argument to carry that key, which is additive — the project's own user agent is always sent — so nothing here impersonates a browser (ADR-0031). `BRAVE_API_KEY` joins the credentials a run refuses to start without, because a run that discovers its search is unusable halfway through has already been billed for the model calls before it.
+
+Two alternatives were weighed and rejected. Scraping DuckDuckGo's HTML endpoint needs no key and no port change, but it blocks non-browser user agents, and a tool that permanently degrades to a warning is a fake by another name. Wikipedia's search API is free and well-behaved but too thin for underground metal, and MusicBrainz (ticket 04) already answers most identity questions.
+
+The more consequential half of this decision is not the provider. ADR-0001 says a candidate may never originate from a search, and until now that rule lived only in the system prompt. `validateShortlist` now takes the run's candidates and rejects any item naming a release no source listed. Since only `fetch_source` adds to that list and `web_search` cannot reach it, the path from a search result to a Notion row does not exist in code rather than being discouraged in prose.
+
+**Consequences:** A model that invents or imports a release ends its run with `validation_failed` and no write, which is a blunt end to an otherwise good run — the alternative, dropping the offending item and writing the rest, would let a run write a shortlist the model did not propose. Identity is matched on artist and title, so a model that "corrects" a title it read on a source loses the item; when ticket 04 gives candidates MusicBrainz ids, that match should strengthen rather than stay as it is.
+
+`BRAVE_API_KEY` is required by every run, including a dry run and a run that never searches, which is stricter than the tool's use. The alternative — discovering the key is missing on the step that needs it — spends a search step and some of the model's patience to learn something knowable before the run starts.
+
+One existing test changed meaning: a run whose only source 403s can no longer propose a shortlist, because it has no candidates to ground one in. That run now ends `no_candidates` rather than `completed_short`, which is the honest reading — the shortlist it used to propose was never anchored to anything. The test keeps its original claim by fetching a second source that works.
+
+The search client's automated tests run against an invented body of Brave's documented shape rather than a capture, because capturing one needs a key this repository does not have. `npm run smoke:search` is what checks the shape against reality, and the first real response should replace the invented body with a fixture.

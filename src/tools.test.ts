@@ -68,6 +68,7 @@ const context = (over: { http?: HttpPort; model?: ModelPort } = {}) => {
     store,
     runId: 'run-1',
     window: { from: '2026-09-08', to: '2026-09-14' },
+    searchApiKey: 'test-key',
     candidates: [],
   }
   return { toolContext, store }
@@ -189,4 +190,74 @@ test('finish hands its items back to the loop rather than judging them', async (
   const dispatched = await dispatch(result.name, result.input, toolContext)
   assert.ok(dispatched.done)
   assert.deepEqual(dispatched.shortlist, [{ artist: 'Ulcerate' }])
+})
+
+// ── Web search (ticket 03) ───────────────────────────────────────────────────
+
+const SEARCH_BODY = JSON.stringify({
+  web: {
+    results: [
+      {
+        title: 'Ulcerate (band) - Wikipedia',
+        url: 'https://en.wikipedia.org/wiki/Ulcerate',
+        description: 'A New Zealand technical death metal band formed in 2000.',
+      },
+    ],
+  },
+})
+
+test('a search returns what it found, and adds nothing to the run', async () => {
+  const result = validateAction(call('web_search', '{"query": "ulcerate new zealand"}'))
+  assert.ok(result.ok)
+
+  const { toolContext } = context({
+    http: { get: async () => ({ status: 200, headers: {}, body: SEARCH_BODY }) },
+  })
+  // A run mid-flight: the search must leave these exactly as it found them.
+  toolContext.candidates = [
+    { artist: 'Ulcerate', title: 'Cutting the Throat of God', releaseDates: ['2026-09-12'], sourceUrls: [SOURCES.loudwire] },
+  ]
+  const dispatched = await dispatch(result.name, result.input, toolContext)
+
+  assert.equal(dispatched.done, false)
+  assert.ok(!dispatched.done && dispatched.result.includes('en.wikipedia.org/wiki/Ulcerate'))
+  assert.ok(!dispatched.done && dispatched.result.includes('technical death metal'))
+  assert.deepEqual(
+    toolContext.candidates.map((candidate) => candidate.title),
+    ['Cutting the Throat of God'],
+    'a search is not a way to discover a release',
+  )
+})
+
+test('a search sends the key in a header and the query in the URL', async () => {
+  const result = validateAction(call('web_search', '{"query": "ulcerate"}'))
+  assert.ok(result.ok)
+
+  const seen: { url: string; headers?: Record<string, string> }[] = []
+  const { toolContext } = context({
+    http: {
+      get: async (url, headers) => {
+        seen.push({ url, ...(headers === undefined ? {} : { headers }) })
+        return { status: 200, headers: {}, body: SEARCH_BODY }
+      },
+    },
+  })
+  await dispatch(result.name, result.input, toolContext)
+
+  assert.match(seen[0]?.url ?? '', /q=ulcerate/)
+  assert.equal(seen[0]?.headers?.['x-subscription-token'], 'test-key')
+})
+
+test('a search that fails is an ordinary step result with a warning', async () => {
+  const result = validateAction(call('web_search', '{"query": "ulcerate"}'))
+  assert.ok(result.ok)
+
+  const { toolContext } = context({
+    http: { get: async () => ({ status: 429, headers: {}, body: 'slow down' }) },
+  })
+  const dispatched = await dispatch(result.name, result.input, toolContext)
+
+  assert.equal(dispatched.done, false)
+  assert.ok(!dispatched.done && dispatched.warning?.includes('429'))
+  assert.ok(!dispatched.done && dispatched.result.length > 0, 'the model is told, not left waiting')
 })

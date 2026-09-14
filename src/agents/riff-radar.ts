@@ -45,6 +45,8 @@ export interface RunRequest {
   readonly ports: Ports
   readonly store: Store
   readonly profile: TasteProfile
+  /** The search provider's key. Read from the environment by the CLI, never stored. */
+  readonly searchApiKey: string
 }
 
 export interface RunOutcome {
@@ -84,6 +86,7 @@ export const runRiffRadar = async ({
   ports,
   store,
   profile,
+  searchApiKey,
 }: RunRequest): Promise<RunOutcome> => {
   // Resolve first. A window that cannot be resolved is not a run, and must not
   // leave a half-started row behind.
@@ -108,7 +111,7 @@ export const runRiffRadar = async ({
 
   // The run's working memory. Actions read and add to it; the loop only passes
   // it along, because what the run has found is not what the loop is about.
-  const context: ToolContext = { ports, store, runId, window, candidates: [] }
+  const context: ToolContext = { ports, store, runId, window, searchApiKey, candidates: [] }
 
   let usage: Usage = NO_USAGE
   let costIsUpperBound = false
@@ -268,7 +271,12 @@ export const runRiffRadar = async ({
       // An empty shortlist is the model reporting a quiet week, not a broken
       // one (ADR-0025): nothing eligible was found, and that is a real answer,
       // so it never reaches the validator, whose rule is one to five items.
-      const result = shortlist.length === 0 ? undefined : validateShortlist(shortlist, window)
+      // Validated against what the run actually discovered, so a release the
+      // model met in a web search rather than on a source cannot reach Notion.
+      const result =
+        shortlist.length === 0
+          ? undefined
+          : validateShortlist(shortlist, window, context.candidates)
 
       terminationReason =
         result === undefined

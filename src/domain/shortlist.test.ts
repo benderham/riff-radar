@@ -1,10 +1,27 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
+import type { Candidate } from './candidates.ts'
 import type { ShortlistItem } from './shortlist.ts'
 import { releaseIdentity, validateShortlist } from './shortlist.ts'
 
 const window = { from: '2026-09-08', to: '2026-09-14' }
+
+/**
+ * The candidates a run discovered. Every test below grounds its shortlist in
+ * the items themselves unless it is testing what happens when it cannot: a
+ * release the shortlist names and no source listed.
+ */
+const discovered = (items: readonly ShortlistItem[]): Candidate[] =>
+  items.map((item) => ({
+    artist: item.artist ?? '',
+    title: item.title ?? '',
+    releaseDates: [item.releaseDate ?? ''],
+    sourceUrls: item.sourceUrls ?? [],
+  }))
+
+const validate = (items: readonly ShortlistItem[], candidates = discovered(items)) =>
+  validateShortlist(items, window, candidates)
 
 const item = (overrides: Partial<ShortlistItem> = {}): ShortlistItem => ({
   artist: 'Blood Incantation',
@@ -17,13 +34,13 @@ const item = (overrides: Partial<ShortlistItem> = {}): ShortlistItem => ({
   ...overrides,
 })
 
-const errorsOf = (items: readonly ShortlistItem[]) => {
-  const result = validateShortlist(items, window)
+const errorsOf = (items: readonly ShortlistItem[], candidates?: Candidate[]) => {
+  const result = validate(items, candidates ?? discovered(items))
   return result.ok ? [] : result.errors
 }
 
 test('a single well-formed item is valid', () => {
-  assert.deepEqual(validateShortlist([item()], window), { ok: true })
+  assert.deepEqual(validate([item()]), { ok: true })
 })
 
 test('an empty shortlist is invalid', () => {
@@ -41,7 +58,7 @@ test('five items is valid', () => {
   const five = Array.from({ length: 5 }, (_, index) =>
     item({ title: `Album ${index}`, musicbrainzId: `mbid-${index}`, rank: index + 1 }),
   )
-  assert.deepEqual(validateShortlist(five, window), { ok: true })
+  assert.deepEqual(validate(five), { ok: true })
 })
 
 test('two items sharing a release identity is invalid', () => {
@@ -60,8 +77,8 @@ test('a release date outside the window is invalid', () => {
 })
 
 test('the window ends are inclusive', () => {
-  assert.deepEqual(validateShortlist([item({ releaseDate: '2026-09-08' })], window), { ok: true })
-  assert.deepEqual(validateShortlist([item({ releaseDate: '2026-09-14' })], window), { ok: true })
+  assert.deepEqual(validate([item({ releaseDate: '2026-09-08' })]), { ok: true })
+  assert.deepEqual(validate([item({ releaseDate: '2026-09-14' })]), { ok: true })
 })
 
 test('a missing source URL invalidates an item', () => {
@@ -71,7 +88,7 @@ test('a missing source URL invalidates an item', () => {
 
 test('a missing MusicBrainz id does not invalidate an item that declares itself unverified', () => {
   assert.deepEqual(
-    validateShortlist([item({ musicbrainzId: undefined, unverified: true })], window),
+    validate([item({ musicbrainzId: undefined, unverified: true })]),
     { ok: true },
   )
 })
@@ -89,4 +106,14 @@ test('artist, title, rank, rationale and date are each required', () => {
   assert.match(errors, /missing rationale/)
   assert.match(errors, /rank/)
   assert.match(errors, /missing release date/)
+})
+
+test('an item no source listed is invalid, however well formed it is', () => {
+  const invented = item({ artist: 'Nonexistent', title: 'Invented Album' })
+  assert.match(errorsOf([invented], discovered([item()])).join('\n'), /not among the candidates/)
+})
+
+test('grounding ignores case and surrounding space', () => {
+  const shortlisted = item({ artist: '  blood incantation ', title: 'ABSOLUTE ELSEWHERE' })
+  assert.deepEqual(validate([shortlisted], discovered([item()])), { ok: true })
 })

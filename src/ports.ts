@@ -28,8 +28,15 @@ export interface HttpResponse {
 }
 
 export interface HttpPort {
-  /** Resolves for any status. Only a transport failure rejects. */
-  get(url: string): Promise<HttpResponse>
+  /**
+   * Resolves for any status. Only a transport failure rejects.
+   *
+   * `headers` exists for the one caller that needs it: a search API
+   * authenticates with a key in a header. It is additive — the project's own
+   * user agent is always sent — and never carries a secret into the trace,
+   * because nothing records the request headers.
+   */
+  get(url: string, headers?: Record<string, string>): Promise<HttpResponse>
 }
 
 /** A tool call as the model proposed it. `argumentsJson` is untrusted text. */

@@ -49,3 +49,12 @@ test('a transport failure rejects', async () => {
 
   await assert.rejects(() => http.get('https://example.test/metal'), /ENOTFOUND/)
 })
+
+test('a caller may add headers, and still identifies the project', async () => {
+  const { calls, http } = respondWith('{}')
+  await http.get('https://example.test/search', { 'x-subscription-token': 'secret' })
+
+  const headers = calls[0]?.init.headers as Record<string, string>
+  assert.equal(headers['x-subscription-token'], 'secret')
+  assert.equal(headers['user-agent'], USER_AGENT)
+})

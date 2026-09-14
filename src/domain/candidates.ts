@@ -86,8 +86,11 @@ export const normaliseCandidate = (
 }
 
 /** Release identity before MusicBrainz: artist and title, case- and space-insensitive. */
+export const artistTitleIdentity = (artist: string, title: string): string =>
+  `${artist.trim().toLowerCase()}|${title.trim().toLowerCase()}`
+
 export const candidateIdentity = (candidate: Candidate): string =>
-  `${candidate.artist.trim().toLowerCase()}|${candidate.title.trim().toLowerCase()}`
+  artistTitleIdentity(candidate.artist, candidate.title)
 
 /**
  * A candidate belongs to a run when *any* source places it inside the window.

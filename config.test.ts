@@ -5,6 +5,7 @@ import { REQUIRED_CREDENTIALS, missingCredentials } from './config.ts'
 
 const complete = {
   FIREWORKS_API_KEY: 'fw-key',
+  BRAVE_API_KEY: 'brave-key',
   NOTION_TOKEN: 'ntn-token',
   NOTION_DATABASE_ID: 'db-id',
 }

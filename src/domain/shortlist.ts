@@ -15,6 +15,8 @@
 import { z } from 'zod'
 
 import { SHORTLIST_SIZE } from '../../config.ts'
+import type { Candidate } from './candidates.ts'
+import { artistTitleIdentity, candidateIdentity } from './candidates.ts'
 import type { DateWindow } from './window.ts'
 
 export const shortlistItemSchema = z.object({
@@ -37,12 +39,16 @@ export type ShortlistItem = z.infer<typeof shortlistItemSchema>
  * where one exists, and artist and title where one does not.
  */
 export const releaseIdentity = (item: ShortlistItem): string =>
-  item.musicbrainzId?.trim() ||
-  `${item.artist?.trim().toLowerCase()}|${item.title?.trim().toLowerCase()}`
+  item.musicbrainzId?.trim() || artistTitleIdentity(item.artist ?? '', item.title ?? '')
 
 const present = (value: string | undefined): boolean => (value ?? '').trim().length > 0
 
-const itemErrors = (item: ShortlistItem, position: number, window: DateWindow): string[] => {
+const itemErrors = (
+  item: ShortlistItem,
+  position: number,
+  window: DateWindow,
+  discovered: ReadonlySet<string>,
+): string[] => {
   const at = `item ${position}`
   const errors: string[] = []
 
@@ -56,6 +62,17 @@ const itemErrors = (item: ShortlistItem, position: number, window: DateWindow): 
   if (!(item.sourceUrls ?? []).some(present)) errors.push(`${at}: no source URL`)
   if (!present(item.musicbrainzId) && item.unverified !== true) {
     errors.push(`${at}: no MusicBrainz id and no explicit unverified: true`)
+  }
+
+  // Where a candidate may come from, enforced rather than asked for. Only a
+  // source fetch adds to the run's candidates, so an item that matches none of
+  // them is a release the model met somewhere else — a web search, or its own
+  // training — and the rule that discovery is reproducible (ADR-0001) is worth
+  // no more than the code that refuses to let it through.
+  if (present(item.artist) && present(item.title)) {
+    if (!discovered.has(artistTitleIdentity(item.artist!, item.title!))) {
+      errors.push(`${at}: ${item.artist} — ${item.title} is not among the candidates any source listed`)
+    }
   }
 
   if (!present(item.releaseDate)) {
@@ -72,8 +89,10 @@ export type ShortlistValidation = { readonly ok: true } | { readonly ok: false; 
 export const validateShortlist = (
   items: readonly ShortlistItem[],
   window: DateWindow,
+  candidates: readonly Candidate[],
 ): ShortlistValidation => {
   const errors: string[] = []
+  const discovered = new Set(candidates.map(candidateIdentity))
 
   if (items.length === 0) errors.push('shortlist is empty')
   if (items.length > SHORTLIST_SIZE) {
@@ -82,7 +101,7 @@ export const validateShortlist = (
 
   const seen = new Set<string>()
   for (const [index, item] of items.entries()) {
-    errors.push(...itemErrors(item, index + 1, window))
+    errors.push(...itemErrors(item, index + 1, window, discovered))
 
     const identity = releaseIdentity(item)
     if (seen.has(identity)) errors.push(`item ${index + 1}: duplicate release ${identity}`)

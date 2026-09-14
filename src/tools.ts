@@ -6,10 +6,9 @@
  * alongside it — two copies of a contract drift, and the copy that drifts is
  * always the one the model reads.
  *
- * `fetch_source` and `finish` are real. `lookup_release` and `web_search` are
- * still fakes returning canned data, so that the loop and its trace stay
- * exercisable end to end; tickets 03 and 04 replace those two bodies and
- * nothing else.
+ * `fetch_source`, `web_search` and `finish` are real. `lookup_release` is still
+ * a fake returning canned data, so that the loop and its trace stay exercisable
+ * end to end; ticket 04 replaces that body and nothing else.
  *
  * An action receives a `ToolContext`: the ports it needs, the store it records
  * evidence in, and the run's candidates so far. The candidate list is the run's
@@ -22,6 +21,7 @@ import { z } from 'zod'
 
 import type { SourceId } from '../config.ts'
 import { SOURCES } from '../config.ts'
+import { searchWeb } from './clients/search.ts'
 import { fetchSource } from './clients/sources.ts'
 import type { Candidate } from './domain/candidates.ts'
 import { mergeCandidates } from './domain/candidates.ts'
@@ -56,6 +56,8 @@ export interface ToolContext {
   readonly runId: string
   /** The dates this run covers. Discovery is scoped to it. */
   readonly window: DateWindow
+  /** Authenticates the search provider. Travels in a header, never into the trace. */
+  readonly searchApiKey: string
   /** The run's candidates, deduplicated on release identity. Actions may add. */
   candidates: readonly Candidate[]
 }
@@ -151,11 +153,27 @@ export const tools = {
     description:
       'Search the web to enrich or disambiguate a candidate that a source already produced. It never originates a candidate.',
     schema: z.object({ query: z.string().min(1) }),
-    run: ({ query }) => ({
-      done: false,
-      // ponytail: canned snippet, replaced in ticket 03.
-      result: `[fake search] no additional evidence found for "${query}"`,
-    }),
+    run: async ({ query }, context) => {
+      const search = await searchWeb(context.ports, query, context.searchApiKey)
+
+      // The results are returned and nothing else happens to them. There is no
+      // path from here into `context.candidates`, which is what makes "a search
+      // never originates a candidate" a fact about the code rather than an
+      // instruction in the prompt; `validateShortlist` closes the other end.
+      //
+      // A warning is returned twice on purpose: once for the step's own column,
+      // and once inside the result, because the model reads only the result.
+      return {
+        done: false,
+        ...(search.warning === undefined ? {} : { warning: search.warning }),
+        result: JSON.stringify({
+          query,
+          found: search.results.length,
+          ...(search.warning === undefined ? {} : { warning: search.warning }),
+          results: search.results,
+        }),
+      }
+    },
   }),
 
   finish: defineTool({
