@@ -4,7 +4,7 @@ ADR-style log of architectural decisions for Riff Radar. Newest at the bottom. E
 
 ## ADR-0001: Discover from fixed configured sources, not open web search
 
-**Status:** ACCEPTED
+**Status:** ACCEPTED — amended by ADR-0031, which drops one of the three sources
 
 The brief says the agent searches the web, but Ben's actual workflow reads four known sites. We discover from a fixed, configured source list and keep open web search as a secondary enrichment action only; a candidate may never originate from a search. Fixed sources are reproducible, which the Milestone 3 golden dataset requires and open search cannot provide, and they match the sources Ben already trusts.
 
@@ -220,3 +220,37 @@ So the constraint is asked for twice: of the provider, which honours it, and of 
 Settles the question ADR-0020 left open. A live call confirms that Fireworks returns `usage.prompt_tokens_details.cached_tokens`, and that the cache behaves as the stable-prefix design assumed: a first request billed 1411 uncached input tokens, and the next identical prefix billed 129 uncached and 1282 cached. Cost accounting is therefore a measurement rather than an upper bound, and `cost_is_upper_bound` should read 0 on every run against this provider.
 
 **Consequences:** The `cost_is_upper_bound` flag and the code that sets it stay, because they cost nothing and a provider can change what it reports without telling anyone — a run that stops seeing the breakdown labels itself rather than silently misreporting by up to thirty times. The prefix ordering is now evidence rather than theory: roughly 90% of a step's input tokens are served from cache, so the ordering rule in ADR-0020 is load-bearing and not a precaution.
+
+## ADR-0029: Extraction is a nested model call inside `fetch_source`, not the loop's own reading
+
+**Status:** ACCEPTED
+
+ADR-0003 says the model extracts candidates from fetched page text. That leaves open *which* call does it. Two readings were available: the loop's own model reads the page text returned by `fetch_source` and holds candidates in its head, or `fetch_source` makes a separate, toolless model call whose only job is to turn one page into a JSON array of candidates and hand structured data back.
+
+The second was chosen. Ticket 02 requires candidates to be normalised and deduplicated on release identity, tested directly as pure functions, and requires a source that yields none to record a warning. None of that is possible unless candidates exist as data in our own code; under the first reading there is nothing to deduplicate and nothing to count. It is not a sub-agent: no loop, no tool choice, no termination reason — one page in, one JSON object out.
+
+**Consequences:** A run makes more model calls than it takes steps, so the usage returned by an action is added to the step that dispatched it; an extraction billed to nobody would make the cost ceiling unenforceable exactly where the tokens are. Page text is large, so cleaned text is capped at `MAX_SOURCE_TEXT_CHARS` and the cut is marked rather than hidden — raising the cap never requires refetching, because the raw body is stored whole. The loop's model never sees page text at all: it receives candidates, which is both cheaper and the reason the loop's own context stays small over a run.
+
+ADR-0026 checks the cost ceiling before each of the loop's calls, and an action's nested call happens after that check, so a run can exceed the ceiling by one extraction. The overshoot is bounded by the text cap rather than by the page: at `MAX_SOURCE_TEXT_CHARS` and the confirmed prices it is roughly USD 0.003 against a ceiling of 0.25. Guarding it properly would mean handing the run's spend to every action, which buys a hundredth of a cent.
+
+## ADR-0030: A disappointing source is a warning, not a failed run
+
+**Status:** ACCEPTED
+
+A source that returns a non-2xx status, lists nothing, or produces an extraction that will not parse does not end the run. It records a warning on the step that fetched it, the warning is handed back to the model, and the run continues on its other sources. Only a fetch that throws — no network, a timeout — is a tool failure that ends the run.
+
+Three sources exist so that no one of them is critical. Ending a run because Loudwire was briefly behind a bot wall would throw away two sources that worked, and a redesign at Album of the Year would take the whole project offline until someone noticed.
+
+**Consequences:** `no candidates from this source` is a phrase the trace has to be read for, since nothing stops. That is the detector ADR-0003 promised, so it is recorded in two places, in a `warning` column both times: on the step that fetched, beside but never in its `error` column, and on the `source_texts` row alongside the body that produced it. A step that warns is still a step that succeeded, and the trace has to say so without being read carefully.
+
+The rule the specification states is narrower — a source that *normally* yields candidates and yields none — and nothing here knows what a source normally does, because no run's results are ever fed to another (ADR-0009). So every empty source warns, including a genuinely quiet page, and the warning says the page may have changed shape rather than asserting that it has. The risk accepted is a quietly degraded run — two sources reporting and one silently empty week after week — which `npm run smoke:sources` exists to catch.
+
+## ADR-0031: Album of the Year is behind a bot challenge; version 1 runs on two sources
+
+**Status:** ACCEPTED — amends ADR-0001
+
+ADR-0001 names three sources. Two of them read fine. The third, Album of the Year, answers every request with HTTP 403 and a Cloudflare interstitial, and no ordinary request gets past it. What it served on 14 September 2026 was captured and read: an interstitial whose only words are in its `<title>`, so it reduces to no text at all. The capture is in commit 3ccb982 and was removed once the decision was taken, rather than kept as a fixture for a source nothing reads. Reading it would mean impersonating a browser and solving a challenge designed to stop exactly that, which is not something this project should be doing to a site that has said no.
+
+So version 1 runs on two sources. Album of the Year is not configured at all, rather than configured and failing: a run has thirty steps, and spending one of them knocking on a door that is shut buys nothing but a warning we already know the text of. Its URL lives in this decision, which is one line away from putting it back. Nothing is faked and nothing pretends the coverage is complete.
+
+**Consequences:** Discovery runs on two sources, and a run's coverage is narrower than the specification assumed. Ben has three ways out and this decision commits to none of them: accept two sources and amend ADR-0001; replace Album of the Year with another source that permits reading; or ask them for access. The warning is in every run's trace until one of those happens, which is the point — a source quietly producing nothing is the failure mode ADR-0003 was most worried about, and this one is loud.

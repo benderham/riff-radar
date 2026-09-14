@@ -42,6 +42,8 @@ export interface RecordedStep {
   readonly toolArgs: string | null
   readonly toolResult: string | null
   readonly error: string | null
+  /** Recorded, not stopped for: a source that returned nothing usable. */
+  readonly warning: string | null
   readonly uncachedInputTokens: number
   readonly cachedInputTokens: number
   readonly outputTokens: number
@@ -61,10 +63,24 @@ export interface FinishedRun {
   readonly costIsUpperBound: boolean
 }
 
+export interface RecordedSourceText {
+  readonly sourceTextId: string
+  readonly runId: string
+  readonly sourceId: string
+  readonly url: string
+  readonly fetchedAt: string
+  readonly status: number
+  readonly rawBody: string
+  readonly truncated: boolean
+  readonly candidateCount: number
+  readonly warning: string | null
+}
+
 export interface Store {
   readonly database: DatabaseSync
   startRun(run: StartedRun): void
   recordStep(step: RecordedStep): void
+  recordSourceText(text: RecordedSourceText): void
   finishRun(run: FinishedRun): void
   close(): void
 }
@@ -135,9 +151,9 @@ export const openStore = (path: string): Store => {
           `INSERT INTO steps (
              step_id, run_id, step_index, timestamp, duration_ms, kind,
              model_response, proposed_action, validation_result, dispatched_action,
-             tool_name, tool_args, tool_result, error,
+             tool_name, tool_args, tool_result, error, warning,
              uncached_input_tokens, cached_input_tokens, output_tokens, cost
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           step.stepId,
@@ -154,10 +170,33 @@ export const openStore = (path: string): Store => {
           step.toolArgs,
           step.toolResult,
           step.error,
+          step.warning,
           step.uncachedInputTokens,
           step.cachedInputTokens,
           step.outputTokens,
           step.cost,
+        )
+    },
+
+    recordSourceText(text) {
+      database
+        .prepare(
+          `INSERT INTO source_texts (
+             source_text_id, run_id, source_id, url, fetched_at, status,
+             raw_body, truncated, candidate_count, warning
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          text.sourceTextId,
+          text.runId,
+          text.sourceId,
+          text.url,
+          text.fetchedAt,
+          text.status,
+          text.rawBody,
+          text.truncated ? 1 : 0,
+          text.candidateCount,
+          text.warning,
         )
     },
 

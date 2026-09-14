@@ -14,6 +14,8 @@ This repo uses a local-markdown tracker (see `issue-tracker.md`), so there are n
 
 When a skill mentions a role (e.g. "apply the AFK-ready triage label"), set the `Status:` line to the corresponding value from this table.
 
+The five roles are all about work that has not happened yet, so this repo adds one value of its own for work that has: `done`, meaning implemented, evidenced in the issue file, and accepted by Ben. Ticket 02 is the first to carry it.
+
 `/wayfinder` uses its own `Status:` values (`claimed` / `resolved`) on wayfinding tickets; those are separate from the triage roles above.
 
 Edit the right-hand column to match whatever vocabulary you actually use.

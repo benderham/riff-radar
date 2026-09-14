@@ -14,6 +14,7 @@ import { z } from 'zod'
 
 import { DATABASE_PATH, TASTE_PROFILE_PATH, missingCredentials } from '../config.ts'
 import { fireworksModel } from './adapters/fireworks.ts'
+import { httpAdapter } from './adapters/http.ts'
 import { runRiffRadar } from './agents/riff-radar.ts'
 import { UsageError, parseCliArgs } from './domain/cli-args.ts'
 import { tasteProfileSchema } from './domain/taste-profile.ts'
@@ -99,6 +100,7 @@ if (process.argv[1]?.endsWith('cli.ts')) {
       // Empty rather than asserted: `runCli` refuses a missing credential
       // before it starts a run, so the port is never reached without one.
       model: fireworksModel(process.env['FIREWORKS_API_KEY'] ?? ''),
+      http: httpAdapter(),
     },
     openStore: () => openStore(DATABASE_PATH),
     log: (line) => console.log(line),

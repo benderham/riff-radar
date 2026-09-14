@@ -9,7 +9,7 @@
  */
 
 /** Versions stamped onto every run, so a trace says which configuration produced it. */
-export const PROMPT_VERSION = 1
+export const PROMPT_VERSION = 2
 export const ACTION_SCHEMA_VERSION = 1
 
 /**
@@ -65,14 +65,38 @@ export const SHORTLIST_SIZE = 5
  * these; web search never originates a candidate. Metal Archives is excluded
  * because it lists upcoming releases only (ADR-0002).
  *
- * The fetching lives in ticket 02; the identifiers are here because the action
- * schema names them, so an unknown source is a rejected action rather than a
- * failed request.
+ * Album of the Year was the third. It answers every request with a bot
+ * challenge and cannot be read without pretending to be a browser on a site
+ * that has said no, so it is not configured and a run does not spend a step
+ * knocking (ADR-0031). Its URL is in that decision, one line from returning.
+ *
+ * The identifiers are what the action schema names, so an unknown source is a
+ * rejected action rather than a failed request.
  */
 export const SOURCES = {
-  aoty: 'https://www.albumoftheyear.org/genre/40-metal/recent/',
   wikipedia: 'https://en.wikipedia.org/wiki/2026_in_heavy_metal_music',
   loudwire: 'https://loudwire.com/2026-hard-rock-metal-album-release-calendar/',
 } as const
 
 export type SourceId = keyof typeof SOURCES
+
+/** Identifies the project to the sites it reads, rather than pretending to be a browser. */
+export const USER_AGENT = 'riff-radar/0.1 (personal listening project)'
+
+export const HTTP_TIMEOUT_MS = 20_000
+
+/**
+ * The ceiling on cleaned source text handed to the extraction call.
+ *
+ * Sized from the real pages, not guessed: the Loudwire calendar cleans to about
+ * 47,000 characters, and it lists the coming months first and the weeks just
+ * gone at the very end. A cap below the whole page therefore cuts off exactly
+ * the releases a backward-looking run is asking about. 80,000 leaves room for a
+ * page to grow through the year, and costs roughly USD 0.003 an extraction
+ * against a run ceiling of USD 0.25 (ADR-0029).
+ *
+ * Text past the cap is cut and the cut is marked, so a truncated extraction is
+ * visible rather than inferred. The raw body is stored whole either way, so
+ * raising this never requires refetching.
+ */
+export const MAX_SOURCE_TEXT_CHARS = 80_000

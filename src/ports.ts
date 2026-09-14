@@ -7,8 +7,10 @@
  * database instead.
  *
  * `model` is shaped by what the loop needs rather than by what the provider
- * returns: messages in, one response out, usage counted three ways. The `http`
- * port arrives with the first live client.
+ * returns: messages in, one response out, usage counted three ways. `http` is
+ * deliberately low-level — status, headers and body — so that the clients above
+ * it are exercised for real against recorded fixture bodies rather than stubbed
+ * out: a source page changing shape is only visible at the raw-response level.
  */
 
 import type { Usage } from './domain/cost.ts'
@@ -16,6 +18,18 @@ import type { Usage } from './domain/cost.ts'
 export interface ClockPort {
   /** The current instant. Local-time components are what resolve the window. */
   now(): Date
+}
+
+export interface HttpResponse {
+  readonly status: number
+  /** Lowercased names, as `fetch` reports them. */
+  readonly headers: Record<string, string>
+  readonly body: string
+}
+
+export interface HttpPort {
+  /** Resolves for any status. Only a transport failure rejects. */
+  get(url: string): Promise<HttpResponse>
 }
 
 /** A tool call as the model proposed it. `argumentsJson` is untrusted text. */
@@ -65,4 +79,5 @@ export interface ModelPort {
 export interface Ports {
   readonly clock: ClockPort
   readonly model: ModelPort
+  readonly http: HttpPort
 }

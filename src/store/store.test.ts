@@ -20,7 +20,8 @@ const RUN_COLUMNS = [
 const STEP_COLUMNS = [
   'step_id', 'run_id', 'step_index', 'timestamp', 'duration_ms', 'kind', 'model_response',
   'proposed_action', 'validation_result', 'dispatched_action', 'tool_name', 'tool_args',
-  'tool_result', 'error', 'uncached_input_tokens', 'cached_input_tokens', 'output_tokens', 'cost',
+  'tool_result', 'error', 'warning', 'uncached_input_tokens', 'cached_input_tokens', 'output_tokens',
+  'cost',
 ]
 
 const columnsOf = (database: DatabaseSync, table: string) =>
@@ -162,9 +163,10 @@ const step: RecordedStep = {
   validationResult: 'valid',
   dispatchedAction: '{"name":"fetch_source"}',
   toolName: 'fetch_source',
-  toolArgs: '{"source_id":"aoty"}',
+  toolArgs: '{"source_id":"loudwire"}',
   toolResult: 'cleaned text',
   error: null,
+  warning: null,
   uncachedInputTokens: 100,
   cachedInputTokens: 20,
   outputTokens: 10,
@@ -199,4 +201,76 @@ test('a database written by an older schema is reported at open time', () => {
 
   assert.throws(() => openStore(path), /older schema \(runs is missing .*cost_is_upper_bound/)
   rmSync(path)
+})
+
+const SOURCE_TEXT_COLUMNS = [
+  'source_text_id', 'run_id', 'source_id', 'url', 'fetched_at', 'status',
+  'raw_body', 'truncated', 'candidate_count', 'warning',
+]
+
+test('the source_texts table carries every column the trace needs', () => {
+  const store = openStore(':memory:')
+  assert.deepEqual(columnsOf(store.database, 'source_texts').sort(), [...SOURCE_TEXT_COLUMNS].sort())
+})
+
+test('a fetched page is readable back against its run, body intact', () => {
+  const store = openStore(':memory:')
+  store.startRun(started)
+  store.recordSourceText({
+    sourceTextId: 'text-1',
+    runId: 'run-1',
+    sourceId: 'wikipedia',
+    url: 'https://en.wikipedia.org/wiki/2026_in_heavy_metal_music',
+    fetchedAt: '2026-09-14T09:00:01.000Z',
+    status: 200,
+    rawBody: '<html><body>Ulcerate</body></html>',
+    truncated: false,
+    candidateCount: 4,
+    warning: null,
+  })
+
+  const row = store.database.prepare('SELECT * FROM source_texts WHERE run_id = ?').get('run-1')
+  assert.equal(row?.['raw_body'], '<html><body>Ulcerate</body></html>')
+  assert.equal(row?.['candidate_count'], 4)
+  assert.equal(row?.['truncated'], 0)
+  assert.equal(row?.['warning'], null)
+})
+
+test('a page that disappointed is recorded with its warning, not omitted', () => {
+  const store = openStore(':memory:')
+  store.startRun(started)
+  store.recordSourceText({
+    sourceTextId: 'text-2',
+    runId: 'run-1',
+    sourceId: 'loudwire',
+    url: 'https://loudwire.com/2026-hard-rock-metal-album-release-calendar/',
+    fetchedAt: '2026-09-14T09:00:02.000Z',
+    status: 403,
+    rawBody: 'go away',
+    truncated: false,
+    candidateCount: 0,
+    warning: 'returned HTTP 403',
+  })
+
+  const row = store.database.prepare('SELECT * FROM source_texts WHERE source_id = ?').get('loudwire')
+  assert.equal(row?.['status'], 403)
+  assert.equal(row?.['warning'], 'returned HTTP 403')
+})
+
+test('a source text cannot be recorded against a run that does not exist', () => {
+  const store = openStore(':memory:')
+  assert.throws(() =>
+    store.recordSourceText({
+      sourceTextId: 'text-3',
+      runId: 'no-such-run',
+      sourceId: 'wikipedia',
+      url: 'https://example.test/',
+      fetchedAt: '2026-09-14T09:00:03.000Z',
+      status: 200,
+      rawBody: 'x',
+      truncated: false,
+      candidateCount: 0,
+      warning: null,
+    }),
+  )
 })
