@@ -108,16 +108,3 @@ test('the real Wikipedia year page reduces to its album tables', () => {
     'the September table must survive truncation',
   )
 })
-
-test('a bot challenge page is text, and says nothing about releases', () => {
-  const text = htmlToText(
-    readFileSync(new URL('../../fixtures/aoty-challenge.html', import.meta.url), 'utf8'),
-  )
-
-  // What Album of the Year actually served on 14 September 2026: a Cloudflare
-  // interstitial behind a 403. The client never hands it to the model, because
-  // it never reaches a 2xx — but if the status ever changed, a challenge page
-  // reduces to nothing at all. Its only words are in the `<title>`, and a
-  // title is not page text; everything else is the challenge script.
-  assert.equal(text, '')
-})

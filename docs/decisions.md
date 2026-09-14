@@ -249,7 +249,7 @@ The rule the specification states is narrower — a source that *normally* yield
 
 **Status:** ACCEPTED — amends ADR-0001
 
-ADR-0001 names three sources. Two of them read fine. The third, Album of the Year, answers every request with HTTP 403 and a Cloudflare interstitial — `fixtures/aoty-challenge.html` is what it served on 14 September 2026 — and no ordinary request gets past it. Reading it would mean impersonating a browser and solving a challenge designed to stop exactly that, which is not something this project should be doing to a site that has said no.
+ADR-0001 names three sources. Two of them read fine. The third, Album of the Year, answers every request with HTTP 403 and a Cloudflare interstitial, and no ordinary request gets past it. What it served on 14 September 2026 was captured and read: an interstitial whose only words are in its `<title>`, so it reduces to no text at all. The capture is in commit 3ccb982 and was removed once the decision was taken, rather than kept as a fixture for a source nothing reads. Reading it would mean impersonating a browser and solving a challenge designed to stop exactly that, which is not something this project should be doing to a site that has said no.
 
 So version 1 runs on two sources. Album of the Year is not configured at all, rather than configured and failing: a run has thirty steps, and spending one of them knocking on a door that is shut buys nothing but a warning we already know the text of. Its URL lives in this decision, which is one line away from putting it back. Nothing is faked and nothing pretends the coverage is complete.
 
