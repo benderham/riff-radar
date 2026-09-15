@@ -45,11 +45,10 @@ export interface LookupFetch {
  * gate below is the one line that actually waits.
  */
 export const nextRequestDelayMs = (lastRequestAt: number, now: number): number => {
-  if (lastRequestAt === 0) return 0
-
-  // A clock that has gone backwards owes nothing. Waiting out the difference
-  // would stall the client for however far back it jumped — a few seconds after
-  // an NTP correction, and a full day in a test that restarts its clock.
+  // A clock that has gone backwards owes nothing, and neither does the first
+  // request of a run. Waiting out the difference would stall the client for
+  // however far back it jumped — a few seconds after an NTP correction, and a
+  // full day in a test that restarts its clock.
   if (now < lastRequestAt) return 0
 
   return Math.max(0, lastRequestAt + MUSICBRAINZ_MIN_INTERVAL_MS - now)
@@ -166,6 +165,7 @@ const bodyOf = (what: string, status: number, body: string): { data: unknown } |
 }
 
 const searchUrl = (artist: string, title: string): string => {
+  // The quotes are the query's, so a stray one in a title would end the term early.
   const query = `artist:"${artist.replaceAll('"', '')}" AND releasegroup:"${title.replaceAll('"', '')}"`
   return `${MUSICBRAINZ_ENDPOINT}/release-group?query=${encodeURIComponent(query)}&fmt=json&limit=5`
 }

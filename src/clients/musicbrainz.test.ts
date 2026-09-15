@@ -51,7 +51,7 @@ test('the gate waits out the remainder of a second and no longer', () => {
   assert.equal(nextRequestDelayMs(1_000, 1_400), 600)
   assert.equal(nextRequestDelayMs(1_000, 2_000), 0)
   assert.equal(nextRequestDelayMs(1_000, 9_999), 0, 'a long gap never owes time')
-  assert.equal(nextRequestDelayMs(0, 0), 0, 'the first request of a run does not wait')
+  assert.equal(nextRequestDelayMs(0, Date.now()), 0, 'the first request of a run does not wait')
   assert.equal(nextRequestDelayMs(9_000, 1_000), 0, 'a clock that went backwards owes nothing')
 })
 

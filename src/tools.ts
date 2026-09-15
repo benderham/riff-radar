@@ -165,6 +165,14 @@ export const tools = {
         )
       }
 
+      // The model reads `musicbrainzId`; the same id under a second name and a
+      // `found: true` beside it are two more ways of saying one thing.
+      let facts: Record<string, unknown> = { unverified: true }
+      if (found.lookup.found) {
+        const { found: _matched, releaseGroupId, ...rest } = found.lookup
+        facts = { musicbrainzId: releaseGroupId, ...rest }
+      }
+
       return {
         done: false,
         ...(found.warning === undefined ? {} : { warning: found.warning }),
@@ -172,9 +180,7 @@ export const tools = {
           artist,
           title,
           ...(found.warning === undefined ? {} : { warning: found.warning }),
-          ...(found.lookup.found
-            ? { musicbrainzId: found.lookup.releaseGroupId, ...found.lookup }
-            : { unverified: true }),
+          ...facts,
         }),
       }
     },

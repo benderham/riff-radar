@@ -31,8 +31,8 @@ const no = (reason: string): Eligibility => ({ eligible: false, reason })
 const YES: Eligibility = { eligible: true }
 
 /** An EP earns a slot only by being substantial; the brief sets both numbers. */
-export const EP_MIN_TRACKS = 4
-export const EP_MIN_MINUTES = 20
+const EP_MIN_TRACKS = 4
+const EP_MIN_MINUTES = 20
 
 /**
  * Secondary types that are never a new album. `Demo` and `Mixtape/Street` are
@@ -63,8 +63,6 @@ const EXCLUDED_SECONDARY = new Set([
 const SOURCE_FORMAT_EXCLUSIONS = /\b(live|single|split|compilation|reissue|remaster|demo|EP)\b/i
 const SOURCE_FORMAT_ALBUM = /\b(album|full[- ]?length|LP)\b/i
 
-const earliest = (dates: readonly string[]): string | undefined => [...dates].sort()[0]
-
 /**
  * A release group MusicBrainz dates before the window is not this week's news,
  * whatever a calendar says — it is a reissue, a remaster, or a page listing an
@@ -93,9 +91,11 @@ const dateVerdict = (candidate: Candidate, window: DateWindow): Eligibility => {
     return YES
   }
 
-  const stated = earliest(candidate.releaseDates)
-  if (stated === undefined) return no('no source stated a release date')
   if (candidate.releaseDates.some((date) => date >= window.from && date <= window.to)) return YES
+
+  // Already ascending: `mergeCandidates` sorts, so the first is the earliest.
+  const stated = candidate.releaseDates[0]
+  if (stated === undefined) return no('no source stated a release date')
 
   return no(`no source dates it inside ${window.from}..${window.to}; earliest is ${stated}`)
 }
