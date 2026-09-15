@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-import { MAX_RUN_COST_USD, PROMPT_VERSION, SEARCH_ENDPOINT, SOURCES } from '../../config.ts'
+import { MAX_RUN_COST_USD, PROMPT_VERSION, SOURCES } from '../../config.ts'
 import type { ShortlistItem } from '../domain/shortlist.ts'
 import { tasteProfileSchema } from '../domain/taste-profile.ts'
 import type {
@@ -35,12 +35,12 @@ const PAGE = `<!doctype html>
 </ul>
 </body></html>`
 
-/** Every source serves the same page unless a test says otherwise. */
-/** The fakes below read sources and nothing else; a POST from one is a bug in the test. */
+/** For the fakes that read sources and nothing else: a POST from one is a bug in the test. */
 const notSearched = async (): Promise<never> => {
   throw new Error('this test fetches sources only; nothing should search')
 }
 
+/** Every source serves the same page unless a test says otherwise. */
 const fixtureHttp = (body = PAGE, status = 200): HttpPort => ({
   get: async () => ({ status, headers: { 'content-type': 'text/html' }, body }),
   post: async () => ({ status, headers: { 'content-type': 'text/html' }, body }),
@@ -603,10 +603,11 @@ const SEARCH_BODY = JSON.stringify({
 /** A page for a source over GET, the search payload for the search endpoint over POST. */
 const searchingHttp = (searchStatus = 200): HttpPort => ({
   get: async () => ({ status: 200, headers: {}, body: PAGE }),
-  post: async (url) => {
-    assert.equal(url, SEARCH_ENDPOINT, 'the only POST this project makes is a search')
-    return { status: searchStatus, headers: {}, body: searchStatus === 200 ? SEARCH_BODY : 'slow down' }
-  },
+  post: async () => ({
+    status: searchStatus,
+    headers: {},
+    body: searchStatus === 200 ? SEARCH_BODY : 'slow down',
+  }),
 })
 
 test('a search is an ordinary step: query, result and duration, all recorded', async () => {

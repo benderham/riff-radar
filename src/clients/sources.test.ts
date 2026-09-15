@@ -27,6 +27,10 @@ const PAGE = `<!doctype html>
 
 const USAGE = { uncachedInputTokens: 900, cachedInputTokens: 0, outputTokens: 120 }
 
+const refusePost = async (url: string): Promise<never> => {
+  throw new Error(`unexpected post to ${url}`)
+}
+
 /** Serves one body for any URL, and records what was asked for. */
 const servingFixture = (body: string, status = 200) => {
   const gets: string[] = []
@@ -36,9 +40,7 @@ const servingFixture = (body: string, status = 200) => {
       return { status, headers: { 'content-type': 'text/html' }, body }
     },
     // A source is a page, read with GET. Nothing here should ever post.
-    post: async (url) => {
-      throw new Error(`unexpected post to ${url}`)
-    },
+    post: refusePost,
   }
   return { http, gets }
 }

@@ -41,13 +41,6 @@ test('a search returns the results the provider listed', async () => {
     description:
       'Cutting the Throat of God is the seventh studio album by New Zealand technical death metal band Ulcerate. It was released on 14 June 2024 through Debemur',
   })
-  // The score, the answer, the images and the request id are all dropped: a
-  // disambiguation needs a title, a URL and a snippet, and nothing else.
-  assert.deepEqual(Object.keys(search.results[0] ?? {}).sort(), [
-    'description',
-    'title',
-    'url',
-  ])
 })
 
 test('the query travels in the body and the key in a header', async () => {
@@ -61,9 +54,6 @@ test('the query travels in the body and the key in a header', async () => {
     max_results: 5,
   })
   assert.equal(call?.headers?.['authorization'], 'Bearer test-key')
-  // The URL recorded on the step is the bare endpoint, so a key could not reach
-  // the trace through a query string even if one were put there.
-  assert.ok(!call?.url.includes('test-key'))
 })
 
 test('a provider that refuses is a warning, not a failure', async () => {

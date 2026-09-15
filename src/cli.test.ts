@@ -19,14 +19,10 @@ const model: ModelPort = {
 }
 
 /** The CLI test never reaches a source: its model finishes on the first step. */
-const http: HttpPort = {
-  get: async (url) => {
-    throw new Error(`unexpected fetch of ${url}`)
-  },
-  post: async (url) => {
-    throw new Error(`unexpected post to ${url}`)
-  },
+const refuse = async (url: string): Promise<never> => {
+  throw new Error(`unexpected request to ${url}`)
 }
+const http: HttpPort = { get: refuse, post: refuse }
 
 const env = {
   FIREWORKS_API_KEY: 'fw-key',
