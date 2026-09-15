@@ -14,7 +14,8 @@
     "check": "npm run typecheck && npm run check:layering && npm test",
     "smoke:model": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --import tsx scripts/smoke-model.ts",
     "smoke:sources": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --import tsx scripts/smoke-sources.ts",
-    "smoke:search": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --import tsx scripts/smoke-search.ts"
+    "smoke:search": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --import tsx scripts/smoke-search.ts",
+    "smoke:musicbrainz": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --import tsx scripts/smoke-musicbrainz.ts"
   },
   "dependencies": {
     "zod": "^4.1.13"

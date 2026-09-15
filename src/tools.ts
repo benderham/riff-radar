@@ -21,10 +21,16 @@ import { z } from 'zod'
 
 import type { SourceId } from '../config.ts'
 import { MAX_SEARCH_QUERY_CHARS, SOURCES } from '../config.ts'
+import { lookupRelease } from './clients/musicbrainz.ts'
 import { searchWeb } from './clients/search.ts'
 import { fetchSource } from './clients/sources.ts'
 import type { Candidate } from './domain/candidates.ts'
-import { mergeCandidates } from './domain/candidates.ts'
+import {
+  artistTitleIdentity,
+  candidateIdentity,
+  collapseByReleaseGroup,
+  mergeCandidates,
+} from './domain/candidates.ts'
 import type { Usage } from './domain/cost.ts'
 import type { ShortlistItem } from './domain/shortlist.ts'
 import { shortlistItemSchema } from './domain/shortlist.ts'
@@ -136,17 +142,48 @@ export const tools = {
       artist: z.string().min(1),
       title: z.string().min(1),
     }),
-    run: ({ artist, title }) => ({
-      done: false,
-      // ponytail: canned identity, replaced by a real client in ticket 04.
-      result: JSON.stringify({
-        artist,
-        title,
-        musicbrainzId: `fake-mbid-${title.toLowerCase().replaceAll(/[^a-z0-9]+/g, '-')}`,
-        firstReleaseDate: '2026-09-10',
-        primaryType: 'Album',
-      }),
-    }),
+    run: async ({ artist, title }, context) => {
+      const found = await lookupRelease(context.ports, artist, title)
+
+      // A lookup enriches a candidate a source already listed; it never adds
+      // one. Asked about a release no source produced, it answers the model and
+      // changes nothing, exactly as `web_search` does (ADR-0032).
+      const identity = artistTitleIdentity(artist, title)
+
+      // A lookup that failed is not a lookup. Recording `found: false` for a
+      // service that was briefly down would mark the release Unverified, and an
+      // Unverified release is judged on the source's own word about its format
+      // — so a stumble at MusicBrainz could let a live album through (ADR-0034).
+      const failed = found.lookup.found === false && found.warning !== undefined
+      if (!failed) {
+        // Collapsing after enriching, because the proof that two candidates are
+        // one release is exactly what this lookup just produced.
+        context.candidates = collapseByReleaseGroup(
+          context.candidates.map((candidate) =>
+            candidateIdentity(candidate) === identity ? { ...candidate, lookup: found.lookup } : candidate,
+          ),
+        )
+      }
+
+      // The model reads `musicbrainzId`; the same id under a second name and a
+      // `found: true` beside it are two more ways of saying one thing.
+      let facts: Record<string, unknown> = { unverified: true }
+      if (found.lookup.found) {
+        const { found: _matched, releaseGroupId, ...rest } = found.lookup
+        facts = { musicbrainzId: releaseGroupId, ...rest }
+      }
+
+      return {
+        done: false,
+        ...(found.warning === undefined ? {} : { warning: found.warning }),
+        result: JSON.stringify({
+          artist,
+          title,
+          ...(found.warning === undefined ? {} : { warning: found.warning }),
+          ...facts,
+        }),
+      }
+    },
   }),
 
   web_search: defineTool({

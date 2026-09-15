@@ -9,7 +9,7 @@
  */
 
 /** Versions stamped onto every run, so a trace says which configuration produced it. */
-export const PROMPT_VERSION = 2
+export const PROMPT_VERSION = 4
 export const ACTION_SCHEMA_VERSION = 1
 
 /**
@@ -95,10 +95,46 @@ export const SEARCH_RESULT_COUNT = 5
 /** Tavily's documented ceiling on a query; the action schema enforces it (ADR-0033). */
 export const MAX_SEARCH_QUERY_CHARS = 400
 
-/** Identifies the project to the sites it reads, rather than pretending to be a browser. */
-export const USER_AGENT = 'riff-radar/0.1 (personal listening project)'
+/**
+ * Identifies the project to the sites it reads, rather than pretending to be a
+ * browser. MusicBrainz's terms ask for a contactable agent, so the repository
+ * answers for the project — a URL anyone can read, and not Ben's address, which
+ * would be personal data in every request and every trace.
+ */
+export const USER_AGENT = 'riff-radar/0.1 (+https://github.com/benderham/riff-radar)'
 
 export const HTTP_TIMEOUT_MS = 20_000
+
+/**
+ * MusicBrainz (ADR-0034). Identity and enrichment only: it never introduces a
+ * release, and a release it has never heard of is Unverified rather than
+ * invalid (CONTEXT.md).
+ *
+ * One request per second is the published limit for anonymous clients, and it
+ * is enforced in the client rather than by its callers, so no future caller can
+ * forget. An EP costs a second request, because a release group states its type
+ * but not its tracks.
+ *
+ * The search is fuzzy and scores what it finds, so a hit is only a match when
+ * it scores at least this well *and* its artist and title agree. Binding a
+ * candidate to the wrong release group would make Release Identity — and every
+ * fact resting on it — confidently wrong about a different record.
+ */
+export const MUSICBRAINZ_ENDPOINT = 'https://musicbrainz.org/ws/2'
+export const MUSICBRAINZ_MIN_INTERVAL_MS = 1_000
+export const MUSICBRAINZ_MIN_SCORE = 90
+
+/**
+ * MusicBrainz sheds load rather than queueing: under pressure it answers 503,
+ * or 200 with an apology in the body. Both are transient and both are common —
+ * capturing this project's fixtures took three or four attempts more than once
+ * — so a lookup that gives up on the first refusal would leave candidates
+ * unverified for no better reason than the hour of the day.
+ *
+ * Three attempts, spaced by the same one-second gate as any other request. The
+ * bound is what keeps a struggling service from becoming a stalled run.
+ */
+export const MUSICBRAINZ_MAX_ATTEMPTS = 3
 
 /**
  * The ceiling on cleaned source text handed to the extraction call.

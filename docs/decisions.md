@@ -292,3 +292,71 @@ Tavily's snippet field is called `content`; it is mapped to `description` at the
 Reading it corrected one thing. Tavily documents a 400-character ceiling on a query, and the `web_search` action schema had no upper bound, so a model that wrote a paragraph where a search query belongs would have spent a step discovering that from the provider. `MAX_SEARCH_QUERY_CHARS` now bounds it, which is where AGENTS.md wanted it anyway: a model-produced action validated before dispatch.
 
 Not done, and deliberately: the document's Autonomous Setup installs the `tvly` CLI and adds Tavily's Agent Skills globally to the coding agent. That equips Ben's machine rather than this repository, and AGENTS.md's scope boundaries do not cover it. It is his call, not a step to take silently.
+
+## ADR-0034: MusicBrainz is the identity, and its data model settles two of the brief's rules
+
+**Status:** ACCEPTED — implements ticket 04. No approval was needed for the provider: MusicBrainz is named in the brief.
+
+`lookup_release` searches MusicBrainz's release-group index over the `http` port. Release Identity is the release-group id where there is one, and artist and title where there is not (CONTEXT.md). `releaseIdentityOf` is that rule; `candidateIdentity` stays the weaker artist-and-title one, because merging happens as a source is read, long before anything is looked up, and an identity that changed halfway through a run would stop a later fetch merging into an enriched candidate. The proof that two candidates are one release is spent where it is produced: `collapseByReleaseGroup` runs after each lookup.
+
+Two of the brief's eligibility rules turned out to need almost no code, because MusicBrainz already draws the line. A reissue and a remaster are *releases inside* the original's release group — Exodus's "Bonded by Blood" is one group dated 1985 holding fifteen of them — so a reissue in this week's calendar resolves to a release group from decades ago and excludes itself on its date. A total re-record gets its *own* release group with its own date, so the carve-out the brief asks for is what the data already says. Both were verified against the live service rather than assumed.
+
+Four things the live service taught that no fixture would have:
+
+- It answers HTTP 200 with `{"error": "…busy…"}` under load, so a 2xx is not by itself a result and the body must be read.
+- It sheds load often enough that giving up on the first refusal would leave candidates unverified for no better reason than the hour of the day. Transient refusals are retried three times, backing off further each time. A 404 is not retried; it will say the same thing three times.
+- Its search is fuzzy and scored. Asked about Ulcerate it offers an EP by *Ulcerate Fester*, a different band. A hit is a match only when it scores at least 90 **and** its artist and title agree, because binding a candidate to the wrong release group would make Release Identity — and every fact resting on it — confidently wrong about a different record.
+- It serves partial dates. `1985` is one, and a first draft that treated any non-ten-character date as undecidable would have excluded a forty-year-old reissue as a mystery rather than as a reissue. A partial date is compared against the same prefix of the window, which settles every case except one that genuinely overlaps it.
+
+The one-request-per-second limit lives in the client so no caller can forget it, and its arithmetic is a pure function so the limit can be proved without spending a second per assertion. A clock that has gone backwards owes nothing — otherwise an NTP correction stalls the client for however far back it jumped.
+
+An EP costs a second request: a release group states its type but not its tracks, and the ≥4-track, ≥20-minute threshold needs both. Only an EP pays it. A duration summed from an incomplete tracklist is an undercount, and an undercount excludes an EP that should qualify, so an untimed track means no duration at all rather than a wrong one.
+
+**Consequences:** A lookup that *failed* is deliberately not recorded as a lookup. Recording `found: false` for a service that was briefly down would mark the release Unverified, and an Unverified release is judged on the source's own word about its format — so a stumble at MusicBrainz could let a live album through. The candidate stays un-looked-up, which excludes it, which is the honest reading of what the run knows.
+
+The user agent gained a contact URL, because MusicBrainz's terms ask for one. It is the repository, not Ben's address, which would otherwise be personal data in every request and every trace.
+
+**What this does not do.** Four things, written down rather than faked:
+
+- The re-record carve-out is half implemented, **and that is the accepted scope, not a gap left open**. A *total* re-record qualifies and a reissue or remaster excludes itself, both because of where MusicBrainz puts them. A **covers album**, a **partial re-record** and **another band's version** are each their own release group with their own date, and MusicBrainz has no secondary type for any of them, so all three pass as new albums. Ben accepted this on 15 September 2026: the records are rare enough that the slots they would cost are not worth a rule the data cannot support. Ticket 05 does not inherit it, and nothing should be built to close it unless one of them actually reaches a shortlist.
+
+  (An earlier draft of this decision claimed the match rule excluded another band's version. That was wrong: the match rule stops a candidate binding to the *original* band's release group, but a source listing `Cover Band — Master of Puppets` matches Cover Band's own release group, primary type Album, and passes.)
+- **Label and personnel are not fetched.** The ticket's brief asks for them; a release group carries neither, so each would cost a further request per candidate, on top of the one an EP already costs. Adjacency is ticket 05's subject and nothing ranks on them yet, so the request was not made. This is a deferral, not an oversight, and ticket 05 has to close it.
+- **`artistCount > 1` is a proxy for a split, not the rule.** MusicBrainz has no split type. The proxy excludes every legitimate two-artist collaboration along with the splits, which is a false exclusion of exactly the kind of record that might deserve a slot. It is kept because ADR-0010's asymmetry says so — a wrongly *included* release costs one of five scarce slots, a wrongly excluded one costs a run — but it is a judgement Ben should overturn if collaborations start going missing.
+
+**Two readings worth naming, because both could have gone the other way.** The brief says a release is eligible when *any credible source* places its earliest official release date inside the range. Where MusicBrainz supplies a date, that date decides alone: it *is* the earliest official release date, which is the test the brief sets, and the reissue rule depends on it being authoritative — a 1985 release group listed in this week's calendar has to lose to MusicBrainz, not to the calendar. The consequence is real and worth seeing: a MusicBrainz date one day outside the window excludes a release every source placed inside it. The "any source" tolerance therefore survives only for Unverified releases, which is where the run has nothing better.
+
+The excluded secondary types are also wider than the brief's list, which names live albums, singles, splits, compilations, reissues and remasters. Demo, Soundtrack, Mixtape/Street, Interview, Audiobook, Audio drama and Spokenword are added because none of them is the new album Ben is looking for and each would cost a slot. The retry behaviour is likewise not in the ticket; it is in AGENTS.md's design rules ("bound retries and obey provider rate limits") and the live service made it necessary rather than theoretical.
+
+## ADR-0035: Eligibility is enforced at `finish`, and an unlooked-up release is excluded
+
+**Status:** ACCEPTED — the enforcement point and the missing-data reading were Ben's calls, asked and answered on 15 September 2026.
+
+The brief's eligibility rules lived in the system prompt, which made them a request rather than a rule — the same position the provenance rule was in before ticket 03. They are now pure functions in `domain/eligibility.ts`, and `validateShortlist` runs them over every proposed item. The model still does the choosing; the code refuses the choices the rules do not allow. The verdict carries its reason rather than a boolean, because both readers need it: the trace, to explain an absence, and the model, to be told why an item it liked was refused.
+
+Enforcing at `finish` rather than filtering candidates was chosen over two alternatives. Filtering in code would hide the exclusion from the model, which then cannot explain it and cannot argue with it, and would make the trace quieter exactly where it should be loud. Doing both would put one rule in two places that can disagree.
+
+A candidate nobody looked up is excluded, per ADR-0010: the data needed to confirm its format and its first release date is missing. This is a cliff, and it is deliberate — a run whose model skips `lookup_release` returns nothing at all — so the system prompt now says that a lookup is not optional, and `PROMPT_VERSION` is 3.
+
+An Unverified release is *not* excluded, because absence from MusicBrainz is missing evidence and not invalidity (CONTEXT.md). It falls back to the format its source stated, which is the only statement the run has. A source that called it a live album still excludes it; a source that said nothing usable excludes it too.
+
+**Consequences:** Nine agent tests broke, all of them proposing shortlists no run could now produce because they never looked anything up. That is the useful kind of failure, and the same kind ticket 03 produced: they were asserting on outcomes the rules no longer allow. They look releases up before finishing now.
+
+The ranking half of ADR-0010 is untouched: missing data still excludes for eligibility and still proceeds for ranking. The two rules answer different questions.
+
+## ADR-0036: A release is judged on who made it, not on how many made it
+
+**Status:** ACCEPTED — amends ADR-0034 and the format list in CONTEXT.md. Ben's proposal and decision, 15 September 2026.
+
+ADR-0034 excluded any release MusicBrainz credited to more than one artist, as a proxy for the brief's "split". MusicBrainz has no split type, and the proxy could not tell a split from a collaboration, so it threw out every two-artist record — which in metal is a real and frequently good category, not an edge case.
+
+A split and a collaboration are indistinguishable in the data because the distinction was never really about the count. The question being asked is whether Ben wants to hear it, and that is a taste question: a Killswitch Engage / Disturbed record is refused because Disturbed is excluded, and a Killswitch Engage / Parkway Drive record is not refused at all. So `MusicbrainzLookup` carries the credited artists' names rather than their number, and eligibility refuses a release when **any** credited artist is on the profile's `artists.exclude`.
+
+The asymmetry is ADR-0007's. An exclusion is a filter and one excluded artist is enough; `artists.always` is a *ranking* guarantee and deliberately does not appear here, because a live album should not become eligible on the strength of who plays on it. That half belongs to ticket 05, where ranking lives.
+
+**Consequences:** A split now reaches the shortlist if its artists pass, which the brief's format list did not intend. The prompt's format exclusions drop "split" to match; CONTEXT.md's Eligible Release gains the artist rule. Nothing else in the brief mentioned splits, so this is the whole of the amendment.
+
+This also closes a gap rather than only opening one. The system prompt has claimed "the artist is not in the profile's `artists.exclude`" since the beginning and no code enforced it — the same shape of problem as the provenance rule in ticket 03 and the eligibility rules in ADR-0035. It is enforced in `validateShortlist` now, across every credited artist rather than only the one a source happened to print first. An Unverified release has no MusicBrainz credits to read, so it is judged on the single artist its source named.
+
+`PROMPT_VERSION` is 4.
+

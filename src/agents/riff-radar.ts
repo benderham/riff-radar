@@ -276,7 +276,7 @@ export const runRiffRadar = async ({
       const result =
         shortlist.length === 0
           ? undefined
-          : validateShortlist(shortlist, window, context.candidates)
+          : validateShortlist(shortlist, window, context.candidates, profile)
 
       terminationReason =
         result === undefined

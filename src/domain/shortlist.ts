@@ -17,6 +17,8 @@ import { z } from 'zod'
 import { SHORTLIST_SIZE } from '../../config.ts'
 import type { Candidate } from './candidates.ts'
 import { artistTitleIdentity, candidateIdentity } from './candidates.ts'
+import { isEligible } from './eligibility.ts'
+import type { TasteProfile } from './taste-profile.ts'
 import type { DateWindow } from './window.ts'
 
 export const shortlistItemSchema = z.object({
@@ -47,7 +49,8 @@ const itemErrors = (
   item: ShortlistItem,
   position: number,
   window: DateWindow,
-  discovered: ReadonlySet<string>,
+  discovered: ReadonlyMap<string, Candidate>,
+  profile: TasteProfile,
 ): string[] => {
   const at = `item ${position}`
   const errors: string[] = []
@@ -69,9 +72,23 @@ const itemErrors = (
   // them is a release the model met somewhere else — a web search, or its own
   // training — and the rule that discovery is reproducible (ADR-0001) is worth
   // no more than the code that refuses to let it through.
-  if (present(item.artist) && present(item.title)) {
-    if (!discovered.has(artistTitleIdentity(item.artist!, item.title!))) {
-      errors.push(`${at}: ${item.artist} — ${item.title} is not among the candidates any source listed`)
+  const candidate =
+    present(item.artist) && present(item.title)
+      ? discovered.get(artistTitleIdentity(item.artist!, item.title!))
+      : undefined
+
+  if (present(item.artist) && present(item.title) && candidate === undefined) {
+    errors.push(`${at}: ${item.artist} — ${item.title} is not among the candidates any source listed`)
+  }
+
+  // Eligibility is the brief's rule about what deserves one of five slots, and
+  // until now it lived only in the system prompt, which makes it a request
+  // rather than a rule. The model still does the choosing; this refuses the
+  // choices the rules do not allow (ADR-0035).
+  if (candidate !== undefined) {
+    const verdict = isEligible(candidate, window, profile)
+    if (!verdict.eligible) {
+      errors.push(`${at}: ${item.artist} — ${item.title} is not eligible: ${verdict.reason}`)
     }
   }
 
@@ -90,9 +107,10 @@ export const validateShortlist = (
   items: readonly ShortlistItem[],
   window: DateWindow,
   candidates: readonly Candidate[],
+  profile: TasteProfile,
 ): ShortlistValidation => {
   const errors: string[] = []
-  const discovered = new Set(candidates.map(candidateIdentity))
+  const discovered = new Map(candidates.map((candidate) => [candidateIdentity(candidate), candidate]))
 
   if (items.length === 0) errors.push('shortlist is empty')
   if (items.length > SHORTLIST_SIZE) {
@@ -101,7 +119,7 @@ export const validateShortlist = (
 
   const seen = new Set<string>()
   for (const [index, item] of items.entries()) {
-    errors.push(...itemErrors(item, index + 1, window, discovered))
+    errors.push(...itemErrors(item, index + 1, window, discovered, profile))
 
     const identity = releaseIdentity(item)
     if (seen.has(identity)) errors.push(`item ${index + 1}: duplicate release ${identity}`)

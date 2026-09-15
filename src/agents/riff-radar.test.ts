@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-import { MAX_RUN_COST_USD, PROMPT_VERSION, SOURCES } from '../../config.ts'
+import { MAX_RUN_COST_USD, MUSICBRAINZ_ENDPOINT, PROMPT_VERSION, SOURCES } from '../../config.ts'
 import type { ShortlistItem } from '../domain/shortlist.ts'
 import { tasteProfileSchema } from '../domain/taste-profile.ts'
 import type {
@@ -35,6 +35,52 @@ const PAGE = `<!doctype html>
 </ul>
 </body></html>`
 
+/**
+ * A MusicBrainz search response matching whatever the URL asked about, so that
+ * a scripted `lookup_release` enriches its candidate the way a real one does.
+ * The client sends `artist:"X" AND releasegroup:"Y"`; this reads them back out.
+ */
+const musicbrainzBody = (url: string): string => {
+  const query = decodeURIComponent(new URL(url).searchParams.get('query') ?? '')
+  const artist = /artist:"([^"]*)"/.exec(query)?.[1] ?? ''
+  const title = /releasegroup:"([^"]*)"/.exec(query)?.[1] ?? ''
+
+  return JSON.stringify({
+    'release-groups': [
+      {
+        id: `rg-${title.toLowerCase().replaceAll(/[^a-z0-9]+/g, '-')}`,
+        title,
+        score: 100,
+        'primary-type': 'Album',
+        'first-release-date': '2026-09-10',
+        'artist-credit': [{ name: artist }],
+      },
+    ],
+  })
+}
+
+const isMusicbrainz = (url: string): boolean => url.startsWith(MUSICBRAINZ_ENDPOINT)
+
+/**
+ * Answers MusicBrainz and delegates everything else, so a fake written to test
+ * sources or search does not also have to know how a lookup works.
+ */
+const withMusicbrainz = (http: HttpPort): HttpPort => ({
+  ...http,
+  get: async (url, headers) =>
+    isMusicbrainz(url)
+      ? { status: 200, headers: { 'content-type': 'application/json' }, body: musicbrainzBody(url) }
+      : http.get(url, headers),
+})
+
+/** Looks every release up, then finishes: what an ordinary run does. */
+const looksUpThenFinishes = (count: number) => [
+  ...RELEASES.slice(0, count).map((release) =>
+    proposes('lookup_release', JSON.stringify({ artist: release.artist, title: release.title })),
+  ),
+  finishes(items(count)),
+]
+
 /** For the fakes that read sources and nothing else: a POST from one is a bug in the test. */
 const notSearched = async (): Promise<never> => {
   throw new Error('this test fetches sources only; nothing should search')
@@ -42,7 +88,10 @@ const notSearched = async (): Promise<never> => {
 
 /** Every source serves the same page unless a test says otherwise. */
 const fixtureHttp = (body = PAGE, status = 200): HttpPort => ({
-  get: async () => ({ status, headers: { 'content-type': 'text/html' }, body }),
+  get: async (url) =>
+    isMusicbrainz(url)
+      ? { status: 200, headers: { 'content-type': 'application/json' }, body: musicbrainzBody(url) }
+      : { status, headers: { 'content-type': 'text/html' }, body },
   post: async () => ({ status, headers: { 'content-type': 'text/html' }, body }),
 })
 
@@ -176,7 +225,7 @@ const run = async (
 // ── Termination reasons ──────────────────────────────────────────────────────
 
 test('finish with five valid items ends the run completed', async () => {
-  const { outcome, runRow } = await run(scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes(items(5))).port)
+  const { outcome, runRow } = await run(scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), ...looksUpThenFinishes(5)).port)
 
   assert.equal(outcome.terminationReason, 'completed')
   assert.equal(outcome.shortlistSize, 5)
@@ -185,7 +234,7 @@ test('finish with five valid items ends the run completed', async () => {
 })
 
 test('finish with one to four valid items ends the run completed_short', async () => {
-  const { outcome, runRow } = await run(scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes(items(3))).port)
+  const { outcome, runRow } = await run(scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), ...looksUpThenFinishes(3)).port)
 
   assert.equal(outcome.terminationReason, 'completed_short')
   assert.equal(outcome.shortlistSize, 3)
@@ -236,7 +285,7 @@ test('two actions proposed in one step is an invalid action, and both are record
       ],
     },
     proposes('fetch_source', '{"source_id": "loudwire"}'),
-    finishes(items(1)),
+    ...looksUpThenFinishes(1),
   )
   const { outcome, stepRows } = await run(model.port)
 
@@ -314,7 +363,7 @@ test('a rejected action is visible: proposed and unvalidated, never dispatched',
 })
 
 test('malformed JSON arguments are recorded as an invalid action, not a crash', async () => {
-  const model = scriptedModel(proposes('web_search', '{"query": '), proposes('fetch_source', '{"source_id": "loudwire"}'), finishes(items(1)))
+  const model = scriptedModel(proposes('web_search', '{"query": '), proposes('fetch_source', '{"source_id": "loudwire"}'), ...looksUpThenFinishes(1))
   const { outcome, stepRows } = await run(model.port)
 
   assert.equal(outcome.terminationReason, 'completed_short')
@@ -328,12 +377,12 @@ test('the model may correct itself: the invalid counter resets on a valid action
     proposes('fetch_source', '{"source_id": "loudwire"}'),
     proposes('web_search', 'not json again'),
     proposes('web_search', 'nor this'),
-    finishes(items(1)),
+    ...looksUpThenFinishes(1),
   )
   const { outcome, stepRows } = await run(model.port)
 
   assert.equal(outcome.terminationReason, 'completed_short')
-  assert.equal(stepRows.length, 6, 'four invalid actions, never three in a row')
+  assert.equal(stepRows.length, 7, 'four invalid actions, never three in a row, then a lookup and a finish')
 })
 
 test('a failed validation is returned to the model as that step result', async () => {
@@ -509,19 +558,19 @@ test('two runs in one database are distinct rows with distinct steps', async () 
 // ── Live discovery (ticket 02) ───────────────────────────────────────────────
 
 test('a release listed by two sources is one candidate carrying both URLs', async () => {
-  const byUrl: HttpPort = {
+  const byUrl: HttpPort = withMusicbrainz({
     get: async (url) => ({
       status: 200,
       headers: {},
       body: url.includes('wikipedia') ? fixture('wikipedia.html') : PAGE,
     }),
     post: notSearched,
-  }
+  })
 
   const model = scriptedModel(
     proposes('fetch_source', '{"source_id": "loudwire"}'),
     proposes('fetch_source', '{"source_id": "wikipedia"}'),
-    finishes(items(1)),
+    ...looksUpThenFinishes(1),
   )
   const { outcome, store, stepRows } = await run(model.port, { http: byUrl })
 
@@ -545,17 +594,17 @@ test('a source that yields nothing warns on the step and the run carries on', as
   const model = scriptedModel(
     proposes('fetch_source', '{"source_id": "loudwire"}'),
     proposes('fetch_source', '{"source_id": "wikipedia"}'),
-    finishes(items(1)),
+    ...looksUpThenFinishes(1),
   )
   // One source refuses, the other serves: the shortlist comes from what is left.
   const { outcome, store, stepRows } = await run(model.port, {
-    http: {
+    http: withMusicbrainz({
       get: async (url) =>
         url === SOURCES.loudwire
           ? { status: 403, headers: {}, body: 'go away' }
           : { status: 200, headers: {}, body: PAGE },
       post: notSearched,
-    },
+    }),
   })
 
   assert.equal(outcome.terminationReason, 'completed_short', 'a lost source is not a lost run')
@@ -601,7 +650,7 @@ const SEARCH_BODY = JSON.stringify({
 })
 
 /** A page for a source over GET, the search payload for the search endpoint over POST. */
-const searchingHttp = (searchStatus = 200): HttpPort => ({
+const searchingHttp = (searchStatus = 200): HttpPort => withMusicbrainz({
   get: async () => ({ status: 200, headers: {}, body: PAGE }),
   post: async () => ({
     status: searchStatus,
@@ -614,7 +663,7 @@ test('a search is an ordinary step: query, result and duration, all recorded', a
   const model = scriptedModel(
     proposes('fetch_source', '{"source_id": "loudwire"}'),
     proposes('web_search', '{"query": "vaultwraith crimson nadir"}'),
-    finishes(items(1)),
+    ...looksUpThenFinishes(1),
   )
   const { outcome, stepRows } = await run(model.port, { http: searchingHttp() })
 
@@ -647,7 +696,7 @@ test('a search that fails leaves the run running', async () => {
   const model = scriptedModel(
     proposes('fetch_source', '{"source_id": "loudwire"}'),
     proposes('web_search', '{"query": "ulcerate"}'),
-    finishes(items(1)),
+    ...looksUpThenFinishes(1),
   )
   const { outcome, stepRows } = await run(model.port, { http: searchingHttp(429) })
 

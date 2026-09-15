@@ -34,6 +34,37 @@ export const extractionSchema = z.object({
 
 export type ExtractedCandidate = z.infer<typeof extractionSchema>['candidates'][number]
 
+/**
+ * What a MusicBrainz lookup found, or that it found nothing.
+ *
+ * Three states, one field: absent means nobody has looked yet, `found: false`
+ * means MusicBrainz has never heard of this release, and the rest is what it
+ * knew. The distinction matters because they are not the same evidence — an
+ * unlooked-up release is a step the run did not take, and an Unverified one is
+ * a fact about MusicBrainz (CONTEXT.md).
+ *
+ * Every enriched field is optional because MusicBrainz's coverage is uneven,
+ * and partial data enriches what it can rather than being refused whole.
+ */
+export type MusicbrainzLookup =
+  | { readonly found: false }
+  | {
+      readonly found: true
+      /** The Release Identity: a release-group id, not a release id. */
+      readonly releaseGroupId: string
+      /** `Album`, `EP`, `Single`, `Broadcast`, `Other`. */
+      readonly primaryType?: string
+      /** `Live`, `Compilation`, `Remix`, `Demo`, `Soundtrack`, … Usually empty. */
+      readonly secondaryTypes: readonly string[]
+      /** The release group's earliest official date, which a reissue does not move. */
+      readonly firstReleaseDate?: string
+      /** From a second lookup, made only for an EP. */
+      readonly trackCount?: number
+      readonly durationMs?: number
+      /** Every credited artist, so a collaboration can be judged on all of them. */
+      readonly artists: readonly string[]
+    }
+
 export interface Candidate {
   readonly artist: string
   readonly title: string
@@ -42,6 +73,8 @@ export interface Candidate {
   readonly sourceUrls: readonly string[]
   readonly label?: string
   readonly format?: string
+  /** Absent until `lookup_release` has been spent on this candidate. */
+  readonly lookup?: MusicbrainzLookup
 }
 
 const tidy = (value: string): string => value.replaceAll(/\s+/g, ' ').trim()
@@ -91,6 +124,50 @@ export const artistTitleIdentity = (artist: string, title: string): string =>
 
 export const candidateIdentity = (candidate: Candidate): string =>
   artistTitleIdentity(candidate.artist, candidate.title)
+
+/**
+ * Release Identity: the MusicBrainz release-group id where one exists, and
+ * artist and title where one does not (CONTEXT.md).
+ *
+ * `candidateIdentity` stays the weaker rule on purpose, because it is what
+ * merging has to use: candidates are merged as a source is read, long before
+ * anything has been looked up, and an identity that changed halfway through a
+ * run would stop a later fetch merging into an enriched candidate.
+ */
+export const releaseIdentityOf = (candidate: Candidate): string =>
+  candidate.lookup?.found === true ? candidate.lookup.releaseGroupId : candidateIdentity(candidate)
+
+/**
+ * Candidates a lookup has proved to be one release become one.
+ *
+ * Sources punctuate differently, so the same record can arrive twice and merge
+ * on nothing: "Cutting the Throat of God" and "Cutting The Throat Of God" are
+ * one release and two candidates until MusicBrainz says otherwise. This is
+ * where that proof is spent — and only where there is proof, because two
+ * records nobody could identify are not thereby the same record.
+ */
+export const collapseByReleaseGroup = (candidates: readonly Candidate[]): Candidate[] => {
+  const byIdentity = new Map<string, Candidate>()
+
+  for (const candidate of candidates) {
+    const identity = releaseIdentityOf(candidate)
+    const held = byIdentity.get(identity)
+
+    byIdentity.set(
+      identity,
+      held === undefined
+        ? candidate
+        : {
+            ...candidate,
+            ...held,
+            releaseDates: [...new Set([...held.releaseDates, ...candidate.releaseDates])].sort(),
+            sourceUrls: [...new Set([...held.sourceUrls, ...candidate.sourceUrls])],
+          },
+    )
+  }
+
+  return [...byIdentity.values()]
+}
 
 /**
  * A candidate belongs to a run when *any* source places it inside the window.

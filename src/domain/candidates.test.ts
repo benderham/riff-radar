@@ -1,12 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import type { Candidate } from './candidates.ts'
+import type { Candidate, MusicbrainzLookup } from './candidates.ts'
 import {
   candidateIdentity,
+  collapseByReleaseGroup,
   extractionSchema,
   mergeCandidates,
   normaliseCandidate,
+  releaseIdentityOf,
   withinWindow,
 } from './candidates.ts'
 
@@ -156,4 +158,70 @@ test('a candidate is in the window when any source places it there', () => {
     withinWindow(candidate(AOTY, { releaseDates: ['2026-09-07', '2026-09-08'] }), window),
     true,
   )
+})
+
+// ── Release Identity, once MusicBrainz has spoken (ticket 04) ────────────────
+
+const looked = (releaseGroupId: string): MusicbrainzLookup => ({
+  found: true,
+  releaseGroupId,
+  primaryType: 'Album',
+  secondaryTypes: [],
+  firstReleaseDate: '2026-09-12',
+  artists: ['Ulcerate'],
+})
+
+const discovered = (over: Partial<Candidate> = {}): Candidate => ({
+  artist: 'Ulcerate',
+  title: 'Cutting the Throat of God',
+  releaseDates: ['2026-09-12'],
+  sourceUrls: ['https://loudwire.test/calendar'],
+  ...over,
+})
+
+test('Release Identity is the release-group id once there is one', () => {
+  assert.equal(releaseIdentityOf(discovered({ lookup: looked('rg-1') })), 'rg-1')
+})
+
+test('Release Identity falls back to artist and title while unverified', () => {
+  assert.equal(releaseIdentityOf(discovered()), 'ulcerate|cutting the throat of god')
+  assert.equal(releaseIdentityOf(discovered({ lookup: { found: false } })), 'ulcerate|cutting the throat of god')
+})
+
+test('two spellings MusicBrainz says are one release become one candidate', () => {
+  // Sources punctuate differently, so the same record arrives twice and merges
+  // on nothing. A lookup is what proves them the same, and this is where that
+  // proof is spent.
+  const collapsed = collapseByReleaseGroup([
+    discovered({ lookup: looked('rg-1'), sourceUrls: ['https://loudwire.test/calendar'] }),
+    discovered({
+      title: 'Cutting The Throat Of God',
+      lookup: looked('rg-1'),
+      releaseDates: ['2026-09-11'],
+      sourceUrls: ['https://wikipedia.test/2026'],
+    }),
+  ])
+
+  assert.equal(collapsed.length, 1)
+  assert.deepEqual(collapsed[0]?.releaseDates, ['2026-09-11', '2026-09-12'], 'both dates kept, neither chosen')
+  assert.deepEqual(collapsed[0]?.sourceUrls, ['https://loudwire.test/calendar', 'https://wikipedia.test/2026'])
+})
+
+test('two releases with different ids stay two candidates', () => {
+  const kept = collapseByReleaseGroup([
+    discovered({ lookup: looked('rg-1') }),
+    discovered({ title: 'Stare Into Death and Be Still', lookup: looked('rg-2') }),
+  ])
+
+  assert.equal(kept.length, 2)
+})
+
+test('unverified candidates are never collapsed into each other', () => {
+  // Two records nobody could identify are not thereby the same record.
+  const kept = collapseByReleaseGroup([
+    discovered({ artist: 'One', lookup: { found: false } }),
+    discovered({ artist: 'Two', lookup: { found: false } }),
+  ])
+
+  assert.equal(kept.length, 2)
 })
