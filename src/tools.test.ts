@@ -1,8 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { z } from 'zod'
 
 import { SEARCH_ENDPOINT, SOURCES } from '../config.ts'
+import type { Candidate } from './domain/candidates.ts'
 import type { HttpPort, ModelPort, Ports } from './ports.ts'
 import { openStore } from './store/store.ts'
 import type { ToolContext } from './tools.ts'
@@ -209,6 +211,89 @@ test('finish hands its items back to the loop rather than judging them', async (
   const dispatched = await dispatch(result.name, result.input, toolContext)
   assert.ok(dispatched.done)
   assert.deepEqual(dispatched.shortlist, [{ artist: 'Ulcerate' }])
+})
+
+// ── MusicBrainz (ticket 04) ──────────────────────────────────────────────────
+
+const mbFixture = (name: string) => readFileSync(new URL(`../fixtures/${name}`, import.meta.url), 'utf8')
+const MB_GROUP = mbFixture('musicbrainz-release-group.json')
+const MB_NOT_FOUND = mbFixture('musicbrainz-not-found.json')
+
+const discovered = (over: Partial<Candidate> = {}): Candidate => ({
+  artist: 'Ulcerate',
+  title: 'Cutting the Throat of God',
+  releaseDates: ['2026-09-12'],
+  sourceUrls: [SOURCES.loudwire],
+  ...over,
+})
+
+const lookingUp = (body: string, status = 200): HttpPort => ({
+  get: async () => ({ status, headers: {}, body }),
+  post: notSearched,
+})
+
+test('a lookup records what MusicBrainz knew on the candidate itself', async () => {
+  const result = validateAction(call('lookup_release', '{"artist": "Ulcerate", "title": "Cutting the Throat of God"}'))
+  assert.ok(result.ok)
+
+  const { toolContext } = context({ http: lookingUp(MB_GROUP) })
+  toolContext.candidates = [discovered()]
+  const dispatched = await dispatch(result.name, result.input, toolContext)
+
+  assert.equal(dispatched.done, false)
+  const enriched = toolContext.candidates[0]!
+  assert.equal(enriched.lookup?.found, true)
+  assert.ok(enriched.lookup?.found === true && enriched.lookup.releaseGroupId === 'c302ec77-589f-462f-b6b3-d63508886978')
+  assert.ok(!dispatched.done && dispatched.result.includes('c302ec77'))
+})
+
+test('a lookup adds no candidate, whatever it finds', async () => {
+  const result = validateAction(call('lookup_release', '{"artist": "Ulcerate", "title": "Cutting the Throat of God"}'))
+  assert.ok(result.ok)
+
+  const { toolContext } = context({ http: lookingUp(MB_GROUP) })
+  toolContext.candidates = [discovered()]
+  await dispatch(result.name, result.input, toolContext)
+
+  assert.equal(toolContext.candidates.length, 1, 'identity is not discovery')
+})
+
+test('a release MusicBrainz does not know is marked unverified and kept', async () => {
+  const result = validateAction(call('lookup_release', '{"artist": "Ulcerate", "title": "Cutting the Throat of God"}'))
+  assert.ok(result.ok)
+
+  const { toolContext } = context({ http: lookingUp(MB_NOT_FOUND) })
+  toolContext.candidates = [discovered()]
+  const dispatched = await dispatch(result.name, result.input, toolContext)
+
+  assert.deepEqual(toolContext.candidates[0]?.lookup, { found: false })
+  assert.ok(!dispatched.done && dispatched.warning === undefined, 'absence is not a disappointment')
+})
+
+test('a lookup that failed is not a lookup: the candidate stays un-looked-up', async () => {
+  // A service that was briefly down has not told us this release is unknown to
+  // it. Recording `found: false` here would let a live album through on the
+  // source's word, because an Unverified release falls back to that word.
+  const result = validateAction(call('lookup_release', '{"artist": "Ulcerate", "title": "Cutting the Throat of God"}'))
+  assert.ok(result.ok)
+
+  const { toolContext } = context({ http: lookingUp('service unavailable', 503) })
+  toolContext.candidates = [discovered()]
+  const dispatched = await dispatch(result.name, result.input, toolContext)
+
+  assert.equal(toolContext.candidates[0]?.lookup, undefined)
+  assert.ok(!dispatched.done && /503/.test(String(dispatched.warning)))
+})
+
+test('a lookup for a release no source listed enriches nothing', async () => {
+  const result = validateAction(call('lookup_release', '{"artist": "Vaultwraith", "title": "Crimson Nadir"}'))
+  assert.ok(result.ok)
+
+  const { toolContext } = context({ http: lookingUp(MB_GROUP) })
+  toolContext.candidates = [discovered()]
+  await dispatch(result.name, result.input, toolContext)
+
+  assert.equal(toolContext.candidates[0]?.lookup, undefined, 'a lookup cannot invent a candidate to enrich')
 })
 
 // ── Web search (ticket 03) ───────────────────────────────────────────────────

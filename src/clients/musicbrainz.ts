@@ -44,8 +44,16 @@ export interface LookupFetch {
  * Pure so the limit can be proved without spending a second per assertion; the
  * gate below is the one line that actually waits.
  */
-export const nextRequestDelayMs = (lastRequestAt: number, now: number): number =>
-  lastRequestAt === 0 ? 0 : Math.max(0, lastRequestAt + MUSICBRAINZ_MIN_INTERVAL_MS - now)
+export const nextRequestDelayMs = (lastRequestAt: number, now: number): number => {
+  if (lastRequestAt === 0) return 0
+
+  // A clock that has gone backwards owes nothing. Waiting out the difference
+  // would stall the client for however far back it jumped — a few seconds after
+  // an NTP correction, and a full day in a test that restarts its clock.
+  if (now < lastRequestAt) return 0
+
+  return Math.max(0, lastRequestAt + MUSICBRAINZ_MIN_INTERVAL_MS - now)
+}
 
 // Module-level on purpose: the limit is per client, not per call site, and
 // MusicBrainz counts requests from this process however they were prompted.

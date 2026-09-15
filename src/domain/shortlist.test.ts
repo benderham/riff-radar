@@ -18,6 +18,17 @@ const discovered = (items: readonly ShortlistItem[]): Candidate[] =>
     title: item.title ?? '',
     releaseDates: [item.releaseDate ?? ''],
     sourceUrls: item.sourceUrls ?? [],
+    // Looked up and eligible, because that is the ordinary case and these tests
+    // are about the other rules. The eligibility rules have their own file, and
+    // the tests at the bottom of this one cover the guardrail itself.
+    lookup: {
+      found: true,
+      releaseGroupId: item.musicbrainzId ?? 'rg-x',
+      primaryType: 'Album',
+      secondaryTypes: [],
+      firstReleaseDate: item.releaseDate ?? '2026-09-10',
+      artistCount: 1,
+    },
   }))
 
 const validate = (items: readonly ShortlistItem[], candidates = discovered(items)) =>
@@ -116,4 +127,62 @@ test('an item no source listed is invalid, however well formed it is', () => {
 test('grounding ignores case and surrounding space', () => {
   const shortlisted = item({ artist: '  blood incantation ', title: 'ABSOLUTE ELSEWHERE' })
   assert.deepEqual(validate([shortlisted], discovered([item()])), { ok: true })
+})
+
+// ── Eligibility, enforced rather than asked for (ticket 04) ──────────────────
+
+const candidateFor = (over: Partial<Candidate>): Candidate[] => [{ ...discovered([item()])[0]!, ...over }]
+
+test('a live album cannot be proposed, however good the rationale', () => {
+  const live = candidateFor({
+    lookup: {
+      found: true,
+      releaseGroupId: 'mbid-1',
+      primaryType: 'Album',
+      secondaryTypes: ['Live'],
+      firstReleaseDate: '2026-09-10',
+      artistCount: 1,
+    },
+  })
+  assert.match(errorsOf([item()], live).join('\n'), /Live/)
+})
+
+test('a reissue cannot be proposed: its release group predates the window', () => {
+  const reissue = candidateFor({
+    lookup: {
+      found: true,
+      releaseGroupId: 'mbid-1',
+      primaryType: 'Album',
+      secondaryTypes: [],
+      firstReleaseDate: '2019-04-05',
+      artistCount: 1,
+    },
+  })
+  assert.match(errorsOf([item()], reissue).join('\n'), /reissue or remaster/)
+})
+
+test('a release nobody looked up cannot be proposed', () => {
+  const { lookup: _unused, ...unlooked } = discovered([item()])[0]!
+  assert.match(errorsOf([item()], [unlooked]).join('\n'), /not looked up/)
+})
+
+test('the reason a release was refused names the release', () => {
+  // The model is handed these errors and has to act on them, so an error that
+  // does not say which item it means is an error it cannot use.
+  const live = candidateFor({
+    lookup: {
+      found: true,
+      releaseGroupId: 'mbid-1',
+      primaryType: 'Album',
+      secondaryTypes: ['Compilation'],
+      firstReleaseDate: '2026-09-10',
+      artistCount: 1,
+    },
+  })
+  assert.match(errorsOf([item()], live).join('\n'), /Blood Incantation — Absolute Elsewhere/)
+})
+
+test('an unverified release the source called an album is still proposable', () => {
+  const unverified = candidateFor({ lookup: { found: false }, format: 'full-length' })
+  assert.deepEqual(validate([item({ musicbrainzId: undefined, unverified: true })], unverified), { ok: true })
 })
