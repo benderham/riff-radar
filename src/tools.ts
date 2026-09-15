@@ -25,7 +25,12 @@ import { lookupRelease } from './clients/musicbrainz.ts'
 import { searchWeb } from './clients/search.ts'
 import { fetchSource } from './clients/sources.ts'
 import type { Candidate } from './domain/candidates.ts'
-import { artistTitleIdentity, candidateIdentity, mergeCandidates } from './domain/candidates.ts'
+import {
+  artistTitleIdentity,
+  candidateIdentity,
+  collapseByReleaseGroup,
+  mergeCandidates,
+} from './domain/candidates.ts'
 import type { Usage } from './domain/cost.ts'
 import type { ShortlistItem } from './domain/shortlist.ts'
 import { shortlistItemSchema } from './domain/shortlist.ts'
@@ -151,8 +156,12 @@ export const tools = {
       // — so a stumble at MusicBrainz could let a live album through (ADR-0034).
       const failed = found.lookup.found === false && found.warning !== undefined
       if (!failed) {
-        context.candidates = context.candidates.map((candidate) =>
-          candidateIdentity(candidate) === identity ? { ...candidate, lookup: found.lookup } : candidate,
+        // Collapsing after enriching, because the proof that two candidates are
+        // one release is exactly what this lookup just produced.
+        context.candidates = collapseByReleaseGroup(
+          context.candidates.map((candidate) =>
+            candidateIdentity(candidate) === identity ? { ...candidate, lookup: found.lookup } : candidate,
+          ),
         )
       }
 

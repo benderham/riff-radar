@@ -126,6 +126,50 @@ export const candidateIdentity = (candidate: Candidate): string =>
   artistTitleIdentity(candidate.artist, candidate.title)
 
 /**
+ * Release Identity: the MusicBrainz release-group id where one exists, and
+ * artist and title where one does not (CONTEXT.md).
+ *
+ * `candidateIdentity` stays the weaker rule on purpose, because it is what
+ * merging has to use: candidates are merged as a source is read, long before
+ * anything has been looked up, and an identity that changed halfway through a
+ * run would stop a later fetch merging into an enriched candidate.
+ */
+export const releaseIdentityOf = (candidate: Candidate): string =>
+  candidate.lookup?.found === true ? candidate.lookup.releaseGroupId : candidateIdentity(candidate)
+
+/**
+ * Candidates a lookup has proved to be one release become one.
+ *
+ * Sources punctuate differently, so the same record can arrive twice and merge
+ * on nothing: "Cutting the Throat of God" and "Cutting The Throat Of God" are
+ * one release and two candidates until MusicBrainz says otherwise. This is
+ * where that proof is spent — and only where there is proof, because two
+ * records nobody could identify are not thereby the same record.
+ */
+export const collapseByReleaseGroup = (candidates: readonly Candidate[]): Candidate[] => {
+  const byIdentity = new Map<string, Candidate>()
+
+  for (const candidate of candidates) {
+    const identity = releaseIdentityOf(candidate)
+    const held = byIdentity.get(identity)
+
+    byIdentity.set(
+      identity,
+      held === undefined
+        ? candidate
+        : {
+            ...candidate,
+            ...held,
+            releaseDates: [...new Set([...held.releaseDates, ...candidate.releaseDates])].sort(),
+            sourceUrls: [...new Set([...held.sourceUrls, ...candidate.sourceUrls])],
+          },
+    )
+  }
+
+  return [...byIdentity.values()]
+}
+
+/**
  * A candidate belongs to a run when *any* source places it inside the window.
  *
  * Any, not all: sources disagree by a day or two routinely, and a release one

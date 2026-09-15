@@ -296,6 +296,27 @@ test('a lookup for a release no source listed enriches nothing', async () => {
   assert.equal(toolContext.candidates[0]?.lookup, undefined, 'a lookup cannot invent a candidate to enrich')
 })
 
+test('a lookup collapses two spellings of one release into one candidate', async () => {
+  const result = validateAction(call('lookup_release', '{"artist": "Ulcerate", "title": "Cutting the Throat of God"}'))
+  assert.ok(result.ok)
+
+  // The same record from two sources, punctuated differently, so nothing merged
+  // them at discovery. Both resolve to the one release group.
+  const { toolContext } = context({ http: lookingUp(MB_GROUP) })
+  toolContext.candidates = [
+    discovered(),
+    discovered({ title: 'Cutting The Throat Of God', sourceUrls: [SOURCES.wikipedia] }),
+  ]
+
+  const second = validateAction(call('lookup_release', '{"artist": "Ulcerate", "title": "Cutting The Throat Of God"}'))
+  assert.ok(second.ok)
+  await dispatch(result.name, result.input, toolContext)
+  await dispatch(second.name, second.input, toolContext)
+
+  assert.equal(toolContext.candidates.length, 1)
+  assert.deepEqual(toolContext.candidates[0]?.sourceUrls, [SOURCES.loudwire, SOURCES.wikipedia])
+})
+
 // ── Web search (ticket 03) ───────────────────────────────────────────────────
 
 const SEARCH_BODY = JSON.stringify({
