@@ -25,3 +25,41 @@ Most of the ranking is arithmetic Ben can reason about. The model contributes on
 - [ ] A Run demonstrably ranks differently under two different profiles, evidenced from the trace
 - [ ] Ranking arithmetic, artist tiers and negative weights are tested directly as pure functions
 - [ ] Suppression is tested end to end through the ports
+
+## Comments
+
+### What MusicBrainz actually offers Adjacency (probed live, 15 September 2026)
+
+Ticket 04 left label and personnel unfetched, so this is the survey of what is
+available before that gap is closed. Every row below was checked against the
+live service, not the documentation.
+
+| Signal | Where it lives | Cost | Coverage for this project's music |
+| --- | --- | --- | --- |
+| Label | `release?inc=labels` → `label-info[].label.name`, with catalogue number | free for an EP, which already fetches a release; one more request for an album | Good — Debemur Morti Productions and Century Media both present |
+| Genre | `release-group/<id>?inc=genres` | one request | Excellent, and specific: `dissonant death metal`, `technical death metal`, `atmospheric sludge metal` |
+| Band members | `artist/<id>?inc=artist-rels` → `member of band` | one request per artist | Good — Ulcerate returned its full current *and* past lineup |
+| Producer, engineer, mix | `release?inc=recordings+recording-level-rels` | one request, and 86 KB on a well-documented album | **Effectively zero.** See below |
+
+**Do not build a producer signal.** The relation types exist and work — Nirvana's
+*Nevermind* returns `producer → Butch Vig` along with `engineer`, `mix` and
+`recording` — but they sit at the *recording* level rather than the release, and
+they are unpopulated for the music Riff Radar is for. Blood Incantation's
+*Absolute Elsewhere* (2024) and Ulcerate's *Cutting the Throat of God* (2024)
+each returned **no credits at any level**: not on the release, not on the
+recordings. Two flagship, heavily edited modern metal albums.
+
+CONTEXT.md's Adjacency says "its personnel", and `member of band` serves that
+better than production credits would even if they were populated: it is one
+cheap request, and it is the relation that actually matters here — the drummer
+from Ulcerate starting a new band is how an artist Ben has merely heard of
+reaches the Shortlist. Following a member's *other* bands needs a second hop per
+member, which is where the request budget would go if that is wanted.
+
+Genre is the best value of the four: cheap, well populated, and specific enough
+to tell dissonant death metal from technical death metal.
+
+**Not established:** whether genres are populated as well for obscure bands.
+Ulcerate and Metallica both had them; the long tail was not sampled, and the long
+tail is where a run actually lives. Worth one probe before genre is weighted
+heavily.
