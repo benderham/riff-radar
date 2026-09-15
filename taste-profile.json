@@ -1,9 +1,20 @@
 {
-  "version": 1,
+  "version": 2,
   "artists": {
-    "always": [],
+    "always": [
+      "Bring Me The Horizon",
+      "Karnivool",
+      "Lamb of God",
+      "Lorna Shore",
+      "MØL",
+      "Nine Inch Nails",
+      "Parkway Drive",
+      "Sleep Token",
+      "Soen",
+      "Tool"
+    ],
     "watch": [],
-    "exclude": []
+    "exclude": ["Disturbed"]
   },
   "labels": { "include": [], "exclude": [] },
   "genres": { "include": [], "exclude": [] },
