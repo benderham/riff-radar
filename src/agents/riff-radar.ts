@@ -27,6 +27,7 @@ import {
 import type { CliArgs } from '../domain/cli-args.ts'
 import type { Usage } from '../domain/cost.ts'
 import { NO_USAGE, addUsage, estimateCost } from '../domain/cost.ts'
+import { citedVibes, rankShortlist } from '../domain/ranking.ts'
 import type { TerminationReason } from '../domain/run.ts'
 import { WRITE_PERMITTED } from '../domain/run.ts'
 import type { ShortlistItem } from '../domain/shortlist.ts'
@@ -266,7 +267,17 @@ export const runRiffRadar = async ({
     }
 
     if (outcome.done) {
-      shortlist = outcome.shortlist
+      // The profile decides the order, not the model (ADR-0006): it scores the
+      // attributes of each release the model proposed, and the ranks are
+      // rewritten from the result. The one judgement of the model's that counts
+      // is its vibe note, and only where the quote is in a page this run stored.
+      const ranked = rankShortlist(
+        outcome.shortlist,
+        context.candidates,
+        profile,
+        citedVibes(outcome.shortlist, store.sourceTextsOf(runId)),
+      )
+      shortlist = ranked.map((each) => each.item)
 
       // An empty shortlist is the model reporting a quiet week, not a broken
       // one (ADR-0025): nothing eligible was found, and that is a real answer,
@@ -296,7 +307,19 @@ export const runRiffRadar = async ({
           dispatchedAction,
           toolName: validation.name,
           toolArgs: call.argumentsJson,
-          toolResult: JSON.stringify({ terminationReason, shortlist }),
+          // The score breakdown is what makes the ranking arguable: every
+          // contribution, with the profile term that caused it, beside the
+          // order it produced.
+          toolResult: JSON.stringify({
+            terminationReason,
+            shortlist,
+            ranking: ranked.map(({ item, score }) => ({
+              artist: item.artist,
+              title: item.title,
+              rank: item.rank,
+              ...score,
+            })),
+          }),
           error: result === undefined || result.ok ? null : result.errors.join('; '),
         },
         at,

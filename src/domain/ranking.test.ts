@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 import { RANKING_WEIGHTS } from '../../config.ts'
 import type { Candidate, MusicbrainzLookup } from './candidates.ts'
-import { rankShortlist, scoreRelease } from './ranking.ts'
+import { citedVibes, rankShortlist, scoreRelease } from './ranking.ts'
 import type { ShortlistItem } from './shortlist.ts'
 import type { TasteProfile } from './taste-profile.ts'
 
@@ -233,4 +233,36 @@ test('an item naming a release the run never discovered keeps its place and scor
   const ranked = rankShortlist([item('Ghost', 1)], [], NO_OPINIONS)
   assert.equal(ranked[0]?.score.total, 0)
   assert.equal(ranked[0]?.item.rank, 1)
+})
+
+// ── Checking a citation against the page it claims to come from ──────────────
+
+const page = (body: string) => [{ url: 'https://loudwire.test/calendar', rawBody: `<p>${body}</p>` }]
+
+test('a quote found in the page the item names is cited', () => {
+  const withVibe = { ...item('Cattle', 1), sourceUrls: ['https://loudwire.test/calendar'], vibe: { claim: 'glacial', quote: 'a glacial, suffocating record' } }
+  const cited = citedVibes([withVibe], page('Reviewers called it a glacial, suffocating record.'))
+  assert.equal([...cited.values()][0]?.cited, true)
+})
+
+test('whitespace and markup are forgiven; the words are not', () => {
+  const withVibe = { ...item('Cattle', 1), sourceUrls: ['https://loudwire.test/calendar'], vibe: { claim: 'glacial', quote: 'a  GLACIAL,\n suffocating record' } }
+  const cited = citedVibes([withVibe], page('Reviewers called it a glacial, suffocating record.'))
+  assert.equal([...cited.values()][0]?.cited, true)
+})
+
+test('a quote no stored page contains is not cited', () => {
+  const withVibe = { ...item('Cattle', 1), sourceUrls: ['https://loudwire.test/calendar'], vibe: { claim: 'glacial', quote: 'the best record of the year' } }
+  const cited = citedVibes([withVibe], page('Reviewers called it a glacial, suffocating record.'))
+  assert.equal([...cited.values()][0]?.cited, false)
+})
+
+test('a quote from a page the item does not name is not cited', () => {
+  const withVibe = { ...item('Cattle', 1), sourceUrls: ['https://wikipedia.test/2026'], vibe: { claim: 'glacial', quote: 'a glacial, suffocating record' } }
+  const cited = citedVibes([withVibe], page('Reviewers called it a glacial, suffocating record.'))
+  assert.equal([...cited.values()][0]?.cited, false)
+})
+
+test('an item with no vibe note is not in the citation map at all', () => {
+  assert.equal(citedVibes([item('Cattle', 1)], page('anything')).size, 0)
 })

@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 
 import { MAX_RUN_COST_USD, MUSICBRAINZ_ENDPOINT, PROMPT_VERSION, SOURCES } from '../../config.ts'
 import type { ShortlistItem } from '../domain/shortlist.ts'
+import type { TasteProfile } from '../domain/taste-profile.ts'
 import { tasteProfileSchema } from '../domain/taste-profile.ts'
 import type {
   ClockPort,
@@ -203,14 +204,14 @@ const items = (count: number) => Array.from({ length: count }, (_, index) => ite
 
 const run = async (
   model: ModelPort,
-  args: Partial<{ dryRun: boolean; http: HttpPort }> = {},
+  args: Partial<{ dryRun: boolean; http: HttpPort; profile: TasteProfile }> = {},
 ) => {
   const store = openStore(':memory:')
   const outcome = await runRiffRadar({
     args: { command: 'run', lastDays: 7, dryRun: args.dryRun ?? false, raw: 'run' },
     ports: { clock: tickingClock(), model, http: args.http ?? fixtureHttp() },
     store,
-    profile,
+    profile: args.profile ?? profile,
     searchApiKey: 'test-key',
   })
 
@@ -704,4 +705,73 @@ test('a search that fails leaves the run running', async () => {
   assert.match(String(stepRows[1]?.['warning']), /429/)
   assert.equal(stepRows[1]?.['error'], null, 'a warning is not an error')
   assert.equal(stepRows[1]?.['kind'], 'action')
+})
+
+// ── The profile ranks the shortlist, and the trace shows its working ─────────
+
+const tasting = (over: Partial<TasteProfile>): TasteProfile =>
+  tasteProfileSchema.parse({ ...profile, ...over, version: profile.version + 1 })
+
+/** The order the finish step recorded, which is the order that would be written. */
+const rankedOrder = (stepRows: readonly Record<string, unknown>[]): string[] =>
+  JSON.parse(String(stepRows.at(-1)?.['tool_result'])).shortlist.map(
+    (item: ShortlistItem) => item.artist,
+  )
+
+test('two profiles rank the same releases differently, and the trace says why', async () => {
+  const script = () =>
+    scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), ...looksUpThenFinishes(3)).port
+
+  const first = await run(script(), {
+    profile: tasting({ artists: { always: [], watch: ['Blood Incantation'], exclude: [] } }),
+  })
+  const second = await run(script(), {
+    profile: tasting({ artists: { always: [], watch: ['Chat Pile'], exclude: [] } }),
+  })
+
+  assert.equal(rankedOrder(first.stepRows)[0], 'Blood Incantation')
+  assert.equal(rankedOrder(second.stepRows)[0], 'Chat Pile')
+
+  // The model proposed the same order both times; the profile moved it.
+  assert.deepEqual(
+    JSON.parse(String(first.stepRows.at(-1)?.['proposed_action']))[0].arguments,
+    JSON.parse(String(second.stepRows.at(-1)?.['proposed_action']))[0].arguments,
+  )
+
+  const ranking = JSON.parse(String(first.stepRows.at(-1)?.['tool_result'])).ranking
+  assert.deepEqual(ranking[0].signals, [{ signal: 'artist', term: 'Blood Incantation', points: 3 }])
+  assert.equal(ranking[0].rank, 1)
+})
+
+test('the run records the profile version it ranked with', async () => {
+  const { runRow } = await run(scriptedModel(finishes([])).port, {
+    profile: tasting({ artists: { always: ['Ulcerate'], watch: [], exclude: [] } }),
+  })
+
+  assert.equal(runRow?.['profile_version'], profile.version + 1)
+})
+
+test('a vibe note cited in the stored source text scores; an invented one does not', async () => {
+  const withVibe = (quote: string) =>
+    scriptedModel(
+      proposes('fetch_source', '{"source_id": "loudwire"}'),
+      ...RELEASES.slice(0, 2).map((release) =>
+        proposes('lookup_release', JSON.stringify({ artist: release.artist, title: release.title })),
+      ),
+      finishes([
+        item(1),
+        item(2, {
+          sourceUrls: [SOURCES.loudwire],
+          vibe: { claim: 'a cool world of dissonance', quote },
+        }),
+      ]),
+    ).port
+
+  const opinionated = tasting({ vibe_notes: { include: ['dissonance'], exclude: [] } })
+
+  const cited = await run(withVibe('Chat Pile — Cool World'), { profile: opinionated })
+  const invented = await run(withVibe('the best record of the year'), { profile: opinionated })
+
+  assert.deepEqual(rankedOrder(cited.stepRows), ['Chat Pile', 'Ulcerate'])
+  assert.deepEqual(rankedOrder(invented.stepRows), ['Ulcerate', 'Chat Pile'])
 })

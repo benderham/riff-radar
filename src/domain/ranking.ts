@@ -24,6 +24,7 @@
 import { RANKING_WEIGHTS } from '../../config.ts'
 import type { Candidate } from './candidates.ts'
 import { artistTitleIdentity, candidateIdentity } from './candidates.ts'
+import { htmlToText } from './html-text.ts'
 import type { ShortlistItem } from './shortlist.ts'
 import type { TasteProfile } from './taste-profile.ts'
 
@@ -170,4 +171,37 @@ export const rankShortlist = (
       item: { ...item, rank: position + 1 },
       score: itemScore,
     }))
+}
+
+/**
+ * Whether each item's vibe note is cited, checked against the Source Text this
+ * run stored for the page the item names.
+ *
+ * The quote has to appear in the page the model says it read — not in any page,
+ * and not in a search result, because Source Text is what a configured source
+ * served (CONTEXT.md) and it is the only text the run kept exactly. Whitespace
+ * is normalised on both sides, since the page is cleaned markup and the quote
+ * is a model's transcription of it; nothing else is forgiven.
+ */
+export const citedVibes = (
+  items: readonly ShortlistItem[],
+  sourceTexts: readonly { readonly url: string; readonly rawBody: string }[],
+): Map<string, CitedVibe> => {
+  const pages = new Map(sourceTexts.map((each) => [each.url, normalise(htmlToText(each.rawBody))]))
+  const cited = new Map<string, CitedVibe>()
+
+  for (const item of items) {
+    const vibe = item.vibe
+    if (vibe === undefined) continue
+
+    const quote = normalise(vibe.quote)
+    cited.set(artistTitleIdentity(item.artist ?? '', item.title ?? ''), {
+      ...vibe,
+      cited:
+        quote !== '' &&
+        (item.sourceUrls ?? []).some((url) => pages.get(url)?.includes(quote) === true),
+    })
+  }
+
+  return cited
 }

@@ -76,11 +76,23 @@ export interface RecordedSourceText {
   readonly warning: string | null
 }
 
+/** One stored page, read back so a citation can be checked against it. */
+export interface StoredSourceText {
+  readonly url: string
+  readonly rawBody: string
+}
+
 export interface Store {
   readonly database: DatabaseSync
   startRun(run: StartedRun): void
   recordStep(step: RecordedStep): void
   recordSourceText(text: RecordedSourceText): void
+  /**
+   * The pages this run stored. The one read in the interface, and deliberately
+   * narrow: it serves checking a quote against the page it claims to come from,
+   * and no past run's anything is reachable through it (ADR-0009).
+   */
+  sourceTextsOf(runId: string): StoredSourceText[]
   finishRun(run: FinishedRun): void
   close(): void
 }
@@ -198,6 +210,13 @@ export const openStore = (path: string): Store => {
           text.candidateCount,
           text.warning,
         )
+    },
+
+    sourceTextsOf(runId) {
+      return database
+        .prepare(`SELECT url, raw_body FROM source_texts WHERE run_id = ? ORDER BY fetched_at`)
+        .all(runId)
+        .map((row) => ({ url: row['url'] as string, rawBody: row['raw_body'] as string }))
     },
 
     finishRun(run) {
