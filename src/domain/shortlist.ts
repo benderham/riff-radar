@@ -16,7 +16,7 @@ import { z } from 'zod'
 
 import { SHORTLIST_SIZE } from '../../config.ts'
 import type { Candidate } from './candidates.ts'
-import { artistTitleIdentity, candidateIdentity } from './candidates.ts'
+import { artistTitleIdentity, candidateIdentity, creditedArtists, sameName } from './candidates.ts'
 import { isEligible } from './eligibility.ts'
 import type { TasteProfile } from './taste-profile.ts'
 import type { DateWindow } from './window.ts'
@@ -35,7 +35,7 @@ export const shortlistItemSchema = z.object({
   /**
    * The one judgement of the model's that scores: what this release resembles,
    * and the Source Text it read that in. An uncited claim is not refused — it
-   * simply contributes nothing to the ranking (ADR-0037).
+   * simply contributes nothing to the ranking (ADR-0040).
    */
   vibe: z.object({ claim: z.string(), quote: z.string() }).optional(),
 })
@@ -109,10 +109,6 @@ const itemErrors = (
 
 export type ShortlistValidation = { readonly ok: true } | { readonly ok: false; readonly errors: readonly string[] }
 
-/** Spelling and spacing differ between a calendar, MusicBrainz and a hand-edited profile. */
-const sameName = (one: string, other: string): boolean =>
-  one.trim().toLowerCase() === other.trim().toLowerCase()
-
 const isAlways = (artists: readonly string[], profile: TasteProfile): boolean =>
   artists.some((artist) => profile.artists.always.some((name) => sameName(name, artist)))
 
@@ -141,12 +137,8 @@ const missingGuarantees = (
 
   const guaranteed = candidates.filter(
     (candidate) =>
-      isAlways(
-        candidate.lookup?.found === true && candidate.lookup.artists.length > 0
-          ? candidate.lookup.artists
-          : [candidate.artist],
-        profile,
-      ) && isEligible(candidate, window, profile).eligible,
+      isAlways(creditedArtists(candidate), profile) &&
+      isEligible(candidate, window, profile).eligible,
   )
 
   const present = guaranteed.filter((candidate) => shortlisted.has(candidateIdentity(candidate)))

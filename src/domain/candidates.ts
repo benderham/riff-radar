@@ -84,6 +84,30 @@ export interface Candidate {
 
 const tidy = (value: string): string => value.replaceAll(/\s+/g, ' ').trim()
 
+/**
+ * One spelling of a name, for comparing across the three places names come
+ * from: a release calendar, MusicBrainz, and a hand-edited profile. They differ
+ * in case and spacing routinely and in nothing else that can be forgiven safely.
+ */
+export const normaliseName = (value: string): string => tidy(value).toLowerCase()
+
+export const sameName = (one: string, other: string): boolean =>
+  normaliseName(one) === normaliseName(other)
+
+/**
+ * Every artist a release is credited to: MusicBrainz's list where there is one,
+ * and the single name a source printed where there is not.
+ *
+ * One rule, in one place, because three rules that agree today would not agree
+ * for long: eligibility refuses a release when any credited artist is excluded,
+ * ranking scores the watch and always tiers across all of them, and the
+ * shortlist's guarantee reads the same list (ADR-0036).
+ */
+export const creditedArtists = (candidate: Candidate): readonly string[] =>
+  candidate.lookup?.found === true && candidate.lookup.artists.length > 0
+    ? candidate.lookup.artists
+    : [candidate.artist]
+
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 /** A real calendar date, not merely a string shaped like one: `2026-13-01` is not. */

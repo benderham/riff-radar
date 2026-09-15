@@ -266,3 +266,34 @@ test('a quote from a page the item does not name is not cited', () => {
 test('an item with no vibe note is not in the citation map at all', () => {
   assert.equal(citedVibes([item('Cattle', 1)], page('anything')).size, 0)
 })
+
+// ── A name is matched whole; a description is matched inside ────────────────
+
+test('a name is not a substring: Ulcerate does not match Ulcerate Fester', () => {
+  const other = candidate({ artist: 'Ulcerate Fester', lookup: found({ artists: ['Ulcerate Fester'] }) })
+
+  // The band MusicBrainz offers when asked about Ulcerate, and the reason the
+  // match rule exists in the first place. A containment rule would hand it a
+  // guaranteed slot on the strength of a shared word.
+  assert.equal(
+    scoreRelease(other, profile({ artists: { always: ['Ulcerate'], watch: [], exclude: [] } })).guaranteed,
+    false,
+  )
+  assert.equal(
+    scoreRelease(other, profile({ artists: { always: [], watch: ['Ulcerate'], exclude: [] } })).total,
+    0,
+  )
+})
+
+test('a personnel name is matched whole too', () => {
+  const score = scoreRelease(candidate(), profile({ personnel: { include: ['Jamie'], exclude: [] } }))
+  assert.equal(score.total, 0, 'half a name is not the person')
+})
+
+test('a label or genre term still matches inside a longer value', () => {
+  const score = scoreRelease(
+    candidate({ label: 'Century Media Records', lookup: found({ label: 'Century Media Records' }) }),
+    profile({ labels: { include: ['Century Media'], exclude: [] }, genres: { include: ['death metal'], exclude: [] } }),
+  )
+  assert.equal(score.total, RANKING_WEIGHTS.labelInclude + RANKING_WEIGHTS.genreInclude)
+})

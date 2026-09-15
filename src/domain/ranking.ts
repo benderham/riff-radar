@@ -23,7 +23,13 @@
 
 import { RANKING_WEIGHTS } from '../../config.ts'
 import type { Candidate } from './candidates.ts'
-import { artistTitleIdentity, candidateIdentity } from './candidates.ts'
+import {
+  artistTitleIdentity,
+  candidateIdentity,
+  creditedArtists,
+  normaliseName,
+  sameName,
+} from './candidates.ts'
 import { htmlToText } from './html-text.ts'
 import type { ShortlistItem } from './shortlist.ts'
 import type { TasteProfile } from './taste-profile.ts'
@@ -50,21 +56,37 @@ export interface CitedVibe {
   readonly cited: boolean
 }
 
-const normalise = (value: string): string => value.toLowerCase().replaceAll(/\s+/g, ' ').trim()
-
 /**
  * A profile term matches a value it appears inside, so `death metal` finds
  * `dissonant death metal` and `Century Media` finds `Century Media Records`.
  * A term that matches several values scores once: the profile is what is being
  * counted, not how many ways the data says the same thing.
+ *
+ * For descriptions only. A *name* is matched whole — see `matchingNames`.
  */
 const matching = (terms: readonly string[], values: readonly string[]): string[] => {
-  const haystack = values.map(normalise).filter((value) => value !== '')
+  const haystack = values.map(normaliseName).filter((value) => value !== '')
   return terms.filter((term) => {
-    const needle = normalise(term)
+    const needle = normaliseName(term)
     return needle !== '' && haystack.some((value) => value.includes(needle))
   })
 }
+
+/**
+ * The same, for names, and whole rather than contained: Ulcerate and Ulcerate
+ * Fester are two bands, and the second is what MusicBrainz offers when asked
+ * about the first. A containment rule would hand a guaranteed slot to a
+ * different band on the strength of a shared word.
+ */
+const matchingNames = (terms: readonly string[], values: readonly string[]): string[] =>
+  terms.filter((term) => values.some((value) => sameName(term, value)))
+
+const scoreNames = (
+  signal: RankingSignal['signal'],
+  terms: readonly string[],
+  values: readonly string[],
+  points: number,
+): RankingSignal[] => matchingNames(terms, values).map((term) => ({ signal, term, points }))
 
 const score = (
   signal: RankingSignal['signal'],
@@ -72,16 +94,6 @@ const score = (
   values: readonly string[],
   points: number,
 ): RankingSignal[] => matching(terms, values).map((term) => ({ signal, term, points }))
-
-/**
- * Every artist this release is credited to: MusicBrainz's list where there is
- * one, and the name a source printed where there is not. The same rule
- * eligibility uses, for the same reason — a release is judged on who made it.
- */
-const creditedArtists = (candidate: Candidate): readonly string[] =>
-  candidate.lookup?.found === true && candidate.lookup.artists.length > 0
-    ? candidate.lookup.artists
-    : [candidate.artist]
 
 export const scoreRelease = (
   candidate: Candidate,
@@ -96,13 +108,13 @@ export const scoreRelease = (
   const labels = [looked?.label, candidate.label].filter((value) => value !== undefined)
 
   const signals: RankingSignal[] = [
-    ...score('artist', profile.artists.watch, artists, RANKING_WEIGHTS.artistWatch),
+    ...scoreNames('artist', profile.artists.watch, artists, RANKING_WEIGHTS.artistWatch),
     ...score('label', profile.labels.include, labels, RANKING_WEIGHTS.labelInclude),
     ...score('label', profile.labels.exclude, labels, RANKING_WEIGHTS.labelExclude),
     ...score('genre', profile.genres.include, looked?.genres ?? [], RANKING_WEIGHTS.genreInclude),
     ...score('genre', profile.genres.exclude, looked?.genres ?? [], RANKING_WEIGHTS.genreExclude),
-    ...score('personnel', profile.personnel.include, looked?.members ?? [], RANKING_WEIGHTS.personnelInclude),
-    ...score('personnel', profile.personnel.exclude, looked?.members ?? [], RANKING_WEIGHTS.personnelExclude),
+    ...scoreNames('personnel', profile.personnel.include, looked?.members ?? [], RANKING_WEIGHTS.personnelInclude),
+    ...scoreNames('personnel', profile.personnel.exclude, looked?.members ?? [], RANKING_WEIGHTS.personnelExclude),
     // An uncited judgement is not a judgement. It is dropped rather than
     // refused: the release keeps its place and is ranked on its data alone.
     ...(vibe?.cited === true
@@ -115,7 +127,7 @@ export const scoreRelease = (
 
   return {
     total: signals.reduce((sum, each) => sum + each.points, 0),
-    guaranteed: matching(profile.artists.always, artists).length > 0,
+    guaranteed: matchingNames(profile.artists.always, artists).length > 0,
     signals,
   }
 }
@@ -187,14 +199,17 @@ export const citedVibes = (
   items: readonly ShortlistItem[],
   sourceTexts: readonly { readonly url: string; readonly rawBody: string }[],
 ): Map<string, CitedVibe> => {
-  const pages = new Map(sourceTexts.map((each) => [each.url, normalise(htmlToText(each.rawBody))]))
+  const pages = new Map(sourceTexts.map((each) => [each.url, normaliseName(htmlToText(each.rawBody))]))
+  // Keyed on artist and title, as `rankShortlist` resolves candidates: a
+  // release-group id is the stronger identity but arrives only after a lookup,
+  // and both sides of this map have to agree on one key.
   const cited = new Map<string, CitedVibe>()
 
   for (const item of items) {
     const vibe = item.vibe
     if (vibe === undefined) continue
 
-    const quote = normalise(vibe.quote)
+    const quote = normaliseName(vibe.quote)
     cited.set(artistTitleIdentity(item.artist ?? '', item.title ?? ''), {
       ...vibe,
       cited:

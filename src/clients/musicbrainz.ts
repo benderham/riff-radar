@@ -318,11 +318,11 @@ export const lookupRelease = async (
   // release that signal and never its identity, because ranking proceeds
   // without a signal where eligibility would refuse (ADR-0010).
   const warnings: string[] = []
-  let at = { url, status: response.status }
+  let lastRequest = { url, status: response.status }
 
   const enrich = async (requestUrl: string, describing: string): Promise<unknown> => {
     const answer = await rateLimited(ports, requestUrl)
-    at = { url: requestUrl, status: answer.status }
+    lastRequest = { url: requestUrl, status: answer.status }
 
     const read = bodyOf(`${what}: ${describing}`, answer.status, answer.body)
     if (!('warning' in read)) return read.data
@@ -347,7 +347,7 @@ export const lookupRelease = async (
 
   return {
     ...base,
-    ...at,
+    ...lastRequest,
     lookup: {
       ...found,
       ...(release === undefined ? {} : tracksOf(release)),

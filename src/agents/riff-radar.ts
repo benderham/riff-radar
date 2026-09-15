@@ -287,7 +287,7 @@ export const runRiffRadar = async ({
     }
 
     if (outcome.done) {
-      // The profile decides the order, not the model (ADR-0006): it scores the
+      // The profile decides the order, not the model (ADR-0037): it scores the
       // attributes of each release the model proposed, and the ranks are
       // rewritten from the result. The one judgement of the model's that counts
       // is its vibe note, and only where the quote is in a page this run stored.
