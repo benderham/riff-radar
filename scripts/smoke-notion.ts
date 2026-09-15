@@ -49,7 +49,7 @@ const first = JSON.parse(raw.body).results?.[0]
 const properties: string[] = Object.keys(first?.properties ?? {})
 console.log(`properties: ${properties.join(', ') || '(the database is empty)'}`)
 
-const REQUIRED = ['Title', 'Artist', 'MusicBrainz ID']
+const REQUIRED = ['Album', 'Artist', 'MusicBrainz ID']
 const missing = REQUIRED.filter((name) => !properties.includes(name))
 if (first !== undefined && missing.length > 0) {
   console.error(`missing: ${missing.join(', ')} — suppression cannot identify a release without them`)

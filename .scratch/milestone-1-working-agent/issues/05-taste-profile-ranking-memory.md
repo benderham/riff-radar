@@ -75,12 +75,15 @@ and an uncited vibe note scores nothing rather than failing the run.
 
 Two things are outstanding and neither is code:
 
-1. **`npm run smoke:notion` has never met the real service.** `api.notion.com` is
-   denied to this sandbox, so the Notion client is written against the documented
-   shape and its tests declare their bodies inline — which is also the right call
-   for a database holding Ben's listening queue, per AGENTS.md. Allowing the host
-   and running the smoke test is what turns the suppression read from plausible
-   into confirmed. The same position ticket 03 was in with Brave.
+1. ~~**`npm run smoke:notion` has never met the real service.**~~ **Done, 15
+   September 2026.** Ben opened `api.notion.com` and supplied a key, and the
+   smoke test earned its keep on the first run: it read **zero** identities from
+   272 records, because the database's title property is called `Album` and the
+   specification said `Title`. The database is the contract and the
+   specification is corrected (ADR-0041). It now reads 272 identities across
+   three pages in 1.5 seconds. Not one of them carries a MusicBrainz id — the
+   existing records are hand-entered — so suppression rests on artist and title
+   until the agent writes rows of its own, which is why the read returns both.
 2. **`taste-profile.json` is still all empty lists.** Every mechanism is built and
    tested, and with an empty profile every release scores zero and the model's
    order survives untouched. The file is hand-edited by definition, so it is

@@ -402,3 +402,15 @@ Not to run. An unsuppressed run can propose what Notion already holds, and suppr
 Not score it. The item carries a `claim` and a `quote`; the quote is checked verbatim — whitespace normalised, nothing else forgiven — against the Source Text this run stored for a page the item itself names. A quote that is not found contributes nothing and the release is ranked on its data alone. An uncited judgement failing the whole run would spend a Friday's shortlist on a transcription slip, and the judgement is worth one point against a watch-list artist's three.
 
 **Consequences:** The store gains its one read — `sourceTextsOf(runId)` — narrow enough that no past run is reachable through it, so ADR-0009's "past traces are never fed to the model" is unaffected. Only pages `fetch_source` read are stored, so a claim sourced from a web search cannot be cited; that is consistent with Source Text as CONTEXT.md defines it, and it means the model's judgement rests on the same evidence its provenance does. The Rationale is not quote-checked: its provenance is the source URLs, which are already required and already enforced.
+
+## ADR-0041: The Notion database is the contract, and it calls the album's title `Album`
+
+**Status:** ACCEPTED — Ben's decision, 15 September 2026. Corrects the property table in `docs/specs/milestone-1-working-agent.md`.
+
+The specification's property table said `Title`. The live database calls the title property `Album`, and the first run of `npm run smoke:notion` found it: suppression read zero identities from 272 records, because the property it was looking for did not exist. Two other names differ too — `Apple Music`, not `Apple Music Link` — and `Album Cover` does not exist at all.
+
+The database wins. It predates the specification, holds hundreds of hand-entered records, and is the tool Ben actually uses on a Friday; renaming a live property to satisfy a document is the wrong direction, and any view or filter keyed on the name would have to be checked. The specification is corrected instead.
+
+**Consequences:** Suppression currently rests entirely on artist and title: not one of the 272 existing records carries a MusicBrainz id, because they were entered by hand. That is exactly why the read returns both identity forms. As the agent writes its own rows the stronger identity accumulates, and the weaker one keeps working in the meantime.
+
+This is the argument for the smoke test rather than for more unit tests. Every automated test passed against a body this project wrote itself, and every one of them agreed with the code about a property name that was wrong. Only the real database disagreed. `Album Cover`'s absence and the `Apple Music` spelling belong to ticket 06, which is what writes them; they are recorded here so that ticket starts from what the database has rather than from what the specification claimed.

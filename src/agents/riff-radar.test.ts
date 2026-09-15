@@ -117,7 +117,7 @@ const withNotion = (http: HttpPort, rows: readonly { artist: string; title: stri
           body: JSON.stringify({
             results: rows.map((row) => ({
               properties: {
-                Title: { title: [{ plain_text: row.title }] },
+                Album: { title: [{ plain_text: row.title }] },
                 Artist: { rich_text: [{ plain_text: row.artist }] },
                 Status: { select: { name: 'Rejected' } },
               },

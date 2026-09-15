@@ -14,7 +14,7 @@ import { SuppressionUnavailable, suppressedReleases } from './notion.ts'
  */
 const page = (over: Record<string, unknown>) => ({
   properties: {
-    Title: { title: [{ plain_text: 'Cutting the Throat of God' }] },
+    Album: { title: [{ plain_text: 'Cutting the Throat of God' }] },
     Artist: { rich_text: [{ plain_text: 'Ulcerate' }] },
     'MusicBrainz ID': { rich_text: [{ plain_text: 'rg-1' }] },
     ...over,

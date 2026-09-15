@@ -39,7 +39,9 @@ const querySchema = z.object({
     z.object({
       properties: z
         .object({
-          Title: z.object({ title: textOf }).optional(),
+          // `Album`, not `Title`: the database is the contract and it predates
+          // the specification, which said `Title` and was wrong (ADR-0011).
+          Album: z.object({ title: textOf }).optional(),
           Artist: z.object({ rich_text: textOf }).optional(),
           'MusicBrainz ID': z.object({ rich_text: textOf }).optional(),
         })
@@ -61,7 +63,7 @@ const joined = (parts: { plain_text: string }[] | undefined): string =>
 const identitiesOf = (page: z.infer<typeof querySchema>['results'][number]): string[] => {
   const musicbrainzId = joined(page.properties?.['MusicBrainz ID']?.rich_text)
   const artist = joined(page.properties?.Artist?.rich_text)
-  const title = joined(page.properties?.Title?.title)
+  const title = joined(page.properties?.Album?.title)
 
   return [
     ...(musicbrainzId === '' ? [] : [musicbrainzId]),
