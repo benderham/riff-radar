@@ -112,7 +112,9 @@ const groupSchema = z.object({
   'primary-type': z.string().optional(),
   'secondary-types': z.array(z.string()).optional(),
   'first-release-date': z.string().optional(),
-  'artist-credit': z.array(z.object({ name: z.string() })).optional(),
+  'artist-credit': z
+    .array(z.object({ name: z.string(), artist: z.object({ id: z.string() }).optional() }))
+    .optional(),
 })
 
 const searchSchema = z.object({ 'release-groups': z.array(groupSchema).optional() })
@@ -121,6 +123,9 @@ const releasesSchema = z.object({
   releases: z
     .array(
       z.object({
+        'label-info': z
+          .array(z.object({ label: z.object({ name: z.string() }).nullable().optional() }))
+          .optional(),
         media: z
           .array(
             z.object({
@@ -131,6 +136,16 @@ const releasesSchema = z.object({
           .optional(),
       }),
     )
+    .optional(),
+})
+
+const genresSchema = z.object({
+  genres: z.array(z.object({ name: z.string() })).optional(),
+})
+
+const artistRelationsSchema = z.object({
+  relations: z
+    .array(z.object({ type: z.string(), artist: z.object({ name: z.string() }).optional() }))
     .optional(),
 })
 
@@ -170,8 +185,68 @@ const searchUrl = (artist: string, title: string): string => {
   return `${MUSICBRAINZ_ENDPOINT}/release-group?query=${encodeURIComponent(query)}&fmt=json&limit=5`
 }
 
-const recordingsUrl = (releaseGroupId: string): string =>
-  `${MUSICBRAINZ_ENDPOINT}/release?release-group=${releaseGroupId}&inc=recordings&fmt=json&limit=1`
+/**
+ * One request carrying both the label and the tracks. They are the same
+ * resource — a release inside the group — so asking for them separately would
+ * spend two seconds on one page (ADR-0038).
+ */
+const releaseUrl = (releaseGroupId: string): string =>
+  `${MUSICBRAINZ_ENDPOINT}/release?release-group=${releaseGroupId}&inc=recordings+labels&fmt=json&limit=1`
+
+const genresUrl = (releaseGroupId: string): string =>
+  `${MUSICBRAINZ_ENDPOINT}/release-group/${releaseGroupId}?inc=genres&fmt=json`
+
+const membersUrl = (artistId: string): string =>
+  `${MUSICBRAINZ_ENDPOINT}/artist/${artistId}?inc=artist-rels&fmt=json`
+
+/**
+ * The label that issued the first release in the group, where it named one.
+ *
+ * `[no label]` is a real entry in MusicBrainz — a sentinel for a self-released
+ * record — and the live smoke test served it on the first run. Treated as a
+ * name it would be a label like any other, matchable by a profile term, so it
+ * is read as the absence it means.
+ */
+const NO_LABEL = '[no label]'
+
+const labelOf = (data: unknown): string | undefined => {
+  const parsed = releasesSchema.safeParse(data)
+  if (!parsed.success) return undefined
+
+  return (parsed.data.releases?.[0]?.['label-info'] ?? [])
+    .map((each) => each.label?.name?.trim())
+    .find((name) => name !== undefined && name !== '' && name !== NO_LABEL)
+}
+
+/**
+ * Every genre tagged on the release group, most-agreed first as MusicBrainz
+ * orders them. The counts are dropped: the profile matches a name, and a tag
+ * one person applied is still what the record is.
+ */
+const genresOf = (data: unknown): readonly string[] => {
+  const parsed = genresSchema.safeParse(data)
+  return parsed.success ? (parsed.data.genres ?? []).map((genre) => genre.name) : []
+}
+
+/**
+ * The band's members, current and past both.
+ *
+ * Past members are the point rather than noise: a drummer who has left is
+ * exactly the personnel connection that brings a new band to Ben's attention
+ * (ADR-0038). The relation is `member of band` in either direction, and this
+ * asks the band about its people, so the related artist is the person.
+ */
+const membersOf = (data: unknown): readonly string[] => {
+  const parsed = artistRelationsSchema.safeParse(data)
+  if (!parsed.success) return []
+
+  const names = (parsed.data.relations ?? [])
+    .filter((relation) => relation.type === 'member of band')
+    .map((relation) => relation.artist?.name)
+    .filter((name): name is string => name !== undefined)
+
+  return [...new Set(names)]
+}
 
 /** The tracks and total running time of the first release in a group. */
 const tracksOf = (data: unknown): { trackCount?: number; durationMs?: number } => {
@@ -238,17 +313,48 @@ export const lookupRelease = async (
       : { firstReleaseDate: match['first-release-date'] }),
   }
 
-  // Only an EP needs its tracks counted, and only an EP pays the second second.
-  if (found.primaryType !== 'EP') return { ...base, lookup: found }
+  // Adjacency: the label, the genres and the band's people (ADR-0038). Three
+  // requests, three seconds, and each one optional — a failure costs the
+  // release that signal and never its identity, because ranking proceeds
+  // without a signal where eligibility would refuse (ADR-0010).
+  const warnings: string[] = []
+  let at = { url, status: response.status }
 
-  const tracksAt = recordingsUrl(match.id)
-  const second = await rateLimited(ports, tracksAt)
-  const tracks = bodyOf(`${what}: its tracks`, second.status, second.body)
+  const enrich = async (requestUrl: string, describing: string): Promise<unknown> => {
+    const answer = await rateLimited(ports, requestUrl)
+    at = { url: requestUrl, status: answer.status }
 
-  // A failed follow-up costs the EP its thresholds, not its identity.
-  if ('warning' in tracks) {
-    return { ...base, url: tracksAt, status: second.status, lookup: found, warning: tracks.warning }
+    const read = bodyOf(`${what}: ${describing}`, answer.status, answer.body)
+    if (!('warning' in read)) return read.data
+
+    warnings.push(read.warning)
+    return undefined
   }
 
-  return { ...base, url: tracksAt, status: second.status, lookup: { ...found, ...tracksOf(tracks.data) } }
+  const release = await enrich(releaseUrl(match.id), 'its release')
+  const genres = await enrich(genresUrl(match.id), 'its genres')
+
+  // One artist's members, not every credited artist's: a collaboration would
+  // otherwise cost a second per name, and the first credit is the one the
+  // release is filed under (ADR-0038).
+  const artistId = (match['artist-credit'] ?? [])[0]?.artist?.id
+  const members =
+    artistId === undefined ? undefined : await enrich(membersUrl(artistId), 'its band members')
+
+  const label = release === undefined ? undefined : labelOf(release)
+  const tagged = genres === undefined ? [] : genresOf(genres)
+  const people = members === undefined ? [] : membersOf(members)
+
+  return {
+    ...base,
+    ...at,
+    lookup: {
+      ...found,
+      ...(release === undefined ? {} : tracksOf(release)),
+      ...(label === undefined ? {} : { label }),
+      ...(tagged.length === 0 ? {} : { genres: tagged }),
+      ...(people.length === 0 ? {} : { members: people }),
+    },
+    ...(warnings.length === 0 ? {} : { warning: warnings.join('; ') }),
+  }
 }
