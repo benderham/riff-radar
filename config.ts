@@ -92,6 +92,13 @@ export type SourceId = keyof typeof SOURCES
 export const SEARCH_ENDPOINT = 'https://api.tavily.com/search'
 export const SEARCH_RESULT_COUNT = 5
 
+/**
+ * Tavily's documented ceiling on a query. The action schema enforces it, so a
+ * model that writes a paragraph where a search query belongs is an invalid
+ * action rather than a step spent learning that from the provider.
+ */
+export const MAX_SEARCH_QUERY_CHARS = 400
+
 /** Identifies the project to the sites it reads, rather than pretending to be a browser. */
 export const USER_AGENT = 'riff-radar/0.1 (personal listening project)'
 

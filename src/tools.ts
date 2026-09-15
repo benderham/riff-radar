@@ -20,7 +20,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 
 import type { SourceId } from '../config.ts'
-import { SOURCES } from '../config.ts'
+import { MAX_SEARCH_QUERY_CHARS, SOURCES } from '../config.ts'
 import { searchWeb } from './clients/search.ts'
 import { fetchSource } from './clients/sources.ts'
 import type { Candidate } from './domain/candidates.ts'
@@ -152,7 +152,7 @@ export const tools = {
   web_search: defineTool({
     description:
       'Search the web to enrich or disambiguate a candidate that a source already produced. It never originates a candidate.',
-    schema: z.object({ query: z.string().min(1) }),
+    schema: z.object({ query: z.string().min(1).max(MAX_SEARCH_QUERY_CHARS) }),
     run: async ({ query }, context) => {
       const search = await searchWeb(context.ports, query, context.searchApiKey)
 

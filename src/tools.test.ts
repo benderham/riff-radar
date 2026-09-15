@@ -118,6 +118,17 @@ test('well-formed JSON of the wrong shape is an ordinary failure', () => {
   assert.match(result.ok ? '' : result.error, /query/)
 })
 
+test('a query longer than the provider accepts is rejected before it is sent', () => {
+  // Tavily documents a 400-character ceiling. A model that writes a paragraph
+  // into the query is caught here rather than spending the step to find out.
+  const long = 'a'.repeat(401)
+  const result = validateAction(call('web_search', JSON.stringify({ query: long })))
+  assert.equal(result.ok, false)
+  assert.match(result.ok ? '' : result.error, /query/)
+
+  assert.equal(validateAction(call('web_search', JSON.stringify({ query: 'a'.repeat(400) }))).ok, true)
+})
+
 test('an unconfigured source is rejected before anything is fetched', () => {
   // Album of the Year, dropped in ADR-0031, and Metal Archives, never a source.
   assert.equal(validateAction(call('fetch_source', '{"source_id": "metal-archives"}')).ok, false)
