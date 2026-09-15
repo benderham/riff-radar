@@ -58,9 +58,14 @@ export type MusicbrainzLookup =
       readonly secondaryTypes: readonly string[]
       /** The release group's earliest official date, which a reissue does not move. */
       readonly firstReleaseDate?: string
-      /** From a second lookup, made only for an EP. */
+      /** From the release lookup, made only for an EP. */
       readonly trackCount?: number
       readonly durationMs?: number
+      /** Adjacency, all three optional because MusicBrainz's coverage is uneven. */
+      readonly label?: string
+      readonly genres?: readonly string[]
+      /** The first credited artist's band members, current and past. */
+      readonly members?: readonly string[]
       /** Every credited artist, so a collaboration can be judged on all of them. */
       readonly artists: readonly string[]
     }
