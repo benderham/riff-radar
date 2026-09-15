@@ -34,6 +34,37 @@ export const extractionSchema = z.object({
 
 export type ExtractedCandidate = z.infer<typeof extractionSchema>['candidates'][number]
 
+/**
+ * What a MusicBrainz lookup found, or that it found nothing.
+ *
+ * Three states, one field: absent means nobody has looked yet, `found: false`
+ * means MusicBrainz has never heard of this release, and the rest is what it
+ * knew. The distinction matters because they are not the same evidence — an
+ * unlooked-up release is a step the run did not take, and an Unverified one is
+ * a fact about MusicBrainz (CONTEXT.md).
+ *
+ * Every enriched field is optional because MusicBrainz's coverage is uneven,
+ * and partial data enriches what it can rather than being refused whole.
+ */
+export type MusicbrainzLookup =
+  | { readonly found: false }
+  | {
+      readonly found: true
+      /** The Release Identity: a release-group id, not a release id. */
+      readonly releaseGroupId: string
+      /** `Album`, `EP`, `Single`, `Broadcast`, `Other`. */
+      readonly primaryType?: string
+      /** `Live`, `Compilation`, `Remix`, `Demo`, `Soundtrack`, … Usually empty. */
+      readonly secondaryTypes: readonly string[]
+      /** The release group's earliest official date, which a reissue does not move. */
+      readonly firstReleaseDate?: string
+      /** From a second lookup, made only for an EP. */
+      readonly trackCount?: number
+      readonly durationMs?: number
+      /** More than one credited artist is how a split looks. */
+      readonly artistCount: number
+    }
+
 export interface Candidate {
   readonly artist: string
   readonly title: string
@@ -42,6 +73,8 @@ export interface Candidate {
   readonly sourceUrls: readonly string[]
   readonly label?: string
   readonly format?: string
+  /** Absent until `lookup_release` has been spent on this candidate. */
+  readonly lookup?: MusicbrainzLookup
 }
 
 const tidy = (value: string): string => value.replaceAll(/\s+/g, ' ').trim()
