@@ -14,7 +14,7 @@
 - [x] Partial MusicBrainz data enriches what it can and leaves the rest absent
 - [x] Release Identity prefers the MusicBrainz release-group identifier and falls back to artist and title only when Unverified — `releaseIdentityOf`, with `collapseByReleaseGroup` spending the proof where it is produced
 - [x] An album is eligible; an EP is eligible only with at least 4 tracks and at least 20 minutes
-- [x] Live albums, singles, splits, compilations, reissues and remasters are excluded
+- [x] Live albums, singles, compilations, reissues and remasters are excluded — **splits no longer are**, by amendment (ADR-0036)
 - [x] A Total Re-record is eligible — the other three exclusions are **accepted as out of scope**, not outstanding; see **The scope Ben accepted** below
 - [x] A release is eligible when any credible Source places its earliest official release date inside the resolved range, with the disagreement recorded
 - [x] Only already-issued releases are considered
@@ -29,11 +29,11 @@ Two thirds of the re-record carve-out fall out of MusicBrainz's data model rathe
 
 **A covers album, a partial re-record and another band's version are none of them excluded, and Ben accepted that on 15 September 2026** — the records are rare enough that the slots they would cost are not worth a rule the data cannot support. Each is its own release group with its own date, and MusicBrainz has no secondary type for any of them, so all three pass as new albums. This is a closed decision, not work deferred to ticket 05. An earlier draft of this section claimed the match rule handled the third; that was wrong, and a review caught it.
 
-The two items below are **not** covered by that acceptance and remain open.
+One of the two items below was resolved the same day; the other remains open.
 
 **Label and personnel are not fetched.** The ticket's opening paragraph asks for them. A release group carries neither, so each would cost a further request per candidate. Nothing ranks on them until ticket 05, so the request was not made — a deferral ticket 05 has to close, not a quiet drop.
 
-**`artistCount > 1` is a proxy for a split, not the rule.** It excludes every legitimate two-artist collaboration along with the splits. Kept on ADR-0010's asymmetry, and flagged as a judgement to overturn if collaborations start going missing.
+~~**`artistCount > 1` is a proxy for a split, not the rule.**~~ **Resolved** — Ben overturned it the same day. A release is judged on *who* made it rather than how many: the lookup carries the credited artists' names, and any one of them on `artists.exclude` sinks the release. A split and a collaboration are indistinguishable in the data, so both stand or fall on taste. See ADR-0036; this also enforces an `artists.exclude` rule the prompt had claimed since the beginning and no code applied.
 
 ## Evidence
 

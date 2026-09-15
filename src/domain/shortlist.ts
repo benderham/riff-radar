@@ -18,6 +18,7 @@ import { SHORTLIST_SIZE } from '../../config.ts'
 import type { Candidate } from './candidates.ts'
 import { artistTitleIdentity, candidateIdentity } from './candidates.ts'
 import { isEligible } from './eligibility.ts'
+import type { TasteProfile } from './taste-profile.ts'
 import type { DateWindow } from './window.ts'
 
 export const shortlistItemSchema = z.object({
@@ -49,6 +50,7 @@ const itemErrors = (
   position: number,
   window: DateWindow,
   discovered: ReadonlyMap<string, Candidate>,
+  profile: TasteProfile,
 ): string[] => {
   const at = `item ${position}`
   const errors: string[] = []
@@ -84,7 +86,7 @@ const itemErrors = (
   // rather than a rule. The model still does the choosing; this refuses the
   // choices the rules do not allow (ADR-0035).
   if (candidate !== undefined) {
-    const verdict = isEligible(candidate, window)
+    const verdict = isEligible(candidate, window, profile)
     if (!verdict.eligible) {
       errors.push(`${at}: ${item.artist} — ${item.title} is not eligible: ${verdict.reason}`)
     }
@@ -105,6 +107,7 @@ export const validateShortlist = (
   items: readonly ShortlistItem[],
   window: DateWindow,
   candidates: readonly Candidate[],
+  profile: TasteProfile,
 ): ShortlistValidation => {
   const errors: string[] = []
   const discovered = new Map(candidates.map((candidate) => [candidateIdentity(candidate), candidate]))
@@ -116,7 +119,7 @@ export const validateShortlist = (
 
   const seen = new Set<string>()
   for (const [index, item] of items.entries()) {
-    errors.push(...itemErrors(item, index + 1, window, discovered))
+    errors.push(...itemErrors(item, index + 1, window, discovered, profile))
 
     const identity = releaseIdentity(item)
     if (seen.has(identity)) errors.push(`item ${index + 1}: duplicate release ${identity}`)

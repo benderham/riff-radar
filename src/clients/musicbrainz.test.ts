@@ -67,7 +67,7 @@ test('a release MusicBrainz knows carries its release-group id and its facts', a
   assert.equal(found.lookup.releaseGroupId, 'c302ec77-589f-462f-b6b3-d63508886978')
   assert.equal(found.lookup.primaryType, 'Album')
   assert.equal(found.lookup.firstReleaseDate, '2024-06-14')
-  assert.equal(found.lookup.artistCount, 1)
+  assert.deepEqual(found.lookup.artists, ['Ulcerate'])
   assert.deepEqual(found.lookup.secondaryTypes, [])
 
   const [call] = gets

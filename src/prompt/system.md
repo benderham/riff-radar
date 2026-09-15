@@ -14,14 +14,16 @@ Work one action at a time. Each step you choose exactly one action; you will be 
 These are enforced, not asked: an item that breaks one of them is rejected with the reason, and a shortlist that keeps it ends the run without writing anything.
 
 - an album, or an EP of at least 4 tracks and 20 minutes;
-- a first release or a total re-record — not a live album, single, split, compilation, reissue or remaster;
+- a first release or a total re-record — not a live album, single, compilation, reissue or remaster;
 - earliest official release date inside the window you are given;
 - looked up in MusicBrainz, whatever that lookup found;
-- the artist is not in the profile's `artists.exclude`.
+- no credited artist is in the profile's `artists.exclude`.
 
 Where the data needed to confirm eligibility is missing, exclude the release. Where sources disagree on a date, treat it as eligible if any credible source puts it in the window, and say so in the rationale.
 
 A reissue and a remaster exclude themselves: MusicBrainz keeps them in the original release group, so a lookup dates them to the original's year. A total re-record has its own release group and its own date, so it qualifies like any other new album.
+
+A release credited to two artists is not refused for that. A split and a collaboration look identical in the data, so both are judged on who made them: one excluded artist sinks the release, and otherwise it stands or falls like anything else.
 
 ## Using the taste profile
 

@@ -2,10 +2,26 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import type { Candidate, MusicbrainzLookup } from './candidates.ts'
+import type { TasteProfile } from './taste-profile.ts'
 import { isEligible } from './eligibility.ts'
 import type { DateWindow } from './window.ts'
 
 const WINDOW: DateWindow = { from: '2026-09-08', to: '2026-09-14' }
+
+/** Excludes nobody, so the tests below are about format and date alone. */
+const NO_OPINIONS: TasteProfile = {
+  version: 1,
+  artists: { always: [], watch: [], exclude: [] },
+  labels: { include: [], exclude: [] },
+  genres: { include: [], exclude: [] },
+  personnel: { include: [], exclude: [] },
+  vibe_notes: { include: [], exclude: [] },
+}
+
+const excluding = (...artists: string[]): TasteProfile => ({
+  ...NO_OPINIONS,
+  artists: { ...NO_OPINIONS.artists, exclude: artists },
+})
 
 const found = (over: Partial<Extract<MusicbrainzLookup, { found: true }>> = {}): MusicbrainzLookup => ({
   found: true,
@@ -13,7 +29,7 @@ const found = (over: Partial<Extract<MusicbrainzLookup, { found: true }>> = {}):
   primaryType: 'Album',
   secondaryTypes: [],
   firstReleaseDate: '2026-09-12',
-  artistCount: 1,
+  artists: ['Ulcerate'],
   ...over,
 })
 
@@ -27,19 +43,19 @@ const candidate = (over: Partial<Candidate> = {}): Candidate => ({
 })
 
 const why = (over: Partial<Candidate> = {}): string => {
-  const verdict = isEligible(candidate(over), WINDOW)
+  const verdict = isEligible(candidate(over), WINDOW, NO_OPINIONS)
   return verdict.eligible ? '' : verdict.reason
 }
 
 // ── The two formats that qualify ─────────────────────────────────────────────
 
 test('an album released in the window is eligible', () => {
-  assert.equal(isEligible(candidate(), WINDOW).eligible, true)
+  assert.equal(isEligible(candidate(), WINDOW, NO_OPINIONS).eligible, true)
 })
 
 test('an EP is eligible at exactly four tracks and twenty minutes', () => {
   const ep = { lookup: found({ primaryType: 'EP', trackCount: 4, durationMs: 20 * 60_000 }) }
-  assert.equal(isEligible(candidate(ep), WINDOW).eligible, true)
+  assert.equal(isEligible(candidate(ep), WINDOW, NO_OPINIONS).eligible, true)
 })
 
 test('an EP one track short is not', () => {
@@ -68,8 +84,34 @@ for (const secondary of ['Live', 'Compilation', 'Remix', 'DJ-mix', 'Demo', 'Soun
   })
 }
 
-test('a split is excluded on its credited artists', () => {
-  assert.match(why({ lookup: found({ artistCount: 2 }) }), /split/i)
+test('a collaboration is judged on its artists, not refused for having two', () => {
+  // Two credited artists used to mean "a split, not an album", which also threw
+  // out every legitimate collaboration. Both are judged on taste instead.
+  const together = candidate({ lookup: found({ artists: ['Killswitch Engage', 'Parkway Drive'] }) })
+
+  assert.equal(isEligible(together, WINDOW, NO_OPINIONS).eligible, true)
+})
+
+test('one excluded artist on a collaboration excludes the release', () => {
+  const together = candidate({ lookup: found({ artists: ['Killswitch Engage', 'Disturbed'] }) })
+  const verdict = isEligible(together, WINDOW, excluding('Disturbed'))
+
+  assert.equal(verdict.eligible, false)
+  assert.match(verdict.eligible ? '' : verdict.reason, /Disturbed/)
+})
+
+test('the excluded list is matched however either side spells it', () => {
+  const together = candidate({ lookup: found({ artists: ['Sunn O)))'] }) })
+
+  assert.equal(isEligible(together, WINDOW, excluding('  sunn o)))  ')).eligible, false)
+})
+
+test('an unverified release is judged on the artist its source named', () => {
+  // No MusicBrainz credits to read, so the candidate's own artist is all there is.
+  const unverified = candidate({ lookup: { found: false }, format: 'full-length', artist: 'Disturbed' })
+
+  assert.equal(isEligible(unverified, WINDOW, excluding('Disturbed')).eligible, false)
+  assert.equal(isEligible(unverified, WINDOW, NO_OPINIONS).eligible, true)
 })
 
 // ── Dates: the window, reissues, and the future ──────────────────────────────
@@ -87,7 +129,7 @@ test('a total re-record is eligible: MusicBrainz gives it its own release group'
   // re-recording is a new release group with a new first-release-date; only a
   // reissue or remaster stays inside the old one.
   const reRecord = { title: 'Ashes (2026)', lookup: found({ releaseGroupId: 'rg-2', firstReleaseDate: '2026-09-10' }) }
-  assert.equal(isEligible(candidate(reRecord), WINDOW).eligible, true)
+  assert.equal(isEligible(candidate(reRecord), WINDOW, NO_OPINIONS).eligible, true)
 })
 
 test('a year-only MusicBrainz date still excludes a plainly older release group', () => {
@@ -113,14 +155,14 @@ test('a release dated after the window has not been issued yet', () => {
 test('one source in the window is enough when they disagree', () => {
   // The disagreement is recorded, not resolved: MusicBrainz agrees with one of them.
   const disagreeing = { releaseDates: ['2026-09-07', '2026-09-12'] }
-  assert.equal(isEligible(candidate(disagreeing), WINDOW).eligible, true)
+  assert.equal(isEligible(candidate(disagreeing), WINDOW, NO_OPINIONS).eligible, true)
 })
 
 // ── What a lookup that never happened, or found nothing, means ───────────────
 
 test('a candidate nobody looked up is excluded', () => {
   const { lookup: _unused, ...neverLookedUp } = candidate()
-  const verdict = isEligible(neverLookedUp, WINDOW)
+  const verdict = isEligible(neverLookedUp, WINDOW, NO_OPINIONS)
   assert.match(verdict.eligible ? '' : verdict.reason, /not looked up/)
 })
 
@@ -128,7 +170,7 @@ test('a candidate MusicBrainz has never heard of falls back to what the source s
   // Unverified is missing evidence, not invalidity (CONTEXT.md), so the run
   // uses the only format statement it has: the source's own.
   const unverified = { lookup: { found: false } as MusicbrainzLookup, format: 'full-length' }
-  assert.equal(isEligible(candidate(unverified), WINDOW).eligible, true)
+  assert.equal(isEligible(candidate(unverified), WINDOW, NO_OPINIONS).eligible, true)
 })
 
 test('an unverified release the source called a live album is still excluded', () => {

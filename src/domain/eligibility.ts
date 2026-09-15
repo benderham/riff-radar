@@ -21,6 +21,7 @@
  */
 
 import type { Candidate } from './candidates.ts'
+import type { TasteProfile } from './taste-profile.ts'
 import type { DateWindow } from './window.ts'
 
 export type Eligibility =
@@ -60,7 +61,7 @@ const EXCLUDED_SECONDARY = new Set([
  * calendars actually print, and anything unrecognised is missing data rather
  * than an album, because a format nobody stated cannot be confirmed (ADR-0010).
  */
-const SOURCE_FORMAT_EXCLUSIONS = /\b(live|single|split|compilation|reissue|remaster|demo|EP)\b/i
+const SOURCE_FORMAT_EXCLUSIONS = /\b(live|single|compilation|reissue|remaster|demo|EP)\b/i
 const SOURCE_FORMAT_ALBUM = /\b(album|full[- ]?length|LP)\b/i
 
 /**
@@ -113,8 +114,6 @@ const formatVerdict = (candidate: Candidate): Eligibility => {
     return YES
   }
 
-  if (looked.artistCount > 1) return no('credited to more than one artist: a split, not an album')
-
   const secondary = looked.secondaryTypes.find((type) => EXCLUDED_SECONDARY.has(type))
   if (secondary !== undefined) return no(`MusicBrainz calls it a ${secondary} release`)
 
@@ -135,11 +134,50 @@ const formatVerdict = (candidate: Candidate): Eligibility => {
   return YES
 }
 
+/** Spelling and spacing differ between a calendar, MusicBrainz and a hand-edited profile. */
+const sameName = (one: string, other: string): boolean =>
+  one.trim().toLowerCase() === other.trim().toLowerCase()
+
 /**
- * Format first, then date, because the format answer is the more useful one to
- * read: "a live album" explains an absence better than "dated 2019".
+ * Every artist this release is credited to: MusicBrainz's list where there is
+ * one, and the single name a source printed where there is not.
+ *
+ * Two credited artists used to mean "a split, not an album", which threw out
+ * every legitimate collaboration with them. A release is judged on who made it
+ * instead, which is the question that was really being asked (ADR-0036).
  */
-export const isEligible = (candidate: Candidate, window: DateWindow): Eligibility => {
+const creditedArtists = (candidate: Candidate): readonly string[] =>
+  candidate.lookup?.found === true && candidate.lookup.artists.length > 0
+    ? candidate.lookup.artists
+    : [candidate.artist]
+
+/**
+ * One artist Ben has excluded is enough, however many others are credited. The
+ * asymmetry is ADR-0007's: an exclusion is a filter, and the `always` list is a
+ * ranking guarantee rather than an eligibility one — a live album does not
+ * become eligible because someone on it is a favourite.
+ */
+const artistVerdict = (candidate: Candidate, profile: TasteProfile): Eligibility => {
+  const excluded = creditedArtists(candidate).find((credited) =>
+    profile.artists.exclude.some((name) => sameName(name, credited)),
+  )
+
+  return excluded === undefined ? YES : no(`${excluded} is on the profile's excluded artists`)
+}
+
+/**
+ * Artist first, then format, then date. Each answer is more useful to read than
+ * the next: "Disturbed is excluded" beats "a live album", which beats "dated
+ * 2019", and only the first true one is reported.
+ */
+export const isEligible = (
+  candidate: Candidate,
+  window: DateWindow,
+  profile: TasteProfile,
+): Eligibility => {
+  const artist = artistVerdict(candidate, profile)
+  if (!artist.eligible) return artist
+
   const format = formatVerdict(candidate)
   return format.eligible ? dateVerdict(candidate, window) : format
 }

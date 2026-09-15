@@ -17,7 +17,7 @@ A release extracted from a source that has not yet been judged eligible.
 _Avoid_: result, hit, suggestion
 
 **Eligible Release**:
-A candidate that passes the format and novelty rules: a full album or a substantial EP, first released in the range, and not a live album, single, compilation, reissue or remaster. A total re-record counts as eligible.
+A candidate that passes the format and novelty rules: a full album or a substantial EP, first released in the range, and not a live album, single, compilation, reissue or remaster. A total re-record counts as eligible. A release credited to more than one artist is judged on all of them, and one artist on the Taste Profile's excluded list makes the release ineligible whatever the others are.
 _Avoid_: valid release, qualifying album
 
 **Total Re-record**:

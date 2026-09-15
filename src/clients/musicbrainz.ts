@@ -231,7 +231,7 @@ export const lookupRelease = async (
     found: true as const,
     releaseGroupId: match.id,
     secondaryTypes: match['secondary-types'] ?? [],
-    artistCount: (match['artist-credit'] ?? []).length,
+    artists: (match['artist-credit'] ?? []).map((credit) => credit.name),
     ...(match['primary-type'] === undefined ? {} : { primaryType: match['primary-type'] }),
     ...(match['first-release-date'] === undefined
       ? {}

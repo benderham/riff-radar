@@ -168,7 +168,7 @@ const looked = (releaseGroupId: string): MusicbrainzLookup => ({
   primaryType: 'Album',
   secondaryTypes: [],
   firstReleaseDate: '2026-09-12',
-  artistCount: 1,
+  artists: ['Ulcerate'],
 })
 
 const discovered = (over: Partial<Candidate> = {}): Candidate => ({

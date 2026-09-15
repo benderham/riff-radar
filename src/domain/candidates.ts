@@ -61,8 +61,8 @@ export type MusicbrainzLookup =
       /** From a second lookup, made only for an EP. */
       readonly trackCount?: number
       readonly durationMs?: number
-      /** More than one credited artist is how a split looks. */
-      readonly artistCount: number
+      /** Every credited artist, so a collaboration can be judged on all of them. */
+      readonly artists: readonly string[]
     }
 
 export interface Candidate {

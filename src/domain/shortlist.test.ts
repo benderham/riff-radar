@@ -2,10 +2,21 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import type { Candidate } from './candidates.ts'
+import type { TasteProfile } from './taste-profile.ts'
 import type { ShortlistItem } from './shortlist.ts'
 import { releaseIdentity, validateShortlist } from './shortlist.ts'
 
 const window = { from: '2026-09-08', to: '2026-09-14' }
+
+/** Excludes nobody: these tests are about the shortlist's own rules. */
+const profile: TasteProfile = {
+  version: 1,
+  artists: { always: [], watch: [], exclude: [] },
+  labels: { include: [], exclude: [] },
+  genres: { include: [], exclude: [] },
+  personnel: { include: [], exclude: [] },
+  vibe_notes: { include: [], exclude: [] },
+}
 
 /**
  * The candidates a run discovered. Every test below grounds its shortlist in
@@ -27,12 +38,12 @@ const discovered = (items: readonly ShortlistItem[]): Candidate[] =>
       primaryType: 'Album',
       secondaryTypes: [],
       firstReleaseDate: item.releaseDate ?? '2026-09-10',
-      artistCount: 1,
+      artists: ['Blood Incantation'],
     },
   }))
 
 const validate = (items: readonly ShortlistItem[], candidates = discovered(items)) =>
-  validateShortlist(items, window, candidates)
+  validateShortlist(items, window, candidates, profile)
 
 const item = (overrides: Partial<ShortlistItem> = {}): ShortlistItem => ({
   artist: 'Blood Incantation',
@@ -141,7 +152,7 @@ test('a live album cannot be proposed, however good the rationale', () => {
       primaryType: 'Album',
       secondaryTypes: ['Live'],
       firstReleaseDate: '2026-09-10',
-      artistCount: 1,
+      artists: ['Blood Incantation'],
     },
   })
   assert.match(errorsOf([item()], live).join('\n'), /Live/)
@@ -155,7 +166,7 @@ test('a reissue cannot be proposed: its release group predates the window', () =
       primaryType: 'Album',
       secondaryTypes: [],
       firstReleaseDate: '2019-04-05',
-      artistCount: 1,
+      artists: ['Blood Incantation'],
     },
   })
   assert.match(errorsOf([item()], reissue).join('\n'), /reissue or remaster/)
@@ -176,7 +187,7 @@ test('the reason a release was refused names the release', () => {
       primaryType: 'Album',
       secondaryTypes: ['Compilation'],
       firstReleaseDate: '2026-09-10',
-      artistCount: 1,
+      artists: ['Blood Incantation'],
     },
   })
   assert.match(errorsOf([item()], live).join('\n'), /Blood Incantation — Absolute Elsewhere/)
@@ -186,3 +197,38 @@ test('an unverified release the source called an album is still proposable', () 
   const unverified = candidateFor({ lookup: { found: false }, format: 'full-length' })
   assert.deepEqual(validate([item({ musicbrainzId: undefined, unverified: true })], unverified), { ok: true })
 })
+
+test('an excluded artist cannot be proposed, even as half of a collaboration', () => {
+  // The prompt has always claimed this rule; nothing enforced it until now.
+  const collaboration = candidateFor({
+    lookup: {
+      found: true,
+      releaseGroupId: 'mbid-1',
+      primaryType: 'Album',
+      secondaryTypes: [],
+      firstReleaseDate: '2026-09-10',
+      artists: ['Blood Incantation', 'Disturbed'],
+    },
+  })
+  const opinionated = { ...profile, artists: { ...profile.artists, exclude: ['Disturbed'] } }
+  const result = validateShortlist([item()], window, collaboration, opinionated)
+
+  assert.equal(result.ok, false)
+  assert.match(result.ok ? '' : result.errors.join('\n'), /Disturbed is on the profile's excluded artists/)
+})
+
+test('a collaboration nobody excluded is proposable', () => {
+  const collaboration = candidateFor({
+    lookup: {
+      found: true,
+      releaseGroupId: 'mbid-1',
+      primaryType: 'Album',
+      secondaryTypes: [],
+      firstReleaseDate: '2026-09-10',
+      artists: ['Blood Incantation', 'Parkway Drive'],
+    },
+  })
+
+  assert.deepEqual(validate([item()], collaboration), { ok: true })
+})
+

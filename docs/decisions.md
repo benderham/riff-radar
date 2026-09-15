@@ -344,3 +344,19 @@ An Unverified release is *not* excluded, because absence from MusicBrainz is mis
 
 The ranking half of ADR-0010 is untouched: missing data still excludes for eligibility and still proceeds for ranking. The two rules answer different questions.
 
+## ADR-0036: A release is judged on who made it, not on how many made it
+
+**Status:** ACCEPTED — amends ADR-0034 and the format list in CONTEXT.md. Ben's proposal and decision, 15 September 2026.
+
+ADR-0034 excluded any release MusicBrainz credited to more than one artist, as a proxy for the brief's "split". MusicBrainz has no split type, and the proxy could not tell a split from a collaboration, so it threw out every two-artist record — which in metal is a real and frequently good category, not an edge case.
+
+A split and a collaboration are indistinguishable in the data because the distinction was never really about the count. The question being asked is whether Ben wants to hear it, and that is a taste question: a Killswitch Engage / Disturbed record is refused because Disturbed is excluded, and a Killswitch Engage / Parkway Drive record is not refused at all. So `MusicbrainzLookup` carries the credited artists' names rather than their number, and eligibility refuses a release when **any** credited artist is on the profile's `artists.exclude`.
+
+The asymmetry is ADR-0007's. An exclusion is a filter and one excluded artist is enough; `artists.always` is a *ranking* guarantee and deliberately does not appear here, because a live album should not become eligible on the strength of who plays on it. That half belongs to ticket 05, where ranking lives.
+
+**Consequences:** A split now reaches the shortlist if its artists pass, which the brief's format list did not intend. The prompt's format exclusions drop "split" to match; CONTEXT.md's Eligible Release gains the artist rule. Nothing else in the brief mentioned splits, so this is the whole of the amendment.
+
+This also closes a gap rather than only opening one. The system prompt has claimed "the artist is not in the profile's `artists.exclude`" since the beginning and no code enforced it — the same shape of problem as the provenance rule in ticket 03 and the eligibility rules in ADR-0035. It is enforced in `validateShortlist` now, across every credited artist rather than only the one a source happened to print first. An Unverified release has no MusicBrainz credits to read, so it is judged on the single artist its source named.
+
+`PROMPT_VERSION` is 4.
+
