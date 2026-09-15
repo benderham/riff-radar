@@ -2,13 +2,21 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { z } from 'zod'
 
-import { SOURCES } from '../config.ts'
+import { SEARCH_ENDPOINT, SOURCES } from '../config.ts'
 import type { HttpPort, ModelPort, Ports } from './ports.ts'
 import { openStore } from './store/store.ts'
 import type { ToolContext } from './tools.ts'
 import { dispatch, toolDefinitions, tools, validateAction } from './tools.ts'
 
 const call = (name: string, argumentsJson: string) => ({ id: 'call-1', name, argumentsJson })
+
+/** Sources are read with GET and searches sent with POST; each fake refuses the other. */
+const notSearched = async (): Promise<never> => {
+  throw new Error('this test fetches a source; nothing should search')
+}
+const notFetched = async (): Promise<never> => {
+  throw new Error('this test searches; nothing should fetch a source')
+}
 
 /**
  * A page, invented here rather than kept in `fixtures/`, which holds captures
@@ -68,6 +76,7 @@ const context = (over: { http?: HttpPort; model?: ModelPort } = {}) => {
     store,
     runId: 'run-1',
     window: { from: '2026-09-08', to: '2026-09-14' },
+    searchApiKey: 'test-key',
     candidates: [],
   }
   return { toolContext, store }
@@ -107,6 +116,17 @@ test('well-formed JSON of the wrong shape is an ordinary failure', () => {
   const result = validateAction(call('web_search', '{"q": "ulcerate"}'))
   assert.equal(result.ok, false)
   assert.match(result.ok ? '' : result.error, /query/)
+})
+
+test('a query longer than the provider accepts is rejected before it is sent', () => {
+  // Tavily documents a 400-character ceiling. A model that writes a paragraph
+  // into the query is caught here rather than spending the step to find out.
+  const long = 'a'.repeat(401)
+  const result = validateAction(call('web_search', JSON.stringify({ query: long })))
+  assert.equal(result.ok, false)
+  assert.match(result.ok ? '' : result.error, /query/)
+
+  assert.equal(validateAction(call('web_search', JSON.stringify({ query: 'a'.repeat(400) }))).ok, true)
 })
 
 test('an unconfigured source is rejected before anything is fetched', () => {
@@ -156,7 +176,7 @@ test('a source that yields nothing is recorded, warned about, and does not throw
   assert.ok(result.ok)
 
   const { toolContext, store } = context({
-    http: { get: async () => ({ status: 500, headers: {}, body: 'server error' }) },
+    http: { get: async () => ({ status: 500, headers: {}, body: 'server error' }), post: notSearched },
   })
   const dispatched = await dispatch(result.name, result.input, toolContext)
 
@@ -189,4 +209,76 @@ test('finish hands its items back to the loop rather than judging them', async (
   const dispatched = await dispatch(result.name, result.input, toolContext)
   assert.ok(dispatched.done)
   assert.deepEqual(dispatched.shortlist, [{ artist: 'Ulcerate' }])
+})
+
+// ── Web search (ticket 03) ───────────────────────────────────────────────────
+
+const SEARCH_BODY = JSON.stringify({
+  query: 'ulcerate new zealand',
+  results: [
+    {
+      title: 'Ulcerate (band) - Wikipedia',
+      url: 'https://en.wikipedia.org/wiki/Ulcerate',
+      content: 'A New Zealand technical death metal band formed in 2000.',
+      score: 0.91,
+    },
+  ],
+})
+
+test('a search returns what it found, and adds nothing to the run', async () => {
+  const result = validateAction(call('web_search', '{"query": "ulcerate new zealand"}'))
+  assert.ok(result.ok)
+
+  const { toolContext } = context({
+    http: { get: notFetched, post: async () => ({ status: 200, headers: {}, body: SEARCH_BODY }) },
+  })
+  // A run mid-flight: the search must leave these exactly as it found them.
+  toolContext.candidates = [
+    { artist: 'Ulcerate', title: 'Cutting the Throat of God', releaseDates: ['2026-09-12'], sourceUrls: [SOURCES.loudwire] },
+  ]
+  const dispatched = await dispatch(result.name, result.input, toolContext)
+
+  assert.equal(dispatched.done, false)
+  assert.ok(!dispatched.done && dispatched.result.includes('en.wikipedia.org/wiki/Ulcerate'))
+  assert.ok(!dispatched.done && dispatched.result.includes('technical death metal'))
+  assert.deepEqual(
+    toolContext.candidates.map((candidate) => candidate.title),
+    ['Cutting the Throat of God'],
+    'a search is not a way to discover a release',
+  )
+})
+
+test('a search sends the key in a header and the query in the body', async () => {
+  const result = validateAction(call('web_search', '{"query": "ulcerate"}'))
+  assert.ok(result.ok)
+
+  const seen: { url: string; body: string; headers?: Record<string, string> }[] = []
+  const { toolContext } = context({
+    http: {
+      get: notFetched,
+      post: async (url, body, headers) => {
+        seen.push({ url, body, ...(headers === undefined ? {} : { headers }) })
+        return { status: 200, headers: {}, body: SEARCH_BODY }
+      },
+    },
+  })
+  await dispatch(result.name, result.input, toolContext)
+
+  assert.equal(seen[0]?.url, SEARCH_ENDPOINT)
+  assert.equal(JSON.parse(seen[0]?.body ?? '{}').query, 'ulcerate')
+  assert.equal(seen[0]?.headers?.['authorization'], 'Bearer test-key')
+})
+
+test('a search that fails is an ordinary step result with a warning', async () => {
+  const result = validateAction(call('web_search', '{"query": "ulcerate"}'))
+  assert.ok(result.ok)
+
+  const { toolContext } = context({
+    http: { get: notFetched, post: async () => ({ status: 429, headers: {}, body: 'slow down' }) },
+  })
+  const dispatched = await dispatch(result.name, result.input, toolContext)
+
+  assert.equal(dispatched.done, false)
+  assert.ok(!dispatched.done && dispatched.warning?.includes('429'))
+  assert.ok(!dispatched.done && dispatched.result.length > 0, 'the model is told, not left waiting')
 })

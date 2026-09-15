@@ -35,9 +35,15 @@ const PAGE = `<!doctype html>
 </ul>
 </body></html>`
 
+/** For the fakes that read sources and nothing else: a POST from one is a bug in the test. */
+const notSearched = async (): Promise<never> => {
+  throw new Error('this test fetches sources only; nothing should search')
+}
+
 /** Every source serves the same page unless a test says otherwise. */
 const fixtureHttp = (body = PAGE, status = 200): HttpPort => ({
   get: async () => ({ status, headers: { 'content-type': 'text/html' }, body }),
+  post: async () => ({ status, headers: { 'content-type': 'text/html' }, body }),
 })
 
 /** Every `now()` is a second after the last, so durations are observable. */
@@ -62,10 +68,22 @@ const DEFAULT_USAGE = { uncachedInputTokens: 100, cachedInputTokens: 20, outputT
 /** What the extraction call inside `fetch_source` costs in these tests. */
 const EXTRACTION_USAGE = { uncachedInputTokens: 500, cachedInputTokens: 0, outputTokens: 50 }
 
+/**
+ * The releases every fetch in this file discovers, and the releases every
+ * shortlist in it names. They are one list because a shortlist may only name a
+ * release a source listed: a test that shortlists something else is testing the
+ * guardrail rather than using it.
+ */
+const RELEASES = [
+  { artist: 'Ulcerate', title: 'Cutting the Throat of God' },
+  { artist: 'Chat Pile', title: 'Cool World' },
+  { artist: 'Blood Incantation', title: 'Absolute Elsewhere' },
+  { artist: 'Sumac', title: 'The Healer' },
+  { artist: 'Couch Slut', title: 'You Could Do It Tonight' },
+] as const
+
 const EXTRACTED = JSON.stringify({
-  candidates: [
-    { artist: 'Ulcerate', title: 'Cutting the Throat of God', releaseDate: '2026-09-12' },
-  ],
+  candidates: RELEASES.map((release) => ({ ...release, releaseDate: '2026-09-12' })),
 })
 
 /**
@@ -119,8 +137,11 @@ const finishes = (shortlist: readonly unknown[]): Partial<ModelResponse> =>
   proposes('finish', JSON.stringify({ shortlist }))
 
 const item = (index: number, overrides: Partial<ShortlistItem> = {}): ShortlistItem => ({
-  artist: `Artist ${index}`,
-  title: `Album ${index}`,
+  // Past the end is a test asking for a release no source listed, which the
+  // shortlist validator refuses: better to say so here than to read it as a
+  // termination reason five assertions later.
+  artist: RELEASES[index - 1]?.artist ?? assert.fail(`no release ${index}`),
+  title: RELEASES[index - 1]?.title ?? '',
   releaseDate: '2026-09-10',
   sourceUrls: ['https://albumoftheyear.org/album/1'],
   rank: index,
@@ -141,6 +162,7 @@ const run = async (
     ports: { clock: tickingClock(), model, http: args.http ?? fixtureHttp() },
     store,
     profile,
+    searchApiKey: 'test-key',
   })
 
   const runRow = store.database.prepare('SELECT * FROM runs WHERE run_id = ?').get(outcome.runId)
@@ -154,7 +176,7 @@ const run = async (
 // ── Termination reasons ──────────────────────────────────────────────────────
 
 test('finish with five valid items ends the run completed', async () => {
-  const { outcome, runRow } = await run(scriptedModel(finishes(items(5))).port)
+  const { outcome, runRow } = await run(scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes(items(5))).port)
 
   assert.equal(outcome.terminationReason, 'completed')
   assert.equal(outcome.shortlistSize, 5)
@@ -163,7 +185,7 @@ test('finish with five valid items ends the run completed', async () => {
 })
 
 test('finish with one to four valid items ends the run completed_short', async () => {
-  const { outcome, runRow } = await run(scriptedModel(finishes(items(3))).port)
+  const { outcome, runRow } = await run(scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes(items(3))).port)
 
   assert.equal(outcome.terminationReason, 'completed_short')
   assert.equal(outcome.shortlistSize, 3)
@@ -178,7 +200,7 @@ test('finish with an empty shortlist ends the run no_candidates', async () => {
 })
 
 test('finish with an invalid shortlist ends the run validation_failed', async () => {
-  const model = scriptedModel(finishes([item(1, { sourceUrls: [] })]))
+  const model = scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes([item(1, { sourceUrls: [] })]))
   const { outcome, runRow, stepRows } = await run(model.port)
 
   assert.equal(outcome.terminationReason, 'validation_failed')
@@ -213,6 +235,7 @@ test('two actions proposed in one step is an invalid action, and both are record
         { id: 'b', name: 'web_search', argumentsJson: '{"query": "two"}' },
       ],
     },
+    proposes('fetch_source', '{"source_id": "loudwire"}'),
     finishes(items(1)),
   )
   const { outcome, stepRows } = await run(model.port)
@@ -291,7 +314,7 @@ test('a rejected action is visible: proposed and unvalidated, never dispatched',
 })
 
 test('malformed JSON arguments are recorded as an invalid action, not a crash', async () => {
-  const model = scriptedModel(proposes('web_search', '{"query": '), finishes(items(1)))
+  const model = scriptedModel(proposes('web_search', '{"query": '), proposes('fetch_source', '{"source_id": "loudwire"}'), finishes(items(1)))
   const { outcome, stepRows } = await run(model.port)
 
   assert.equal(outcome.terminationReason, 'completed_short')
@@ -431,6 +454,7 @@ test('the trace records the resolved absolute window, not the flag', async () =>
     ports: { clock: tickingClock(), model: scriptedModel(finishes(items(1))).port, http: fixtureHttp() },
     store,
     profile,
+    searchApiKey: 'test-key',
   })
 
   const row = store.database.prepare('SELECT * FROM runs WHERE run_id = ?').get(outcome.runId)
@@ -473,8 +497,9 @@ test('two runs in one database are distinct rows with distinct steps', async () 
     http: fixtureHttp(),
   }
 
-  const first = await runRiffRadar({ args, ports, store, profile })
-  const second = await runRiffRadar({ args, ports, store, profile })
+  const request = { args, ports, store, profile, searchApiKey: 'test-key' }
+  const first = await runRiffRadar(request)
+  const second = await runRiffRadar(request)
 
   assert.notEqual(first.runId, second.runId)
   assert.equal(store.database.prepare('SELECT count(*) AS n FROM runs').get()?.['n'], 2)
@@ -490,6 +515,7 @@ test('a release listed by two sources is one candidate carrying both URLs', asyn
       headers: {},
       body: url.includes('wikipedia') ? fixture('wikipedia.html') : PAGE,
     }),
+    post: notSearched,
   }
 
   const model = scriptedModel(
@@ -503,7 +529,7 @@ test('a release listed by two sources is one candidate carrying both URLs', asyn
 
   // Both fetches produced the same release, so the second reports no new one.
   const second = JSON.parse(String(stepRows[1]?.['tool_result']))
-  assert.equal(second.totalCandidates, 1)
+  assert.equal(second.totalCandidates, RELEASES.length)
   assert.equal(second.newThisFetch, 0)
   assert.deepEqual(second.candidates[0].sourceUrls, [SOURCES.loudwire, SOURCES.wikipedia])
 
@@ -518,10 +544,18 @@ test('a release listed by two sources is one candidate carrying both URLs', asyn
 test('a source that yields nothing warns on the step and the run carries on', async () => {
   const model = scriptedModel(
     proposes('fetch_source', '{"source_id": "loudwire"}'),
-    finishes(items(2)),
+    proposes('fetch_source', '{"source_id": "wikipedia"}'),
+    finishes(items(1)),
   )
+  // One source refuses, the other serves: the shortlist comes from what is left.
   const { outcome, store, stepRows } = await run(model.port, {
-    http: { get: async () => ({ status: 403, headers: {}, body: 'go away' }) },
+    http: {
+      get: async (url) =>
+        url === SOURCES.loudwire
+          ? { status: 403, headers: {}, body: 'go away' }
+          : { status: 200, headers: {}, body: PAGE },
+      post: notSearched,
+    },
   })
 
   assert.equal(outcome.terminationReason, 'completed_short', 'a lost source is not a lost run')
@@ -530,8 +564,8 @@ test('a source that yields nothing warns on the step and the run carries on', as
   assert.equal(stepRows[0]?.['kind'], 'action', 'a warning is not a failed step')
 
   const page = store.database
-    .prepare('SELECT * FROM source_texts WHERE run_id = ?')
-    .get(outcome.runId)
+    .prepare('SELECT * FROM source_texts WHERE run_id = ? AND source_id = ?')
+    .get(outcome.runId, 'loudwire')
   assert.equal(page?.['status'], 403)
   assert.equal(page?.['candidate_count'], 0)
 })
@@ -543,10 +577,82 @@ test('a source fetch that throws ends the run as a tool failure', async () => {
       get: async () => {
         throw new Error('getaddrinfo ENOTFOUND')
       },
+      post: notSearched,
     },
   })
 
   assert.equal(outcome.terminationReason, 'tool_failure')
   assert.equal(stepRows[0]?.['kind'], 'tool_error')
   assert.match(String(stepRows[0]?.['error']), /ENOTFOUND/)
+})
+
+// ── Web search (ticket 03) ───────────────────────────────────────────────────
+
+const SEARCH_BODY = JSON.stringify({
+  query: 'vaultwraith crimson nadir',
+  results: [
+    {
+      title: 'Vaultwraith — Crimson Nadir, out this week',
+      url: 'https://example.test/vaultwraith',
+      content: 'A release no configured source listed.',
+      score: 0.9,
+    },
+  ],
+})
+
+/** A page for a source over GET, the search payload for the search endpoint over POST. */
+const searchingHttp = (searchStatus = 200): HttpPort => ({
+  get: async () => ({ status: 200, headers: {}, body: PAGE }),
+  post: async () => ({
+    status: searchStatus,
+    headers: {},
+    body: searchStatus === 200 ? SEARCH_BODY : 'slow down',
+  }),
+})
+
+test('a search is an ordinary step: query, result and duration, all recorded', async () => {
+  const model = scriptedModel(
+    proposes('fetch_source', '{"source_id": "loudwire"}'),
+    proposes('web_search', '{"query": "vaultwraith crimson nadir"}'),
+    finishes(items(1)),
+  )
+  const { outcome, stepRows } = await run(model.port, { http: searchingHttp() })
+
+  assert.equal(outcome.terminationReason, 'completed_short')
+
+  const search = stepRows[1]
+  assert.equal(search?.['kind'], 'action')
+  assert.equal(search?.['tool_name'], 'web_search')
+  assert.match(String(search?.['tool_args']), /vaultwraith crimson nadir/)
+  assert.match(String(search?.['tool_result']), /example\.test\/vaultwraith/)
+  assert.equal(search?.['error'], null)
+  assert.ok(Number(search?.['duration_ms']) > 0)
+})
+
+test('a release only a search mentioned cannot reach the shortlist', async () => {
+  const model = scriptedModel(
+    proposes('fetch_source', '{"source_id": "loudwire"}'),
+    proposes('web_search', '{"query": "vaultwraith crimson nadir"}'),
+    finishes([item(1, { artist: 'Vaultwraith', title: 'Crimson Nadir', musicbrainzId: 'mbid-x' })]),
+  )
+  const { outcome, runRow, stepRows } = await run(model.port, { http: searchingHttp() })
+
+  assert.equal(outcome.terminationReason, 'validation_failed')
+  assert.equal(outcome.shortlistSize, 0)
+  assert.equal(runRow?.['notion_write_performed'], 0)
+  assert.match(String(stepRows.at(-1)?.['error']), /not among the candidates/)
+})
+
+test('a search that fails leaves the run running', async () => {
+  const model = scriptedModel(
+    proposes('fetch_source', '{"source_id": "loudwire"}'),
+    proposes('web_search', '{"query": "ulcerate"}'),
+    finishes(items(1)),
+  )
+  const { outcome, stepRows } = await run(model.port, { http: searchingHttp(429) })
+
+  assert.equal(outcome.terminationReason, 'completed_short', 'a lost search is not a lost run')
+  assert.match(String(stepRows[1]?.['warning']), /429/)
+  assert.equal(stepRows[1]?.['error'], null, 'a warning is not an error')
+  assert.equal(stepRows[1]?.['kind'], 'action')
 })

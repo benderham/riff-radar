@@ -13,17 +13,38 @@
 import { HTTP_TIMEOUT_MS, USER_AGENT } from '../../config.ts'
 import type { HttpPort } from '../ports.ts'
 
+const read = async (response: Response) => ({
+  status: response.status,
+  headers: Object.fromEntries(response.headers),
+  body: await response.text(),
+})
+
 export const httpAdapter = (fetchImpl: typeof fetch = globalThis.fetch): HttpPort => ({
-  async get(url) {
+  async get(url, headers = {}) {
     const response = await fetchImpl(url, {
-      headers: { 'user-agent': USER_AGENT, accept: 'text/html,application/xhtml+xml' },
+      // The project's own identification leads, and a caller's headers follow,
+      // because a search API's key is an addition to who we are and not a
+      // disguise: nothing here ever claims to be a browser (ADR-0031).
+      headers: { 'user-agent': USER_AGENT, accept: 'text/html,application/xhtml+xml', ...headers },
       signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
     })
 
-    return {
-      status: response.status,
-      headers: Object.fromEntries(response.headers),
-      body: await response.text(),
-    }
+    return read(response)
+  },
+
+  async post(url, body, headers = {}) {
+    const response = await fetchImpl(url, {
+      method: 'POST',
+      headers: {
+        'user-agent': USER_AGENT,
+        accept: 'application/json',
+        'content-type': 'application/json',
+        ...headers,
+      },
+      body,
+      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+    })
+
+    return read(response)
   },
 })

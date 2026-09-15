@@ -254,3 +254,41 @@ ADR-0001 names three sources. Two of them read fine. The third, Album of the Yea
 So version 1 runs on two sources. Album of the Year is not configured at all, rather than configured and failing: a run has thirty steps, and spending one of them knocking on a door that is shut buys nothing but a warning we already know the text of. Its URL lives in this decision, which is one line away from putting it back. Nothing is faked and nothing pretends the coverage is complete.
 
 **Consequences:** Discovery runs on two sources, and a run's coverage is narrower than the specification assumed. Ben has three ways out and this decision commits to none of them: accept two sources and amend ADR-0001; replace Album of the Year with another source that permits reading; or ask them for access. The warning is in every run's trace until one of those happens, which is the point — a source quietly producing nothing is the failure mode ADR-0003 was most worried about, and this one is loud.
+
+## ADR-0032: Web search is Brave's API, and the search-to-shortlist path is closed in code
+
+**Status:** ACCEPTED — amended by ADR-0033, which replaces Brave with Tavily. Everything below about the search-to-shortlist path stands; only the provider changed. Implements the enrichment half of ADR-0001.
+
+`web_search` searches Brave's API: JSON over a plain GET, authenticated by a key in a header. The `http` port gains an optional `headers` argument to carry that key, which is additive — the project's own user agent is always sent — so nothing here impersonates a browser (ADR-0031). `BRAVE_API_KEY` joins the credentials a run refuses to start without, because a run that discovers its search is unusable halfway through has already been billed for the model calls before it.
+
+Two alternatives were weighed and rejected. Scraping DuckDuckGo's HTML endpoint needs no key and no port change, but it blocks non-browser user agents, and a tool that permanently degrades to a warning is a fake by another name. Wikipedia's search API is free and well-behaved but too thin for underground metal, and MusicBrainz (ticket 04) already answers most identity questions.
+
+The more consequential half of this decision is not the provider. ADR-0001 says a candidate may never originate from a search, and until now that rule lived only in the system prompt. `validateShortlist` now takes the run's candidates and rejects any item naming a release no source listed. Since only `fetch_source` adds to that list and `web_search` cannot reach it, the path from a search result to a Notion row does not exist in code rather than being discouraged in prose.
+
+**Consequences:** A model that invents or imports a release ends its run with `validation_failed` and no write, which is a blunt end to an otherwise good run — the alternative, dropping the offending item and writing the rest, would let a run write a shortlist the model did not propose. Identity is matched on artist and title, so a model that "corrects" a title it read on a source loses the item; when ticket 04 gives candidates MusicBrainz ids, that match should strengthen rather than stay as it is.
+
+`BRAVE_API_KEY` is required by every run, including a dry run and a run that never searches, which is stricter than the tool's use. The alternative — discovering the key is missing on the step that needs it — spends a search step and some of the model's patience to learn something knowable before the run starts.
+
+One existing test changed meaning: a run whose only source 403s can no longer propose a shortlist, because it has no candidates to ground one in. That run now ends `no_candidates` rather than `completed_short`, which is the honest reading — the shortlist it used to propose was never anchored to anything. The test keeps its original claim by fetching a second source that works.
+
+The search client's automated tests run against an invented body of Brave's documented shape rather than a capture, because capturing one needs a key this repository does not have. `npm run smoke:search` is what checks the shape against reality, and the first real response should replace the invented body with a fixture.
+
+## ADR-0033: The search provider is Tavily, and the `http` port gains a POST
+
+**Status:** ACCEPTED — amends ADR-0032. Tavily was Ben's instruction on 15 September 2026, which is the approval AGENTS.md requires before an external provider changes.
+
+Brave was never used: ADR-0032 was written and implemented against its documented shape, but the repository had no key, so no Brave response was ever captured or parsed. Tavily replaces it before that gap closed, so nothing is being unwound — the endpoint, the credential name and the response schema move, and the client either side of them does not.
+
+Tavily takes its query in a JSON body rather than a query string, so the `http` port gains `post(url, body, headers?)` beside `get`. It is a second method rather than a general `request(method, ...)`: only one caller posts, every source is and will remain a GET, and generalising would have rewritten every existing caller to buy nothing. `post` sends the project's own user agent exactly as `get` does, so nothing here impersonates a browser (ADR-0031). `TAVILY_API_KEY` replaces `BRAVE_API_KEY` in the credentials a run refuses to start without, for the reason ADR-0032 gives.
+
+The URL recorded on a search step is now the bare endpoint, because the query has moved into the body. The query was never lost — `SearchFetch` has always carried it separately, and that is what the step records and what the model reads.
+
+**Consequences:** The search client's tests no longer run against an invented body. `fixtures/tavily-search.json` is a real Tavily response, captured 15 September 2026, which is what ADR-0032 said should happen the first time a key existed. The gap that decision was uncomfortable about is closed: `npm run smoke:search` passed against the live API on 15 September 2026, and the shape it returned is the shape the client parses.
+
+Tavily's snippet field is called `content`; it is mapped to `description` at the port boundary, because that is the project's own word and no provider's name should reach the rest of the code. The fakes in the test suite now have to declare which verb they expect, and each refuses the other — a source fake that is asked to POST throws, and a search fake that is asked to GET throws. That is noise in the tests, and it is the useful kind: it says out loud that a source is a page and a search is not.
+
+`https://tavily.com/agent-setup/SKILL.md`, the setup document Ben pointed at, was read once `www.tavily.com` was allowed, after the implementation was already built against the live API. It offers several paths; this project is its **Path B**, integrating Tavily into an application that keeps running after the agent session ends, and not its CLI-and-Agent-Skills onboarding, which equips a coding agent rather than a product. Path B permits "the official SDK **or** REST API", so calling the REST endpoint through the `http` port stands: `@tavily/core` would be a dependency AGENTS.md requires approval for, and it would sit below the port where this project deliberately keeps raw HTTP (ADR-0018). Its other Path B instructions — put the key in the project's existing gitignored `.env`, never use the CLI as the product's runtime integration, run one real request as a smoke test before claiming the integration works — were already satisfied.
+
+Reading it corrected one thing. Tavily documents a 400-character ceiling on a query, and the `web_search` action schema had no upper bound, so a model that wrote a paragraph where a search query belongs would have spent a step discovering that from the provider. `MAX_SEARCH_QUERY_CHARS` now bounds it, which is where AGENTS.md wanted it anyway: a model-produced action validated before dispatch.
+
+Not done, and deliberately: the document's Autonomous Setup installs the `tvly` CLI and adds Tavily's Agent Skills globally to the coding agent. That equips Ben's machine rather than this repository, and AGENTS.md's scope boundaries do not cover it. It is his call, not a step to take silently.

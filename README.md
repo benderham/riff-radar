@@ -35,7 +35,7 @@ Requires Node 22.22 or later.
 npm install
 ```
 
-Three credentials must be set before a run will start. Copy the example file and
+Four credentials must be set before a run will start. Copy the example file and
 fill it in:
 
 ```sh
@@ -44,6 +44,7 @@ cp .env.example .env
 
 ```sh
 FIREWORKS_API_KEY=...     # the model provider
+TAVILY_API_KEY=...        # web search, for disambiguation only
 NOTION_TOKEN=...          # Notion integration token
 NOTION_DATABASE_ID=...    # the database proposals are written to
 ```
@@ -75,4 +76,5 @@ npm run typecheck     # tsc --noEmit
 npm run check:layering  # domain/ imports nothing from clients/ or adapters/
 npm run check         # all three
 npm run smoke:model   # one live call to the model provider, never in the suite
+npm run smoke:search  # one live search, to check the provider's response shape
 ```

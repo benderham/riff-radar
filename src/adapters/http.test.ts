@@ -49,3 +49,36 @@ test('a transport failure rejects', async () => {
 
   await assert.rejects(() => http.get('https://example.test/metal'), /ENOTFOUND/)
 })
+
+test('a caller may add headers, and still identifies the project', async () => {
+  const { calls, http } = respondWith('{}')
+  await http.get('https://example.test/search', { 'x-subscription-token': 'secret' })
+
+  const headers = calls[0]?.init.headers as Record<string, string>
+  assert.equal(headers['x-subscription-token'], 'secret')
+  assert.equal(headers['user-agent'], USER_AGENT)
+})
+
+test('a post sends the body, the method and the content type', async () => {
+  const { calls, http } = respondWith('{"results":[]}')
+  await http.post('https://example.test/search', '{"query":"ulcerate"}', {
+    authorization: 'Bearer secret',
+  })
+
+  const [call] = calls
+  assert.equal(call?.init.method, 'POST')
+  assert.equal(call?.init.body, '{"query":"ulcerate"}')
+  const headers = call?.init.headers as Record<string, string>
+  assert.equal(headers['content-type'], 'application/json')
+  assert.equal(headers['authorization'], 'Bearer secret')
+  assert.equal(headers['user-agent'], USER_AGENT, 'a post identifies the project too')
+  assert.ok(call?.init.signal instanceof AbortSignal)
+})
+
+test('a post returns a non-2xx rather than throwing, like a get', async () => {
+  const { http } = respondWith('unauthorized', { status: 401 })
+
+  const response = await http.post('https://example.test/search', '{}')
+  assert.equal(response.status, 401)
+  assert.equal(response.body, 'unauthorized')
+})
