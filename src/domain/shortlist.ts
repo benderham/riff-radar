@@ -32,6 +32,12 @@ export const shortlistItemSchema = z.object({
   /** A MusicBrainz release-group id, or `unverified: true` in its place. */
   musicbrainzId: z.string().optional(),
   unverified: z.boolean().optional(),
+  /**
+   * The one judgement of the model's that scores: what this release resembles,
+   * and the Source Text it read that in. An uncited claim is not refused — it
+   * simply contributes nothing to the ranking (ADR-0037).
+   */
+  vibe: z.object({ claim: z.string(), quote: z.string() }).optional(),
 })
 
 export type ShortlistItem = z.infer<typeof shortlistItemSchema>
@@ -103,6 +109,57 @@ const itemErrors = (
 
 export type ShortlistValidation = { readonly ok: true } | { readonly ok: false; readonly errors: readonly string[] }
 
+/** Spelling and spacing differ between a calendar, MusicBrainz and a hand-edited profile. */
+const sameName = (one: string, other: string): boolean =>
+  one.trim().toLowerCase() === other.trim().toLowerCase()
+
+const isAlways = (artists: readonly string[], profile: TasteProfile): boolean =>
+  artists.some((artist) => profile.artists.always.some((name) => sameName(name, artist)))
+
+/**
+ * `artists.always` guarantees a shortlist slot, so an eligible release by one
+ * of those artists that the model left off is a refused shortlist rather than
+ * a missed opportunity (ADR-0007). Enforced here for the same reason
+ * eligibility is: the prompt has asked for it since the first version, and
+ * asking is not enforcing (ADR-0035).
+ *
+ * A guarantee that cannot be honoured is not held against the run: once the
+ * shortlist is full of guaranteed artists there is no slot left to guarantee,
+ * and the remaining ones are reported by their absence from a full list.
+ */
+const missingGuarantees = (
+  items: readonly ShortlistItem[],
+  window: DateWindow,
+  candidates: readonly Candidate[],
+  profile: TasteProfile,
+): string[] => {
+  if (profile.artists.always.length === 0) return []
+
+  const shortlisted = new Set(
+    items.map((item) => artistTitleIdentity(item.artist ?? '', item.title ?? '')),
+  )
+
+  const guaranteed = candidates.filter(
+    (candidate) =>
+      isAlways(
+        candidate.lookup?.found === true && candidate.lookup.artists.length > 0
+          ? candidate.lookup.artists
+          : [candidate.artist],
+        profile,
+      ) && isEligible(candidate, window, profile).eligible,
+  )
+
+  const present = guaranteed.filter((candidate) => shortlisted.has(candidateIdentity(candidate)))
+  if (present.length >= SHORTLIST_SIZE) return []
+
+  return guaranteed
+    .filter((candidate) => !shortlisted.has(candidateIdentity(candidate)))
+    .map(
+      (candidate) =>
+        `${candidate.artist} — ${candidate.title} is on the profile's always list and eligible, and is not on the shortlist`,
+    )
+}
+
 export const validateShortlist = (
   items: readonly ShortlistItem[],
   window: DateWindow,
@@ -116,6 +173,8 @@ export const validateShortlist = (
   if (items.length > SHORTLIST_SIZE) {
     errors.push(`shortlist has ${items.length} items; the maximum is ${SHORTLIST_SIZE}`)
   }
+
+  errors.push(...missingGuarantees(items, window, candidates, profile))
 
   const seen = new Set<string>()
   for (const [index, item] of items.entries()) {
