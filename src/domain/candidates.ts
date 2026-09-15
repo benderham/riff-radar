@@ -175,6 +175,27 @@ export const collapseByReleaseGroup = (candidates: readonly Candidate[]): Candid
 }
 
 /**
+ * Candidates Notion already holds, removed.
+ *
+ * Both identities are checked, because a candidate carries different ones at
+ * different moments: artist and title from the moment a source lists it, and a
+ * release-group id only once a lookup has been spent on it. Suppressing on the
+ * weaker one first is what stops a run paying to identify a release it was
+ * always going to drop (ADR-0009).
+ */
+export const dropSuppressed = (
+  candidates: readonly Candidate[],
+  suppressed: ReadonlySet<string>,
+): Candidate[] =>
+  suppressed.size === 0
+    ? [...candidates]
+    : candidates.filter(
+        (candidate) =>
+          !suppressed.has(candidateIdentity(candidate)) &&
+          !suppressed.has(releaseIdentityOf(candidate)),
+      )
+
+/**
  * A candidate belongs to a run when *any* source places it inside the window.
  *
  * Any, not all: sources disagree by a day or two routinely, and a release one

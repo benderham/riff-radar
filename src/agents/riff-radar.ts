@@ -27,6 +27,7 @@ import {
 import type { CliArgs } from '../domain/cli-args.ts'
 import type { Usage } from '../domain/cost.ts'
 import { NO_USAGE, addUsage, estimateCost } from '../domain/cost.ts'
+import { suppressedReleases } from '../clients/notion.ts'
 import { citedVibes, rankShortlist } from '../domain/ranking.ts'
 import type { TerminationReason } from '../domain/run.ts'
 import { WRITE_PERMITTED } from '../domain/run.ts'
@@ -48,6 +49,9 @@ export interface RunRequest {
   readonly profile: TasteProfile
   /** The search provider's key. Read from the environment by the CLI, never stored. */
   readonly searchApiKey: string
+  /** Notion's integration token and database. Read from the environment, never stored. */
+  readonly notionToken: string
+  readonly notionDatabaseId: string
 }
 
 export interface RunOutcome {
@@ -88,11 +92,19 @@ export const runRiffRadar = async ({
   store,
   profile,
   searchApiKey,
+  notionToken,
+  notionDatabaseId,
 }: RunRequest): Promise<RunOutcome> => {
   // Resolve first. A window that cannot be resolved is not a run, and must not
   // leave a half-started row behind.
   const startedAt = ports.clock.now()
   const window = resolveWindow(startedAt, args.lastDays)
+
+  // Before the run row, for the same reason: a suppression set that could not
+  // be read is not a run at all. An unsuppressed run can propose what Notion
+  // already holds, and this read is what makes the write idempotent by
+  // construction (ADR-0039). It throws, and nothing has been spent.
+  const suppressed = await suppressedReleases(ports, notionToken, notionDatabaseId)
 
   const runId = randomUUID()
   store.startRun({
@@ -112,7 +124,15 @@ export const runRiffRadar = async ({
 
   // The run's working memory. Actions read and add to it; the loop only passes
   // it along, because what the run has found is not what the loop is about.
-  const context: ToolContext = { ports, store, runId, window, searchApiKey, candidates: [] }
+  const context: ToolContext = {
+    ports,
+    store,
+    runId,
+    window,
+    searchApiKey,
+    suppressed,
+    candidates: [],
+  }
 
   let usage: Usage = NO_USAGE
   let costIsUpperBound = false

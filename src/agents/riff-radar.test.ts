@@ -2,7 +2,13 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-import { MAX_RUN_COST_USD, MUSICBRAINZ_ENDPOINT, PROMPT_VERSION, SOURCES } from '../../config.ts'
+import {
+  MAX_RUN_COST_USD,
+  MUSICBRAINZ_ENDPOINT,
+  NOTION_ENDPOINT,
+  PROMPT_VERSION,
+  SOURCES,
+} from '../../config.ts'
 import type { ShortlistItem } from '../domain/shortlist.ts'
 import type { TasteProfile } from '../domain/taste-profile.ts'
 import { tasteProfileSchema } from '../domain/taste-profile.ts'
@@ -94,6 +100,33 @@ const fixtureHttp = (body = PAGE, status = 200): HttpPort => ({
       ? { status: 200, headers: { 'content-type': 'application/json' }, body: musicbrainzBody(url) }
       : { status, headers: { 'content-type': 'text/html' }, body },
   post: async () => ({ status, headers: { 'content-type': 'text/html' }, body }),
+})
+
+/**
+ * A Notion database holding whatever a test says it holds, and nothing by
+ * default. Every run reads it before it starts, so every fake has to answer:
+ * the read is the run's memory, and a run without it does not begin (ADR-0039).
+ */
+const withNotion = (http: HttpPort, rows: readonly { artist: string; title: string }[]): HttpPort => ({
+  ...http,
+  post: async (url, body, headers) =>
+    url.startsWith(NOTION_ENDPOINT)
+      ? {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            results: rows.map((row) => ({
+              properties: {
+                Title: { title: [{ plain_text: row.title }] },
+                Artist: { rich_text: [{ plain_text: row.artist }] },
+                Status: { select: { name: 'Rejected' } },
+              },
+            })),
+            has_more: false,
+            next_cursor: null,
+          }),
+        }
+      : http.post(url, body, headers),
 })
 
 /** Every `now()` is a second after the last, so durations are observable. */
@@ -204,15 +237,26 @@ const items = (count: number) => Array.from({ length: count }, (_, index) => ite
 
 const run = async (
   model: ModelPort,
-  args: Partial<{ dryRun: boolean; http: HttpPort; profile: TasteProfile }> = {},
+  args: Partial<{
+    dryRun: boolean
+    http: HttpPort
+    profile: TasteProfile
+    alreadyInNotion: readonly { artist: string; title: string }[]
+  }> = {},
 ) => {
   const store = openStore(':memory:')
   const outcome = await runRiffRadar({
     args: { command: 'run', lastDays: 7, dryRun: args.dryRun ?? false, raw: 'run' },
-    ports: { clock: tickingClock(), model, http: args.http ?? fixtureHttp() },
+    ports: {
+      clock: tickingClock(),
+      model,
+      http: withNotion(args.http ?? fixtureHttp(), args.alreadyInNotion ?? []),
+    },
     store,
     profile: args.profile ?? profile,
     searchApiKey: 'test-key',
+    notionToken: 'test-notion-token',
+    notionDatabaseId: 'test-database',
   })
 
   const runRow = store.database.prepare('SELECT * FROM runs WHERE run_id = ?').get(outcome.runId)
@@ -501,10 +545,16 @@ test('the trace records the resolved absolute window, not the flag', async () =>
   const store = openStore(':memory:')
   const outcome = await runRiffRadar({
     args: { command: 'run', lastDays: 14, dryRun: false, raw: 'run --last-days 14' },
-    ports: { clock: tickingClock(), model: scriptedModel(finishes(items(1))).port, http: fixtureHttp() },
+    ports: {
+      clock: tickingClock(),
+      model: scriptedModel(finishes(items(1))).port,
+      http: withNotion(fixtureHttp(), []),
+    },
     store,
     profile,
     searchApiKey: 'test-key',
+    notionToken: 'test-notion-token',
+    notionDatabaseId: 'test-database',
   })
 
   const row = store.database.prepare('SELECT * FROM runs WHERE run_id = ?').get(outcome.runId)
@@ -544,10 +594,18 @@ test('two runs in one database are distinct rows with distinct steps', async () 
   const ports = {
     clock: tickingClock(),
     model: scriptedModel(finishes(items(1))).port,
-    http: fixtureHttp(),
+    http: withNotion(fixtureHttp(), []),
   }
 
-  const request = { args, ports, store, profile, searchApiKey: 'test-key' }
+  const request = {
+    args,
+    ports,
+    store,
+    profile,
+    searchApiKey: 'test-key',
+    notionToken: 'test-notion-token',
+    notionDatabaseId: 'test-database',
+  }
   const first = await runRiffRadar(request)
   const second = await runRiffRadar(request)
 
@@ -774,4 +832,90 @@ test('a vibe note cited in the stored source text scores; an invented one does n
 
   assert.deepEqual(rankedOrder(cited.stepRows), ['Chat Pile', 'Ulcerate'])
   assert.deepEqual(rankedOrder(invented.stepRows), ['Ulcerate', 'Chat Pile'])
+})
+
+// ── Suppression: what Notion already holds never reaches the model ───────────
+
+test('a release already in Notion is never offered to the model', async () => {
+  const model = scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), ...looksUpThenFinishes(3))
+  const { stepRows } = await run(model.port, {
+    alreadyInNotion: [{ artist: 'Chat Pile', title: 'Cool World' }],
+  })
+
+  const fetched = JSON.parse(String(stepRows[0]?.['tool_result']))
+  assert.equal(fetched.alreadyProposed, 1)
+  assert.deepEqual(
+    fetched.candidates.map((candidate: { artist: string }) => candidate.artist),
+    ['Ulcerate', 'Blood Incantation', 'Sumac', 'Couch Slut'],
+    'the suppressed release is absent from what the model was handed',
+  )
+})
+
+test('a shortlist naming a suppressed release cannot be validated: it is not a candidate', async () => {
+  const model = scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes([item(2)]))
+  const { outcome, stepRows } = await run(model.port, {
+    alreadyInNotion: [{ artist: 'Chat Pile', title: 'Cool World' }],
+  })
+
+  // Suppression and provenance are the same guardrail from two directions:
+  // only a source fetch adds candidates, and a suppressed release is not one.
+  assert.equal(outcome.terminationReason, 'validation_failed')
+  assert.match(String(stepRows.at(-1)?.['error']), /not among the candidates/)
+})
+
+test('re-running a week after a write proposes nothing twice', async () => {
+  const script = () =>
+    scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), ...looksUpThenFinishes(2)).port
+
+  const first = await run(script())
+  const proposed = JSON.parse(String(first.stepRows.at(-1)?.['tool_result'])).shortlist.map(
+    (each: ShortlistItem) => ({ artist: each.artist ?? '', title: each.title ?? '' }),
+  )
+
+  const second = await run(
+    scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes([])).port,
+    { alreadyInNotion: proposed },
+  )
+
+  const fetched = JSON.parse(String(second.stepRows[0]?.['tool_result']))
+  assert.equal(fetched.alreadyProposed, proposed.length)
+  assert.equal(
+    fetched.candidates.filter((candidate: { artist: string }) =>
+      proposed.some((each: { artist: string }) => each.artist === candidate.artist),
+    ).length,
+    0,
+  )
+})
+
+test('a suppression read that fails refuses the run, leaving no row behind', async () => {
+  const store = openStore(':memory:')
+  const refusing: HttpPort = {
+    ...fixtureHttp(),
+    post: async () => ({ status: 401, headers: {}, body: '{"message": "unauthorized"}' }),
+  }
+
+  await assert.rejects(
+    () =>
+      runRiffRadar({
+        args: { command: 'run', lastDays: 7, dryRun: false, raw: 'run' },
+        ports: { clock: tickingClock(), model: scriptedModel(finishes([])).port, http: refusing },
+        store,
+        profile,
+        searchApiKey: 'test-key',
+        notionToken: 'test-notion-token',
+        notionDatabaseId: 'test-database',
+      }),
+    /Notion refused/,
+  )
+
+  assert.equal(store.database.prepare('SELECT count(*) AS n FROM runs').get()?.['n'], 0)
+})
+
+test('a dry run still reads Notion, because it still costs model tokens to run unsuppressed', async () => {
+  const { stepRows } = await run(
+    scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes([])).port,
+    { dryRun: true, alreadyInNotion: [{ artist: 'Chat Pile', title: 'Cool World' }] },
+  )
+
+  assert.equal(JSON.parse(String(stepRows[0]?.['tool_result'])).alreadyProposed, 1)
 })

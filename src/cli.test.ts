@@ -1,7 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { runCli } from './cli.ts'
+import { NOTION_ENDPOINT } from '../config.ts'
+import { EXIT_REFUSED, runCli } from './cli.ts'
 import type { ClockPort, HttpPort, ModelPort } from './ports.ts'
 import { openStore } from './store/store.ts'
 
@@ -22,7 +23,22 @@ const model: ModelPort = {
 const refuse = async (url: string): Promise<never> => {
   throw new Error(`unexpected request to ${url}`)
 }
-const http: HttpPort = { get: refuse, post: refuse }
+
+/**
+ * An empty Notion database, which every run reads before it starts (ADR-0039).
+ * It is the one request these tests do serve.
+ */
+const http: HttpPort = {
+  get: refuse,
+  post: async (url) =>
+    url.startsWith(NOTION_ENDPOINT)
+      ? {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ results: [], has_more: false, next_cursor: null }),
+        }
+      : refuse(url),
+}
 
 const env = {
   FIREWORKS_API_KEY: 'fw-key',
@@ -130,4 +146,23 @@ test('an unusable command line is reported before missing credentials', async ()
   assert.equal(code, 2)
   assert.match(h.lines.join('\n'), /--last-days/)
   assert.doesNotMatch(h.lines.join('\n'), /FIREWORKS_API_KEY/)
+})
+
+test('a Notion database that cannot be read is a refusal, not a crash', async () => {
+  const test_ = harness()
+  const refusing: HttpPort = {
+    get: refuse,
+    post: async () => ({ status: 401, headers: {}, body: '{"message": "unauthorized"}' }),
+  }
+
+  const code = await runCli({
+    ...test_.deps,
+    ports: { ...test_.deps.ports, http: refusing },
+    argv: ['run'],
+    env,
+  })
+
+  assert.equal(code, EXIT_REFUSED)
+  assert.match(test_.lines.join('\n'), /cannot start: Notion refused/)
+  assert.equal(test_.store?.database.prepare('SELECT count(*) AS n FROM runs').get()?.['n'], 0)
 })

@@ -121,6 +121,23 @@ export const SEARCH_RESULT_COUNT = 5
 export const MAX_SEARCH_QUERY_CHARS = 400
 
 /**
+ * Notion, read here and written in ticket 06.
+ *
+ * The read is the half of cross-run memory that is not the taste profile
+ * (ADR-0009): every release already in the database, suppressed on Release
+ * Identity whatever its Status. The version string is Notion's dated API
+ * contract and is sent on every request; it is what stops a change at their end
+ * arriving unannounced.
+ *
+ * A hundred is Notion's own maximum page size, and the client pages to the end
+ * regardless — a partial read suppresses part of what it should and looks
+ * exactly like an up-to-date database.
+ */
+export const NOTION_ENDPOINT = 'https://api.notion.com/v1'
+export const NOTION_VERSION = '2022-06-28'
+export const NOTION_PAGE_SIZE = 100
+
+/**
  * Identifies the project to the sites it reads, rather than pretending to be a
  * browser. MusicBrainz's terms ask for a contactable agent, so the repository
  * answers for the project — a URL anyone can read, and not Ben's address, which

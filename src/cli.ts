@@ -16,6 +16,7 @@ import { DATABASE_PATH, TASTE_PROFILE_PATH, missingCredentials } from '../config
 import { fireworksModel } from './adapters/fireworks.ts'
 import { httpAdapter } from './adapters/http.ts'
 import { runRiffRadar } from './agents/riff-radar.ts'
+import { SuppressionUnavailable } from './clients/notion.ts'
 import { UsageError, parseCliArgs } from './domain/cli-args.ts'
 import { tasteProfileSchema } from './domain/taste-profile.ts'
 import type { Ports } from './ports.ts'
@@ -75,6 +76,8 @@ export const runCli = async ({
       profile: profile.data,
       // Present: `missingCredentials` refused the run above if it were not.
       searchApiKey: env['TAVILY_API_KEY'] ?? '',
+      notionToken: env['NOTION_TOKEN'] ?? '',
+      notionDatabaseId: env['NOTION_DATABASE_ID'] ?? '',
     })
 
     log(`run ${outcome.runId}`)
@@ -93,6 +96,12 @@ export const runCli = async ({
       }$${outcome.estimatedCost.toFixed(4)}`,
     )
     return EXIT_OK
+  } catch (error) {
+    // The one failure that is a refusal rather than a crash: Notion could not
+    // be read, so the run never started and nothing was spent (ADR-0039).
+    if (!(error instanceof SuppressionUnavailable)) throw error
+    log(`cannot start: ${error.message}`)
+    return EXIT_REFUSED
   } finally {
     store.close()
   }
