@@ -55,8 +55,15 @@ export const nextRequestDelayMs = (lastRequestAt: number, now: number): number =
   return Math.max(0, lastRequestAt + MUSICBRAINZ_MIN_INTERVAL_MS - now)
 }
 
-// Module-level on purpose: the limit is per client, not per call site, and
-// MusicBrainz counts requests from this process however they were prompted.
+/**
+ * Module-level on purpose: the limit is per client, not per call site, and
+ * MusicBrainz counts requests from this process however they were prompted.
+ *
+ * It holds for *sequential* callers, which is what the loop is: one action at a
+ * time, one lookup at a time. Two concurrent lookups would both read this
+ * before either wrote it and fire together. Nothing concurrent exists to call
+ * it, and a queue would be machinery for a caller this project does not have.
+ */
 let lastRequestAt = 0
 
 const once = async (ports: Ports, url: string) => {
@@ -84,10 +91,14 @@ const rateLimited = async (ports: Ports, url: string) => {
   for (let attempt = 2; attempt <= MUSICBRAINZ_MAX_ATTEMPTS; attempt += 1) {
     if (!isTransient(response.status, response.body)) return response
 
-    // Backing off further each time, on top of the gate. A service shedding
-    // load is asking to be left alone for longer than a service that is merely
-    // busy, and retrying at a fixed second is how a client becomes the problem.
-    await new Promise((resolve) => setTimeout(resolve, MUSICBRAINZ_MIN_INTERVAL_MS * (attempt - 1)))
+    // Backing off further each time. A service shedding load is asking to be
+    // left alone for longer than one that is merely busy, and retrying at a
+    // fixed second is how a client becomes the problem.
+    //
+    // Expressed by owing the gate more time rather than by sleeping again, so
+    // that there is exactly one sleep in this file and it is the one the clock
+    // drives. A test whose clock does not advance pays none of it.
+    lastRequestAt += MUSICBRAINZ_MIN_INTERVAL_MS * (attempt - 1)
     response = await once(ports, url)
   }
 

@@ -11,12 +11,20 @@ const fixture = (name: string) => readFileSync(new URL(`../../fixtures/${name}`,
 const GROUP = fixture('musicbrainz-release-group.json')
 const NOT_FOUND = fixture('musicbrainz-not-found.json')
 const PARTIAL = fixture('musicbrainz-partial.json')
+const EP_GROUP = fixture('musicbrainz-ep-group.json')
 const EP_RECORDINGS = fixture('musicbrainz-ep-recordings.json')
 
-/** A second between every `now()`, so the client's own gate never has to wait. */
+/**
+ * A clock that leaps an hour between readings, so the gate is never owed
+ * anything and no test spends real seconds waiting one out — including the
+ * retry tests, which deliberately make the client owe two more.
+ *
+ * Nothing is lost by this: the gate's arithmetic, backoff included, is proved
+ * directly by the `nextRequestDelayMs` assertions above.
+ */
 const tickingClock = (): ClockPort => {
   let at = new Date('2026-09-15T00:00:00Z').getTime()
-  return { now: () => new Date((at += MUSICBRAINZ_MIN_INTERVAL_MS)) }
+  return { now: () => new Date((at += 60 * 60_000)) }
 }
 
 const serving = (bodies: readonly (string | { body: string; status: number })[]) => {
@@ -121,9 +129,8 @@ test('partial data enriches what it can and leaves the rest absent', async () =>
 // ── The EP's second request ──────────────────────────────────────────────────
 
 test('an EP is followed up for its track count and duration', async () => {
-  const asEp = GROUP.replace(/"primary-type":"Album"/g, '"primary-type":"EP"')
-  const { gets, ports } = serving([asEp, EP_RECORDINGS])
-  const ep = await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
+  const { gets, ports } = serving([EP_GROUP, EP_RECORDINGS])
+  const ep = await lookupRelease(ports, 'Ulcerate Fester', 'Unceasing Life')
 
   assert.equal(gets.length, 2, 'the release group, then its recordings')
   assert.match(gets[1]?.url ?? '', /inc=recordings/)
@@ -135,10 +142,9 @@ test('an EP is followed up for its track count and duration', async () => {
 test('an EP whose tracks are listed but untimed reports no duration at all', async () => {
   // A duration summed from an incomplete tracklist is an undercount, and an
   // undercount excludes an EP that should qualify. Better absent than wrong.
-  const asEp = GROUP.replace(/"primary-type":"Album"/g, '"primary-type":"EP"')
   const untimed = JSON.stringify({ releases: [{ media: [{ 'track-count': 5, tracks: [{ length: 60_000 }, { length: null }] }] }] })
-  const { ports } = serving([asEp, untimed])
-  const ep = await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
+  const { ports } = serving([EP_GROUP, untimed])
+  const ep = await lookupRelease(ports, 'Ulcerate Fester', 'Unceasing Life')
 
   assert.ok(ep.lookup.found === true)
   assert.equal(ep.lookup.trackCount, 5)
@@ -146,12 +152,11 @@ test('an EP whose tracks are listed but untimed reports no duration at all', asy
 })
 
 test('an EP whose second request fails keeps the identity it already has', async () => {
-  const asEp = GROUP.replace(/"primary-type":"Album"/g, '"primary-type":"EP"')
-  const { ports } = serving([asEp, { body: 'gateway timeout', status: 504 }])
-  const ep = await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
+  const { ports } = serving([EP_GROUP, { body: 'gateway timeout', status: 504 }])
+  const ep = await lookupRelease(ports, 'Ulcerate Fester', 'Unceasing Life')
 
   assert.ok(ep.lookup.found === true)
-  assert.equal(ep.lookup.releaseGroupId, 'c302ec77-589f-462f-b6b3-d63508886978')
+  assert.equal(ep.lookup.releaseGroupId, 'dd8a80d5-83d7-41b9-bc06-2efdfe80d5f4')
   assert.equal(ep.lookup.trackCount, undefined)
   assert.match(String(ep.warning), /504/)
 })

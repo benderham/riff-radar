@@ -15,6 +15,7 @@ reader can see what is being claimed about it.
 | `musicbrainz-release-group.json` | A release-group search that finds an album. Ulcerate, 15 September 2026. |
 | `musicbrainz-not-found.json` | A release-group search that finds nothing at all. |
 | `musicbrainz-partial.json` | A real release group that states a type and no date: the partial-data case. |
+| `musicbrainz-ep-group.json` | A release-group search that finds an EP, so the EP path needs no edited body. |
 | `musicbrainz-ep-recordings.json` | The second request an EP costs, with its tracks and their lengths. |
 
 `tavily-search.json` reads oddly and is not edited: `response_time` is `0` because the

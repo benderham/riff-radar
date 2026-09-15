@@ -15,7 +15,7 @@
 - [x] Release Identity prefers the MusicBrainz release-group identifier and falls back to artist and title only when Unverified — `releaseIdentityOf`, with `collapseByReleaseGroup` spending the proof where it is produced
 - [x] An album is eligible; an EP is eligible only with at least 4 tracks and at least 20 minutes
 - [x] Live albums, singles, splits, compilations, reissues and remasters are excluded
-- [~] A Total Re-record is eligible; a partial re-record, a covers album and another band's version are not — see **The gap** below
+- [~] A Total Re-record is eligible; a partial re-record, a covers album and another band's version are not — only the first half holds; see **The gap** below
 - [x] A release is eligible when any credible Source places its earliest official release date inside the resolved range, with the disagreement recorded
 - [x] Only already-issued releases are considered
 - [x] Where data needed to confirm eligibility is missing, the release is excluded (ADR-0035)
@@ -27,7 +27,11 @@
 
 Two thirds of the re-record carve-out fall out of MusicBrainz's data model rather than a rule of ours, and were verified against the live service: a **total re-record** gets its own release group with its own date, so it qualifies like any other new album, while a **reissue or remaster** stays inside the original's release group and excludes itself on that group's date. Exodus is the worked example — one group dated 1985 holding fifteen releases, and a separate group for the 2008 re-record.
 
-**A covers album is not excluded.** It is its own release group with its own date, and MusicBrainz has no secondary type for one. Nothing in the data supports the rule, so none was written. Recorded in ADR-0034 as a known gap rather than shipped as a rule that only looks like one. Another band's version is excluded already, by the artist half of the match rule.
+**A covers album, a partial re-record and another band's version are none of them excluded.** Each is its own release group with its own date, and MusicBrainz has no secondary type for any of them, so all three pass as new albums. An earlier draft of this section claimed the match rule handled the third; that was wrong, and a review caught it. The match rule stops a candidate binding to the *original* band's release group, but a source listing `Cover Band — Master of Puppets` matches Cover Band's own release group and passes. Nothing in the data supports these rules, so none was written; ADR-0034 records all three.
+
+**Label and personnel are not fetched.** The ticket's opening paragraph asks for them. A release group carries neither, so each would cost a further request per candidate. Nothing ranks on them until ticket 05, so the request was not made — a deferral ticket 05 has to close, not a quiet drop.
+
+**`artistCount > 1` is a proxy for a split, not the rule.** It excludes every legitimate two-artist collaboration along with the splits. Kept on ADR-0010's asymmetry, and flagged as a judgement to overturn if collaborations start going missing.
 
 ## Evidence
 
