@@ -23,11 +23,14 @@ const http: HttpPort = {
   get: async (url) => {
     throw new Error(`unexpected fetch of ${url}`)
   },
+  post: async (url) => {
+    throw new Error(`unexpected post to ${url}`)
+  },
 }
 
 const env = {
   FIREWORKS_API_KEY: 'fw-key',
-  BRAVE_API_KEY: 'brave-key',
+  TAVILY_API_KEY: 'tavily-key',
   NOTION_TOKEN: 'ntn-token',
   NOTION_DATABASE_ID: 'db-id',
 }

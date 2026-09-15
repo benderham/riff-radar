@@ -44,7 +44,7 @@ cp .env.example .env
 
 ```sh
 FIREWORKS_API_KEY=...     # the model provider
-BRAVE_API_KEY=...         # web search, for disambiguation only
+TAVILY_API_KEY=...        # web search, for disambiguation only
 NOTION_TOKEN=...          # Notion integration token
 NOTION_DATABASE_ID=...    # the database proposals are written to
 ```

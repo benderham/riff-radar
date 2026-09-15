@@ -4,16 +4,36 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-human — implemented and tested; the live smoke test and its evidence need Ben's Brave key
+**Status:** done
 
 ## Acceptance criteria
 
-- [x] `web_search` performs a real search through the `http` port and returns results to the model — Brave's API, authenticated by a header the port now carries (ADR-0032)
+- [x] `web_search` performs a real search through the `http` port and returns results to the model — Tavily's API, a POST the port now carries (ADR-0033)
 - [x] A search result cannot become a Candidate — `web_search` cannot reach `context.candidates`, and `validateShortlist` rejects any item naming a release no Source listed
 - [x] The query, its result and its duration are recorded on the step like any other tool call
 - [x] A failed or empty search is an ordinary step result, not a Run failure — a warning on the step, `error` left null
-- [~] Tested through the `http` port against **an invented body of Brave's documented shape**, not a capture: capturing one needs a key this repository does not have. `npm run smoke:search` checks the shape against reality, and the first real response replaces the invented body with a fixture (ADR-0032)
+- [x] Tested through the `http` port against `fixtures/tavily-search.json`, **a real captured response**, not an invented body
 
-## What remains
+## Evidence
 
-A live search, run by Ben with a Brave key: `npm run smoke:search`. If the real body parses, this ticket is `done`; if it does not, the fixture and the client's schema change to match what Brave actually serves.
+`npm run check` — 181 tests pass, typecheck clean, layering clean.
+
+`npm run smoke:search` against the live API, 15 September 2026, exit 0:
+
+```
+query: ulcerate cutting the throat of god metal album
+status: 200
+
+Cutting the Throat of God
+  https://en.wikipedia.org/wiki/Cutting_the_Throat_of_God
+  Cutting the Throat of God is the seventh studio album by New Zealand technical
+  death metal band Ulcerate. It was released on 14 June 2024 through Debemur
+```
+
+Five results, no warning: the body Tavily serves is the shape the client parses.
+
+## Comments
+
+The provider changed from Brave to Tavily before Brave was ever used — no Brave key ever existed here, so no Brave response was captured or parsed. ADR-0033 records the swap and the `http` port's new `post`.
+
+One thing Ben asked for was not done: `https://tavily.com/agent-setup/SKILL.md` could not be read. The sandbox allows `tavily.com` and `api.tavily.com`, but that path redirects to `www.tavily.com`, which the network policy denies. The implementation was built against the live API's actual responses instead. If that document prescribes setup beyond the search call, it has not been followed.

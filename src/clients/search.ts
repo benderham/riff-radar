@@ -33,18 +33,22 @@ export interface SearchFetch {
   readonly warning?: string
 }
 
-/** Only the three fields a disambiguation needs; the rest of the payload is dropped. */
+/**
+ * Only the three fields a disambiguation needs; the rest of the payload — the
+ * relevance score, the answer, the images, the request id — is dropped.
+ *
+ * Tavily calls the snippet `content`. It keeps the name `description` on this
+ * side of the port, because that is what the rest of the project calls it.
+ */
 const responseSchema = z.object({
-  web: z
-    .object({
-      results: z.array(
-        z.object({
-          title: z.string(),
-          url: z.string(),
-          description: z.string().optional(),
-        }),
-      ),
-    })
+  results: z
+    .array(
+      z.object({
+        title: z.string(),
+        url: z.string(),
+        content: z.string().optional(),
+      }),
+    )
     .optional(),
 })
 
@@ -53,16 +57,17 @@ export const searchWeb = async (
   query: string,
   apiKey: string,
 ): Promise<SearchFetch> => {
-  const url = `${SEARCH_ENDPOINT}?q=${encodeURIComponent(query)}&count=${SEARCH_RESULT_COUNT}`
-
   // The key travels in a header and nothing records request headers, so it
-  // cannot reach the trace. The URL is recorded, and carries only the query.
-  const response = await ports.http.get(url, {
-    accept: 'application/json',
-    'x-subscription-token': apiKey,
-  })
+  // cannot reach the trace. The query travels in the body, which is why this is
+  // a POST; the URL recorded on the step is therefore the bare endpoint, and
+  // `query` is carried back on the result separately.
+  const response = await ports.http.post(
+    SEARCH_ENDPOINT,
+    JSON.stringify({ query, max_results: SEARCH_RESULT_COUNT }),
+    { authorization: `Bearer ${apiKey}` },
+  )
 
-  const base = { query, url, status: response.status, results: [] } as const
+  const base = { query, url: SEARCH_ENDPOINT, status: response.status, results: [] } as const
 
   if (response.status < 200 || response.status >= 300) {
     return { ...base, warning: `search for "${query}" returned HTTP ${response.status}` }
@@ -80,10 +85,10 @@ export const searchWeb = async (
     return { ...base, warning: `search for "${query}": body had the wrong shape: ${z.prettifyError(result.error)}` }
   }
 
-  const results = (result.data.web?.results ?? []).map((each) => ({
+  const results = (result.data.results ?? []).map((each) => ({
     title: each.title,
     url: each.url,
-    description: each.description ?? '',
+    description: each.content ?? '',
   }))
 
   return {

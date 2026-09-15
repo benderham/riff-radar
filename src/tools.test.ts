@@ -2,13 +2,21 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { z } from 'zod'
 
-import { SOURCES } from '../config.ts'
+import { SEARCH_ENDPOINT, SOURCES } from '../config.ts'
 import type { HttpPort, ModelPort, Ports } from './ports.ts'
 import { openStore } from './store/store.ts'
 import type { ToolContext } from './tools.ts'
 import { dispatch, toolDefinitions, tools, validateAction } from './tools.ts'
 
 const call = (name: string, argumentsJson: string) => ({ id: 'call-1', name, argumentsJson })
+
+/** Sources are read with GET and searches sent with POST; each fake refuses the other. */
+const notSearched = async (): Promise<never> => {
+  throw new Error('this test fetches a source; nothing should search')
+}
+const notFetched = async (): Promise<never> => {
+  throw new Error('this test searches; nothing should fetch a source')
+}
 
 /**
  * A page, invented here rather than kept in `fixtures/`, which holds captures
@@ -157,7 +165,7 @@ test('a source that yields nothing is recorded, warned about, and does not throw
   assert.ok(result.ok)
 
   const { toolContext, store } = context({
-    http: { get: async () => ({ status: 500, headers: {}, body: 'server error' }) },
+    http: { get: async () => ({ status: 500, headers: {}, body: 'server error' }), post: notSearched },
   })
   const dispatched = await dispatch(result.name, result.input, toolContext)
 
@@ -195,15 +203,15 @@ test('finish hands its items back to the loop rather than judging them', async (
 // ── Web search (ticket 03) ───────────────────────────────────────────────────
 
 const SEARCH_BODY = JSON.stringify({
-  web: {
-    results: [
-      {
-        title: 'Ulcerate (band) - Wikipedia',
-        url: 'https://en.wikipedia.org/wiki/Ulcerate',
-        description: 'A New Zealand technical death metal band formed in 2000.',
-      },
-    ],
-  },
+  query: 'ulcerate new zealand',
+  results: [
+    {
+      title: 'Ulcerate (band) - Wikipedia',
+      url: 'https://en.wikipedia.org/wiki/Ulcerate',
+      content: 'A New Zealand technical death metal band formed in 2000.',
+      score: 0.91,
+    },
+  ],
 })
 
 test('a search returns what it found, and adds nothing to the run', async () => {
@@ -211,7 +219,7 @@ test('a search returns what it found, and adds nothing to the run', async () => 
   assert.ok(result.ok)
 
   const { toolContext } = context({
-    http: { get: async () => ({ status: 200, headers: {}, body: SEARCH_BODY }) },
+    http: { get: notFetched, post: async () => ({ status: 200, headers: {}, body: SEARCH_BODY }) },
   })
   // A run mid-flight: the search must leave these exactly as it found them.
   toolContext.candidates = [
@@ -229,23 +237,25 @@ test('a search returns what it found, and adds nothing to the run', async () => 
   )
 })
 
-test('a search sends the key in a header and the query in the URL', async () => {
+test('a search sends the key in a header and the query in the body', async () => {
   const result = validateAction(call('web_search', '{"query": "ulcerate"}'))
   assert.ok(result.ok)
 
-  const seen: { url: string; headers?: Record<string, string> }[] = []
+  const seen: { url: string; body: string; headers?: Record<string, string> }[] = []
   const { toolContext } = context({
     http: {
-      get: async (url, headers) => {
-        seen.push({ url, ...(headers === undefined ? {} : { headers }) })
+      get: notFetched,
+      post: async (url, body, headers) => {
+        seen.push({ url, body, ...(headers === undefined ? {} : { headers }) })
         return { status: 200, headers: {}, body: SEARCH_BODY }
       },
     },
   })
   await dispatch(result.name, result.input, toolContext)
 
-  assert.match(seen[0]?.url ?? '', /q=ulcerate/)
-  assert.equal(seen[0]?.headers?.['x-subscription-token'], 'test-key')
+  assert.equal(seen[0]?.url, SEARCH_ENDPOINT)
+  assert.equal(JSON.parse(seen[0]?.body ?? '{}').query, 'ulcerate')
+  assert.equal(seen[0]?.headers?.['authorization'], 'Bearer test-key')
 })
 
 test('a search that fails is an ordinary step result with a warning', async () => {
@@ -253,7 +263,7 @@ test('a search that fails is an ordinary step result with a warning', async () =
   assert.ok(result.ok)
 
   const { toolContext } = context({
-    http: { get: async () => ({ status: 429, headers: {}, body: 'slow down' }) },
+    http: { get: notFetched, post: async () => ({ status: 429, headers: {}, body: 'slow down' }) },
   })
   const dispatched = await dispatch(result.name, result.input, toolContext)
 

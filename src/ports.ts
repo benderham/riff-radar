@@ -37,6 +37,13 @@ export interface HttpPort {
    * because nothing records the request headers.
    */
   get(url: string, headers?: Record<string, string>): Promise<HttpResponse>
+
+  /**
+   * The same contract as `get`, with a body. It exists for the one caller that
+   * needs it: the search API takes its query in a JSON body rather than a query
+   * string (ADR-0033). Sources are read with `get` and always will be.
+   */
+  post(url: string, body: string, headers?: Record<string, string>): Promise<HttpResponse>
 }
 
 /** A tool call as the model proposed it. `argumentsJson` is untrusted text. */

@@ -35,6 +35,10 @@ const servingFixture = (body: string, status = 200) => {
       gets.push(url)
       return { status, headers: { 'content-type': 'text/html' }, body }
     },
+    // A source is a page, read with GET. Nothing here should ever post.
+    post: async (url) => {
+      throw new Error(`unexpected post to ${url}`)
+    },
   }
   return { http, gets }
 }

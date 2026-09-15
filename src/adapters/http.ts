@@ -13,6 +13,12 @@
 import { HTTP_TIMEOUT_MS, USER_AGENT } from '../../config.ts'
 import type { HttpPort } from '../ports.ts'
 
+const read = async (response: Response) => ({
+  status: response.status,
+  headers: Object.fromEntries(response.headers),
+  body: await response.text(),
+})
+
 export const httpAdapter = (fetchImpl: typeof fetch = globalThis.fetch): HttpPort => ({
   async get(url, headers = {}) {
     const response = await fetchImpl(url, {
@@ -23,10 +29,22 @@ export const httpAdapter = (fetchImpl: typeof fetch = globalThis.fetch): HttpPor
       signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
     })
 
-    return {
-      status: response.status,
-      headers: Object.fromEntries(response.headers),
-      body: await response.text(),
-    }
+    return read(response)
+  },
+
+  async post(url, body, headers = {}) {
+    const response = await fetchImpl(url, {
+      method: 'POST',
+      headers: {
+        'user-agent': USER_AGENT,
+        accept: 'application/json',
+        'content-type': 'application/json',
+        ...headers,
+      },
+      body,
+      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+    })
+
+    return read(response)
   },
 })

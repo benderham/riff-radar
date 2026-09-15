@@ -257,7 +257,7 @@ So version 1 runs on two sources. Album of the Year is not configured at all, ra
 
 ## ADR-0032: Web search is Brave's API, and the search-to-shortlist path is closed in code
 
-**Status:** ACCEPTED — implements the enrichment half of ADR-0001. Brave was Ben's choice over the two alternatives below, asked and answered on 14 September 2026, which is the approval AGENTS.md requires before an external provider is added.
+**Status:** ACCEPTED — amended by ADR-0033, which replaces Brave with Tavily. Everything below about the search-to-shortlist path stands; only the provider changed. Implements the enrichment half of ADR-0001.
 
 `web_search` searches Brave's API: JSON over a plain GET, authenticated by a key in a header. The `http` port gains an optional `headers` argument to carry that key, which is additive — the project's own user agent is always sent — so nothing here impersonates a browser (ADR-0031). `BRAVE_API_KEY` joins the credentials a run refuses to start without, because a run that discovers its search is unusable halfway through has already been billed for the model calls before it.
 
@@ -272,3 +272,19 @@ The more consequential half of this decision is not the provider. ADR-0001 says 
 One existing test changed meaning: a run whose only source 403s can no longer propose a shortlist, because it has no candidates to ground one in. That run now ends `no_candidates` rather than `completed_short`, which is the honest reading — the shortlist it used to propose was never anchored to anything. The test keeps its original claim by fetching a second source that works.
 
 The search client's automated tests run against an invented body of Brave's documented shape rather than a capture, because capturing one needs a key this repository does not have. `npm run smoke:search` is what checks the shape against reality, and the first real response should replace the invented body with a fixture.
+
+## ADR-0033: The search provider is Tavily, and the `http` port gains a POST
+
+**Status:** ACCEPTED — amends ADR-0032. Tavily was Ben's instruction on 15 September 2026, which is the approval AGENTS.md requires before an external provider changes.
+
+Brave was never used: ADR-0032 was written and implemented against its documented shape, but the repository had no key, so no Brave response was ever captured or parsed. Tavily replaces it before that gap closed, so nothing is being unwound — the endpoint, the credential name and the response schema move, and the client either side of them does not.
+
+Tavily takes its query in a JSON body rather than a query string, so the `http` port gains `post(url, body, headers?)` beside `get`. It is a second method rather than a general `request(method, ...)`: only one caller posts, every source is and will remain a GET, and generalising would have rewritten every existing caller to buy nothing. `post` sends the project's own user agent exactly as `get` does, so nothing here impersonates a browser (ADR-0031). `TAVILY_API_KEY` replaces `BRAVE_API_KEY` in the credentials a run refuses to start without, for the reason ADR-0032 gives.
+
+The URL recorded on a search step is now the bare endpoint, because the query has moved into the body. The query was never lost — `SearchFetch` has always carried it separately, and that is what the step records and what the model reads.
+
+**Consequences:** The search client's tests no longer run against an invented body. `fixtures/tavily-search.json` is a real Tavily response, captured 15 September 2026, which is what ADR-0032 said should happen the first time a key existed. The gap that decision was uncomfortable about is closed: `npm run smoke:search` passed against the live API on 15 September 2026, and the shape it returned is the shape the client parses.
+
+Tavily's snippet field is called `content`; it is mapped to `description` at the port boundary, because that is the project's own word and no provider's name should reach the rest of the code. The fakes in the test suite now have to declare which verb they expect, and each refuses the other — a source fake that is asked to POST throws, and a search fake that is asked to GET throws. That is noise in the tests, and it is the useful kind: it says out loud that a source is a page and a search is not.
+
+`https://tavily.com/agent-setup/SKILL.md`, the setup document Ben pointed at, was never read: the sandbox's network policy allows `tavily.com` and `api.tavily.com` but the document redirects to `www.tavily.com`, which is denied. The implementation is built against the live API's actual behaviour instead, which is the stronger source, but any setup step that document prescribes beyond the search call has not been followed.

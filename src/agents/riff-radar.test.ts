@@ -36,8 +36,14 @@ const PAGE = `<!doctype html>
 </body></html>`
 
 /** Every source serves the same page unless a test says otherwise. */
+/** The fakes below read sources and nothing else; a POST from one is a bug in the test. */
+const notSearched = async (): Promise<never> => {
+  throw new Error('this test fetches sources only; nothing should search')
+}
+
 const fixtureHttp = (body = PAGE, status = 200): HttpPort => ({
   get: async () => ({ status, headers: { 'content-type': 'text/html' }, body }),
+  post: async () => ({ status, headers: { 'content-type': 'text/html' }, body }),
 })
 
 /** Every `now()` is a second after the last, so durations are observable. */
@@ -509,6 +515,7 @@ test('a release listed by two sources is one candidate carrying both URLs', asyn
       headers: {},
       body: url.includes('wikipedia') ? fixture('wikipedia.html') : PAGE,
     }),
+    post: notSearched,
   }
 
   const model = scriptedModel(
@@ -547,6 +554,7 @@ test('a source that yields nothing warns on the step and the run carries on', as
         url === SOURCES.loudwire
           ? { status: 403, headers: {}, body: 'go away' }
           : { status: 200, headers: {}, body: PAGE },
+      post: notSearched,
     },
   })
 
@@ -569,6 +577,7 @@ test('a source fetch that throws ends the run as a tool failure', async () => {
       get: async () => {
         throw new Error('getaddrinfo ENOTFOUND')
       },
+      post: notSearched,
     },
   })
 
@@ -580,23 +589,24 @@ test('a source fetch that throws ends the run as a tool failure', async () => {
 // ── Web search (ticket 03) ───────────────────────────────────────────────────
 
 const SEARCH_BODY = JSON.stringify({
-  web: {
-    results: [
-      {
-        title: 'Vaultwraith — Crimson Nadir, out this week',
-        url: 'https://example.test/vaultwraith',
-        description: 'A release no configured source listed.',
-      },
-    ],
-  },
+  query: 'vaultwraith crimson nadir',
+  results: [
+    {
+      title: 'Vaultwraith — Crimson Nadir, out this week',
+      url: 'https://example.test/vaultwraith',
+      content: 'A release no configured source listed.',
+      score: 0.9,
+    },
+  ],
 })
 
-/** A page for a source, the search payload for the search endpoint. */
+/** A page for a source over GET, the search payload for the search endpoint over POST. */
 const searchingHttp = (searchStatus = 200): HttpPort => ({
-  get: async (url) =>
-    url.startsWith(SEARCH_ENDPOINT)
-      ? { status: searchStatus, headers: {}, body: searchStatus === 200 ? SEARCH_BODY : 'slow down' }
-      : { status: 200, headers: {}, body: PAGE },
+  get: async () => ({ status: 200, headers: {}, body: PAGE }),
+  post: async (url) => {
+    assert.equal(url, SEARCH_ENDPOINT, 'the only POST this project makes is a search')
+    return { status: searchStatus, headers: {}, body: searchStatus === 200 ? SEARCH_BODY : 'slow down' }
+  },
 })
 
 test('a search is an ordinary step: query, result and duration, all recorded', async () => {

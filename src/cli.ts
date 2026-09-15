@@ -74,7 +74,7 @@ export const runCli = async ({
       store,
       profile: profile.data,
       // Present: `missingCredentials` refused the run above if it were not.
-      searchApiKey: env['BRAVE_API_KEY'] ?? '',
+      searchApiKey: env['TAVILY_API_KEY'] ?? '',
     })
 
     log(`run ${outcome.runId}`)

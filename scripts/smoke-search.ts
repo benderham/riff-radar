@@ -4,10 +4,9 @@
  * depend on a network, a key or a quota.
  *
  * It exists to check the one thing the automated tests cannot: that the body
- * Brave actually serves is the shape `search.ts` parses. The client's tests run
- * against an invented body of the documented shape, because capturing a real
- * one needs a key. When this disagrees with them, the real body wins and
- * becomes the fixture.
+ * Tavily actually serves is still the shape `search.ts` parses. The client's
+ * tests run against `fixtures/tavily-search.json`, a capture. When this
+ * disagrees with it, the real body wins and replaces the fixture.
  */
 
 import process from 'node:process'
@@ -16,9 +15,9 @@ import { httpAdapter } from '../src/adapters/http.ts'
 import { searchWeb } from '../src/clients/search.ts'
 import type { Ports } from '../src/ports.ts'
 
-const apiKey = process.env['BRAVE_API_KEY']
+const apiKey = process.env['TAVILY_API_KEY']
 if (!apiKey) {
-  console.error('BRAVE_API_KEY is not set')
+  console.error('TAVILY_API_KEY is not set')
   process.exit(2)
 }
 
