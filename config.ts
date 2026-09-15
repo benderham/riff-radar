@@ -9,7 +9,7 @@
  */
 
 /** Versions stamped onto every run, so a trace says which configuration produced it. */
-export const PROMPT_VERSION = 4
+export const PROMPT_VERSION = 5
 export const ACTION_SCHEMA_VERSION = 1
 
 /**
@@ -62,6 +62,31 @@ export const MAX_RUN_COST_USD = 0.25
 export const SHORTLIST_SIZE = 5
 
 /**
+ * What each taste-profile match is worth (ADR-0006, ADR-0007).
+ *
+ * Every exclusion outweighs its own inclusion, which is what "strong negative
+ * weight" means here: a record on a label Ben avoids has to be doing something
+ * else right to survive it, but it is not filtered out, because genre and label
+ * tags on new releases are frequently wrong.
+ *
+ * `artists.always` has no weight. It is a guaranteed slot rather than a large
+ * number, so no combination of other signals can outbid it and no arithmetic
+ * has to be tuned to make sure of that.
+ */
+export const RANKING_WEIGHTS = {
+  artistWatch: 3,
+  labelInclude: 2,
+  labelExclude: -4,
+  genreInclude: 2,
+  genreExclude: -4,
+  personnelInclude: 2,
+  personnelExclude: -4,
+  /** The only model judgement, and worth less than anything matched from data. */
+  vibeInclude: 1,
+  vibeExclude: -2,
+} as const
+
+/**
  * The configured release sources (ADR-0001). Discovery reads these and only
  * these; web search never originates a candidate. Metal Archives is excluded
  * because it lists upcoming releases only (ADR-0002).
@@ -94,6 +119,23 @@ export const SEARCH_RESULT_COUNT = 5
 
 /** Tavily's documented ceiling on a query; the action schema enforces it (ADR-0033). */
 export const MAX_SEARCH_QUERY_CHARS = 400
+
+/**
+ * Notion, read here and written in ticket 06.
+ *
+ * The read is the half of cross-run memory that is not the taste profile
+ * (ADR-0009): every release already in the database, suppressed on Release
+ * Identity whatever its Status. The version string is Notion's dated API
+ * contract and is sent on every request; it is what stops a change at their end
+ * arriving unannounced.
+ *
+ * A hundred is Notion's own maximum page size, and the client pages to the end
+ * regardless — a partial read suppresses part of what it should and looks
+ * exactly like an up-to-date database.
+ */
+export const NOTION_ENDPOINT = 'https://api.notion.com/v1'
+export const NOTION_VERSION = '2022-06-28'
+export const NOTION_PAGE_SIZE = 100
 
 /**
  * Identifies the project to the sites it reads, rather than pretending to be a

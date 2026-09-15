@@ -21,6 +21,7 @@
  */
 
 import type { Candidate } from './candidates.ts'
+import { creditedArtists, sameName } from './candidates.ts'
 import type { TasteProfile } from './taste-profile.ts'
 import type { DateWindow } from './window.ts'
 
@@ -133,23 +134,6 @@ const formatVerdict = (candidate: Candidate): Eligibility => {
 
   return YES
 }
-
-/** Spelling and spacing differ between a calendar, MusicBrainz and a hand-edited profile. */
-const sameName = (one: string, other: string): boolean =>
-  one.trim().toLowerCase() === other.trim().toLowerCase()
-
-/**
- * Every artist this release is credited to: MusicBrainz's list where there is
- * one, and the single name a source printed where there is not.
- *
- * Two credited artists used to mean "a split, not an album", which threw out
- * every legitimate collaboration with them. A release is judged on who made it
- * instead, which is the question that was really being asked (ADR-0036).
- */
-const creditedArtists = (candidate: Candidate): readonly string[] =>
-  candidate.lookup?.found === true && candidate.lookup.artists.length > 0
-    ? candidate.lookup.artists
-    : [candidate.artist]
 
 /**
  * One artist Ben has excluded is enough, however many others are credited. The

@@ -5,9 +5,11 @@
  *
  * It checks what the automated tests cannot — that the bodies MusicBrainz
  * actually serves are still the shapes `musicbrainz.ts` parses — across the
- * three cases that matter: an album, an EP that costs a second request, and a
- * release nobody has entered. When it disagrees with `fixtures/musicbrainz-*`,
- * the real bodies win and replace them.
+ * three cases that matter: an album, an EP whose tracks are counted, and a
+ * release nobody has entered. The adjacency signals are printed with each, so
+ * a label, a genre list or a lineup that has quietly stopped arriving is
+ * visible here rather than as a release that ranks oddly. When it disagrees
+ * with `fixtures/musicbrainz-*`, the real bodies win and replace them.
  *
  * It needs no key. MusicBrainz asks only for a contactable user agent, which
  * `USER_AGENT` carries.
@@ -40,10 +42,14 @@ for (const { artist, title, expect } of CASES) {
 
   if (result.lookup.found) {
     const { releaseGroupId, primaryType, firstReleaseDate, trackCount, durationMs } = result.lookup
+    const { label, genres, members } = result.lookup
     console.log(`  ${releaseGroupId}  ${primaryType ?? '(no type)'}  ${firstReleaseDate ?? '(no date)'}`)
     if (trackCount !== undefined || durationMs !== undefined) {
       console.log(`  ${trackCount ?? '?'} tracks, ${Math.round((durationMs ?? 0) / 60_000)} minutes`)
     }
+    console.log(`  label: ${label ?? '(none)'}`)
+    console.log(`  genres: ${genres?.join(', ') ?? '(none)'}`)
+    console.log(`  members: ${members?.length ?? 0} named${members === undefined ? '' : ` — ${members.slice(0, 4).join(', ')}`}`)
   } else {
     console.log('  not found')
   }
@@ -59,7 +65,12 @@ for (const { artist, title, expect } of CASES) {
     console.error('  ^ not what this case expects')
   } else if (expect.startsWith('an EP') && result.lookup.found && result.lookup.trackCount === undefined) {
     failures += 1
-    console.error('  ^ an EP came back without its track count: the second request is not working')
+    console.error('  ^ an EP came back without its track count: the release request is not working')
+  } else if (expect === 'an album' && result.lookup.found && result.lookup.label === undefined) {
+    // Asserted for the album alone. Coverage is uneven by design, and the one
+    // case whose label is known to be entered is the one worth failing on.
+    failures += 1
+    console.error('  ^ a release whose label MusicBrainz holds came back without it')
   }
 }
 

@@ -58,9 +58,14 @@ export type MusicbrainzLookup =
       readonly secondaryTypes: readonly string[]
       /** The release group's earliest official date, which a reissue does not move. */
       readonly firstReleaseDate?: string
-      /** From a second lookup, made only for an EP. */
+      /** From the release lookup, made only for an EP. */
       readonly trackCount?: number
       readonly durationMs?: number
+      /** Adjacency, all three optional because MusicBrainz's coverage is uneven. */
+      readonly label?: string
+      readonly genres?: readonly string[]
+      /** The first credited artist's band members, current and past. */
+      readonly members?: readonly string[]
       /** Every credited artist, so a collaboration can be judged on all of them. */
       readonly artists: readonly string[]
     }
@@ -78,6 +83,30 @@ export interface Candidate {
 }
 
 const tidy = (value: string): string => value.replaceAll(/\s+/g, ' ').trim()
+
+/**
+ * One spelling of a name, for comparing across the three places names come
+ * from: a release calendar, MusicBrainz, and a hand-edited profile. They differ
+ * in case and spacing routinely and in nothing else that can be forgiven safely.
+ */
+export const normaliseName = (value: string): string => tidy(value).toLowerCase()
+
+export const sameName = (one: string, other: string): boolean =>
+  normaliseName(one) === normaliseName(other)
+
+/**
+ * Every artist a release is credited to: MusicBrainz's list where there is one,
+ * and the single name a source printed where there is not.
+ *
+ * One rule, in one place, because three rules that agree today would not agree
+ * for long: eligibility refuses a release when any credited artist is excluded,
+ * ranking scores the watch and always tiers across all of them, and the
+ * shortlist's guarantee reads the same list (ADR-0036).
+ */
+export const creditedArtists = (candidate: Candidate): readonly string[] =>
+  candidate.lookup?.found === true && candidate.lookup.artists.length > 0
+    ? candidate.lookup.artists
+    : [candidate.artist]
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -168,6 +197,27 @@ export const collapseByReleaseGroup = (candidates: readonly Candidate[]): Candid
 
   return [...byIdentity.values()]
 }
+
+/**
+ * Candidates Notion already holds, removed.
+ *
+ * Both identities are checked, because a candidate carries different ones at
+ * different moments: artist and title from the moment a source lists it, and a
+ * release-group id only once a lookup has been spent on it. Suppressing on the
+ * weaker one first is what stops a run paying to identify a release it was
+ * always going to drop (ADR-0009).
+ */
+export const dropSuppressed = (
+  candidates: readonly Candidate[],
+  suppressed: ReadonlySet<string>,
+): Candidate[] =>
+  suppressed.size === 0
+    ? [...candidates]
+    : candidates.filter(
+        (candidate) =>
+          !suppressed.has(candidateIdentity(candidate)) &&
+          !suppressed.has(releaseIdentityOf(candidate)),
+      )
 
 /**
  * A candidate belongs to a run when *any* source places it inside the window.

@@ -143,11 +143,11 @@ Required properties. The five marked **new** do not exist in the database yet an
 
 | Property | Type | Written by |
 |---|---|---|
-| Title | title | agent |
+| Album | title | agent — the title property; named `Album`, not `Title` |
 | Artist | text | agent |
 | Release Date | date | agent |
-| Album Cover | files | agent, best-effort via Cover Art Archive |
-| Apple Music Link | url | agent, as a constructed search URL |
+| Album Cover | *not a property* — the Notion page's own cover image | agent, best-effort via Cover Art Archive, set as `cover.external.url` when the page is created |
+| Apple Music | url | agent, as a constructed search URL |
 | Rating | select — Nope / OK / Rotate / AOTY | Ben only |
 | **Status** | select — Proposed / Confirmed / Rejected | agent writes `Proposed`; Ben sets the rest |
 | **MusicBrainz ID** | text | agent |

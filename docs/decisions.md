@@ -360,3 +360,57 @@ This also closes a gap rather than only opening one. The system prompt has claim
 
 `PROMPT_VERSION` is 4.
 
+
+## ADR-0037: The code orders the shortlist; the model's order is only the tie-break
+
+**Status:** ACCEPTED — Ben's decision, 15 September 2026.
+
+ADR-0006 put the matchable attributes of a release behind deterministic scoring and left the model the resemblance judgement and the rationale. It did not say who decides the *order*, and both readings were live: the model ranks and the code checks, or the code ranks outright.
+
+The code ranks. `rankShortlist` scores every item the model proposed, sorts by the result, and rewrites `rank` from the sorted position. An `artists.always` match sorts first as a guaranteed slot rather than as a large number, so no combination of weights can outbid it and none has to be tuned to prevent that. Where two releases score the same, the order the model gave them survives — that is the one place its judgement of order still counts, and it is the place where the profile has said nothing.
+
+**Consequences:** "A run demonstrably ranks differently under two different profiles" is provable without a model: the same scripted output under two profiles produces two orders, and the test asserts it. The finish step records the full breakdown — every contribution with the profile term that caused it — so an ordering can be recomputed by hand from the trace. The cost is that the model can no longer express "this one first" except through which releases it proposes at all; if that turns out to matter, the tie-break is where it would be widened.
+
+## ADR-0038: Adjacency costs three MusicBrainz requests, and only the first artist's people
+
+**Status:** ACCEPTED — Ben's decision, 15 September 2026.
+
+Ticket 04 stopped at identity, and label, genre and personnel were left unfetched. They are three separate resources at MusicBrainz, so each is its own request and — under the one-per-second limit — its own second: the release for its label, carrying the tracks an EP already needed; the release group for its genres; and an artist for its `member of band` relations.
+
+Members are fetched for the **first credited artist only**. Following every credit would cost a second per name on exactly the collaborations ADR-0036 made eligible, and the first credit is the one the release is filed under. Production credits are not fetched at all: the ticket's live survey found them effectively unpopulated for this project's music — Blood Incantation's *Absolute Elsewhere* and Ulcerate's *Cutting the Throat of God* returned no credits at any level.
+
+**Consequences:** An identified release now costs four requests rather than one or two, and the live smoke test measures ~13 seconds per lookup including MusicBrainz's retries. A run doing five lookups spends about a minute there. That is time, not money, and the alternative was ranking three of its four signals on data it never asked for. A failed enrichment costs the release that signal and never its identity, per ADR-0010.
+
+Two things the live service taught, both in the first smoke run. `[no label]` is a real entry in MusicBrainz meaning a self-released record; read as a name it would be a label like any other, matchable by a profile term, so it is read as the absence it means. And genres are thin in the long tail: Ulcerate returned six tags and the 1991 EP by Ulcerate Fester returned none. The ticket flagged that as unestablished; it is now established, and it is why genre is weighted no more heavily than label.
+
+## ADR-0039: A suppression read that fails refuses the run
+
+**Status:** ACCEPTED — Ben's decision, 15 September 2026.
+
+The set of releases already in Notion is half of the only memory that crosses a run boundary (ADR-0009). If that read fails, the choice is to run unsuppressed and warn, or not to run.
+
+Not to run. An unsuppressed run can propose what Notion already holds, and suppression is what makes the write idempotent by construction rather than by a deduplication rule at the far end. The read happens before the run row is written, so a failure leaves nothing behind and costs no model tokens; the CLI reports it as a refusal, alongside the missing-credential and broken-profile refusals it already makes. A dry run reads Notion too, because a dry run still spends tokens deciding.
+
+**Consequences:** Notion being down stops a Friday run entirely rather than degrading it. That is the intended trade: a run that proposes last week's albums again is worse than no run, because the whole point of the list is that it is new. Suppression is applied as candidates are discovered rather than at `finish`, so a suppressed release is never offered to the model and nothing is spent looking it up — and a shortlist naming one is refused by the provenance rule that already exists, since a suppressed release is not a candidate.
+
+## ADR-0040: A vibe note scores only when its quote is in the stored Source Text
+
+**Status:** ACCEPTED — Ben's decision, 15 September 2026.
+
+`vibe_notes` is the only model judgement in the ranking, and the ticket requires it to cite the Source Text it relied on. Three readings were possible: refuse the shortlist when a citation cannot be verified, warn, or simply not score it.
+
+Not score it. The item carries a `claim` and a `quote`; the quote is checked verbatim — whitespace normalised, nothing else forgiven — against the Source Text this run stored for a page the item itself names. A quote that is not found contributes nothing and the release is ranked on its data alone. An uncited judgement failing the whole run would spend a Friday's shortlist on a transcription slip, and the judgement is worth one point against a watch-list artist's three.
+
+**Consequences:** The store gains its one read — `sourceTextsOf(runId)` — narrow enough that no past run is reachable through it, so ADR-0009's "past traces are never fed to the model" is unaffected. Only pages `fetch_source` read are stored, so a claim sourced from a web search cannot be cited; that is consistent with Source Text as CONTEXT.md defines it, and it means the model's judgement rests on the same evidence its provenance does. The Rationale is not quote-checked: its provenance is the source URLs, which are already required and already enforced.
+
+## ADR-0041: The Notion database is the contract, and it calls the album's title `Album`
+
+**Status:** ACCEPTED — Ben's decision, 15 September 2026. Corrects the property table in `docs/specs/milestone-1-working-agent.md`.
+
+The specification's property table said `Title`. The live database calls the title property `Album`, and the first run of `npm run smoke:notion` found it: suppression read zero identities from 272 records, because the property it was looking for did not exist. Two other things differ too. The URL column is `Apple Music`, not `Apple Music Link`. And the album cover is not a property at all: it is the Notion *page's* own cover image, which every one of the existing records carries as an external URL — so the agent sets `cover.external.url` when it creates the page, rather than writing a `files` property.
+
+The database wins. It predates the specification, holds hundreds of hand-entered records, and is the tool Ben actually uses on a Friday; renaming a live property to satisfy a document is the wrong direction, and any view or filter keyed on the name would have to be checked. The specification is corrected instead.
+
+**Consequences:** Suppression currently rests entirely on artist and title: not one of the 272 existing records carries a MusicBrainz id, because they were entered by hand. That is exactly why the read returns both identity forms. As the agent writes its own rows the stronger identity accumulates, and the weaker one keeps working in the meantime.
+
+This is the argument for the smoke test rather than for more unit tests. Every automated test passed against a body this project wrote itself, and every one of them agreed with the code about a property name that was wrong. Only the real database disagreed. The cover and the `Apple Music` spelling belong to ticket 06, which is what writes them; they are recorded here so that ticket starts from what the database has rather than from what the specification claimed. Both names stay as the database spells them, for the reason above and because `Apple Music` reads more cleanly in the tool Ben looks at.

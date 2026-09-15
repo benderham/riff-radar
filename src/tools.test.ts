@@ -79,6 +79,7 @@ const context = (over: { http?: HttpPort; model?: ModelPort } = {}) => {
     runId: 'run-1',
     window: { from: '2026-09-08', to: '2026-09-14' },
     searchApiKey: 'test-key',
+    suppressed: new Set<string>(),
     candidates: [],
   }
   return { toolContext, store }

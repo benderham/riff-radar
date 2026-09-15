@@ -13,6 +13,9 @@ const NOT_FOUND = fixture('musicbrainz-not-found.json')
 const PARTIAL = fixture('musicbrainz-partial.json')
 const EP_GROUP = fixture('musicbrainz-ep-group.json')
 const EP_RECORDINGS = fixture('musicbrainz-ep-recordings.json')
+const RELEASE_LABELS = fixture('musicbrainz-release-labels.json')
+const GENRES = fixture('musicbrainz-genres.json')
+const ARTIST_RELS = fixture('musicbrainz-artist-rels.json')
 
 /**
  * A clock that leaps an hour between readings, so the gate is never owed
@@ -79,11 +82,17 @@ test('a release MusicBrainz knows carries its release-group id and its facts', a
   assert.match(USER_AGENT, /https?:\/\//, 'MusicBrainz asks for a contactable user agent')
 })
 
-test('an album costs one request: only an EP needs its tracks counted', async () => {
+test('an identified release costs three more requests, one per adjacency signal', async () => {
   const { gets, ports } = serving([GROUP])
   await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
 
-  assert.equal(gets.length, 1)
+  // Ticket 04 stopped at identity and an album cost one request. Label, genre
+  // and personnel are each their own resource at MusicBrainz, so each is its
+  // own request and its own second (ADR-0038).
+  assert.equal(gets.length, 4)
+  assert.match(gets[1]?.url ?? '', /release\?release-group=.*inc=recordings\+labels/)
+  assert.match(gets[2]?.url ?? '', /release-group\/[^?]+\?inc=genres/)
+  assert.match(gets[3]?.url ?? '', /artist\/[^?]+\?inc=artist-rels/)
 })
 
 test('a release MusicBrainz has never heard of is unverified, not an error', async () => {
@@ -132,7 +141,7 @@ test('an EP is followed up for its track count and duration', async () => {
   const { gets, ports } = serving([EP_GROUP, EP_RECORDINGS])
   const ep = await lookupRelease(ports, 'Ulcerate Fester', 'Unceasing Life')
 
-  assert.equal(gets.length, 2, 'the release group, then its recordings')
+  assert.equal(gets.length, 4, 'the release group, then its release, genres and people')
   assert.match(gets[1]?.url ?? '', /inc=recordings/)
   assert.ok(ep.lookup.found === true)
   assert.equal(ep.lookup.trackCount, 4)
@@ -182,7 +191,7 @@ test('a 503 is retried, because MusicBrainz sheds load rather than queueing', as
   ])
   const found = await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
 
-  assert.equal(gets.length, 3, 'two refusals, then the answer')
+  assert.equal(gets.length, 3 + 3, 'two refusals, the answer, then the three enrichments')
   assert.ok(found.lookup.found === true)
   assert.equal(found.warning, undefined, 'a retry that succeeded is not a disappointment')
 })
@@ -192,7 +201,7 @@ test('the busy body is retried too: it is a refusal wearing a 200', async () => 
   const { gets, ports } = serving([busy, GROUP])
   const found = await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
 
-  assert.equal(gets.length, 2)
+  assert.equal(gets.length, 2 + 3, 'the refusal, the answer, then the three enrichments')
   assert.ok(found.lookup.found === true)
 })
 
@@ -225,4 +234,69 @@ test('a body that is not JSON is a warning, not a crash', async () => {
 
   assert.deepEqual(broken.lookup, { found: false })
   assert.match(String(broken.warning), /not valid JSON/)
+})
+
+// ── Adjacency: label, genre and the band's people (ADR-0038) ────────────────
+
+test('an identified release carries its label, its genres and its band members', async () => {
+  const { ports } = serving([GROUP, RELEASE_LABELS, GENRES, ARTIST_RELS])
+  const found = await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
+
+  assert.ok(found.lookup.found === true)
+  assert.equal(found.lookup.label, 'Debemur Morti Productions')
+  assert.ok(found.lookup.genres?.includes('dissonant death metal'))
+  assert.ok(found.lookup.genres?.includes('technical death metal'))
+  // Current and past both: a drummer who has left is exactly the connection
+  // that brings a new band to Ben's attention.
+  assert.ok(found.lookup.members?.includes('Jamie Saint Merat'))
+  assert.ok(found.lookup.members?.includes('Michael Rothwell'), 'a past member counts')
+  assert.equal(
+    new Set(found.lookup.members).size,
+    found.lookup.members?.length,
+    'a member credited twice is named once',
+  )
+  assert.equal(found.warning, undefined)
+})
+
+test('an adjacency request that fails costs the release that signal, not its identity', async () => {
+  const { ports } = serving([
+    GROUP,
+    { body: 'not found', status: 404 },
+    GENRES,
+    { body: 'not found', status: 404 },
+  ])
+  const found = await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
+
+  assert.ok(found.lookup.found === true)
+  assert.equal(found.lookup.releaseGroupId, 'c302ec77-589f-462f-b6b3-d63508886978')
+  assert.equal(found.lookup.label, undefined)
+  assert.equal(found.lookup.members, undefined)
+  assert.ok(found.lookup.genres?.includes('death metal'), 'the signal that answered still arrives')
+  assert.match(found.warning ?? '', /its release.*404/)
+  assert.match(found.warning ?? '', /its band members.*404/)
+})
+
+test('a release group nobody is credited on asks nobody for members', async () => {
+  const anonymous = JSON.stringify({
+    'release-groups': [
+      { id: 'rg-1', title: 'Unceasing Life', score: 100, 'primary-type': 'Album', 'artist-credit': [{ name: 'Ulcerate Fester' }] },
+    ],
+  })
+  const { gets, ports } = serving([anonymous, RELEASE_LABELS, GENRES])
+  const found = await lookupRelease(ports, 'Ulcerate Fester', 'Unceasing Life')
+
+  assert.equal(gets.length, 3, 'no artist id, no fourth request')
+  assert.ok(found.lookup.found === true)
+  assert.equal(found.lookup.members, undefined)
+})
+
+test('"[no label]" is MusicBrainz saying there is none, not a label named that', async () => {
+  const selfReleased = JSON.stringify({
+    releases: [{ 'label-info': [{ label: { name: '[no label]' } }], media: [] }],
+  })
+  const { ports } = serving([GROUP, selfReleased, GENRES, ARTIST_RELS])
+  const found = await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
+
+  assert.ok(found.lookup.found === true)
+  assert.equal(found.lookup.label, undefined)
 })

@@ -16,7 +16,10 @@ reader can see what is being claimed about it.
 | `musicbrainz-not-found.json` | A release-group search that finds nothing at all. |
 | `musicbrainz-partial.json` | A real release group that states a type and no date: the partial-data case. |
 | `musicbrainz-ep-group.json` | A release-group search that finds an EP, so the EP path needs no edited body. |
-| `musicbrainz-ep-recordings.json` | The second request an EP costs, with its tracks and their lengths. |
+| `musicbrainz-ep-recordings.json` | The release request an EP's thresholds need, with its tracks and their lengths. |
+| `musicbrainz-release-labels.json` | A release with its label and catalogue number. Ulcerate, 15 September 2026. |
+| `musicbrainz-genres.json` | A release group's genre tags, counts included. Ulcerate, 15 September 2026. |
+| `musicbrainz-artist-rels.json` | An artist's relations, holding the band's current and past members. Ulcerate, 15 September 2026. |
 
 `tavily-search.json` reads oddly and is not edited: `response_time` is `0` because the
 query had been asked minutes earlier and Tavily served it from its cache, and

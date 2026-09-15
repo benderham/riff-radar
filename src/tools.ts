@@ -29,6 +29,7 @@ import {
   artistTitleIdentity,
   candidateIdentity,
   collapseByReleaseGroup,
+  dropSuppressed,
   mergeCandidates,
 } from './domain/candidates.ts'
 import type { Usage } from './domain/cost.ts'
@@ -64,6 +65,11 @@ export interface ToolContext {
   readonly window: DateWindow
   /** Authenticates the search provider. Travels in a header, never into the trace. */
   readonly searchApiKey: string
+  /**
+   * Release identities Notion already holds, in both forms. Read once before
+   * the run and never added to: this is memory, not a finding (ADR-0009).
+   */
+  readonly suppressed: ReadonlySet<string>
   /** The run's candidates, deduplicated on release identity. Actions may add. */
   candidates: readonly Candidate[]
 }
@@ -102,7 +108,13 @@ export const tools = {
       })
 
       const before = context.candidates.length
-      context.candidates = mergeCandidates(context.candidates, fetched.candidates)
+
+      // Suppressed here rather than at `finish`, so a release Notion already
+      // holds is never offered to the model at all: re-running a week proposes
+      // nothing twice, and nothing is spent looking up what would be dropped.
+      const merged = mergeCandidates(context.candidates, fetched.candidates)
+      context.candidates = dropSuppressed(merged, context.suppressed)
+      const suppressed = merged.length - context.candidates.length
 
       const warning = fetched.warning === undefined ? {} : { warning: fetched.warning }
 
@@ -121,6 +133,7 @@ export const tools = {
           url: fetched.url,
           found: fetched.candidates.length,
           truncated: fetched.truncated,
+          ...(suppressed === 0 ? {} : { alreadyProposed: suppressed }),
           newThisFetch: context.candidates.length - before,
           totalCandidates: context.candidates.length,
           ...warning,
@@ -158,10 +171,15 @@ export const tools = {
       if (!failed) {
         // Collapsing after enriching, because the proof that two candidates are
         // one release is exactly what this lookup just produced.
-        context.candidates = collapseByReleaseGroup(
-          context.candidates.map((candidate) =>
-            candidateIdentity(candidate) === identity ? { ...candidate, lookup: found.lookup } : candidate,
+        context.candidates = dropSuppressed(
+          collapseByReleaseGroup(
+            context.candidates.map((candidate) =>
+              candidateIdentity(candidate) === identity ? { ...candidate, lookup: found.lookup } : candidate,
+            ),
           ),
+          // The lookup may have just given a candidate the identity Notion
+          // knows it by, which artist and title alone did not match.
+          context.suppressed,
         )
       }
 

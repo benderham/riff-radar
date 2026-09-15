@@ -38,7 +38,7 @@ const discovered = (items: readonly ShortlistItem[]): Candidate[] =>
       primaryType: 'Album',
       secondaryTypes: [],
       firstReleaseDate: item.releaseDate ?? '2026-09-10',
-      artists: ['Blood Incantation'],
+      artists: [item.artist ?? ''],
     },
   }))
 
@@ -232,3 +232,64 @@ test('a collaboration nobody excluded is proposable', () => {
   assert.deepEqual(validate([item()], collaboration), { ok: true })
 })
 
+
+// ── The always list is a guarantee, enforced rather than asked for ───────────
+
+const withAlways = (...artists: string[]): TasteProfile => ({
+  ...profile,
+  artists: { ...profile.artists, always: artists },
+})
+
+test('an eligible release by an always artist that the model left off refuses the shortlist', () => {
+  const proposed = [item()]
+  const omitted = item({ artist: 'Ulcerate', title: 'Cutting the Throat of God', musicbrainzId: 'mbid-2' })
+
+  const result = validateShortlist(
+    proposed,
+    window,
+    discovered([...proposed, omitted]),
+    withAlways('Ulcerate'),
+  )
+
+  assert.equal(result.ok, false)
+  assert.match(result.ok ? '' : result.errors.join('\n'), /always list and eligible/)
+})
+
+test('an always artist with nothing eligible this week is no reason to refuse', () => {
+  assert.deepEqual(
+    validateShortlist([item()], window, discovered([item()]), withAlways('Ulcerate')),
+    { ok: true },
+  )
+})
+
+test('an ineligible release by an always artist is not guaranteed a slot', () => {
+  const proposed = [item()]
+  const live = item({ artist: 'Ulcerate', title: 'Live in Auckland', musicbrainzId: 'mbid-3' })
+  const candidates: Candidate[] = discovered([...proposed, live]).map((candidate) =>
+    candidate.artist === 'Ulcerate' && candidate.lookup?.found === true
+      ? { ...candidate, lookup: { ...candidate.lookup, secondaryTypes: ['Live'] } }
+      : candidate,
+  )
+
+  assert.deepEqual(
+    validateShortlist(proposed, window, candidates, withAlways('Ulcerate')),
+    { ok: true },
+  )
+})
+
+test('a shortlist already full of guaranteed artists is not refused for the ones that did not fit', () => {
+  const six = ['a', 'b', 'c', 'd', 'e', 'f'].map((letter, index) =>
+    item({ artist: `Band ${letter}`, title: `Album ${letter}`, musicbrainzId: `mbid-${letter}`, rank: index + 1 }),
+  )
+  const five = six.slice(0, 5)
+
+  assert.deepEqual(
+    validateShortlist(five, window, discovered(six), withAlways(...six.map((each) => each.artist!))),
+    { ok: true },
+  )
+})
+
+test('a vibe note and its quote travel with the item', () => {
+  const withVibe = item({ vibe: { claim: 'glacial and suffocating', quote: 'a glacial, suffocating record' } })
+  assert.deepEqual(validate([withVibe]), { ok: true })
+})

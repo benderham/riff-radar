@@ -6,25 +6,25 @@ Most of the ranking is arithmetic Ben can reason about. The model contributes on
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 ## Acceptance criteria
 
-- [ ] The Taste Profile loads from a fixed path as JSON (ADR-0022), is validated with Zod, and fails loudly rather than silently loading empty lists
-- [ ] The profile is never written by the agent, at any point, by any path
-- [ ] The profile carries a top-level `version` key, hand-incremented on every edit; that value is what the Run records as `profile_version`
-- [ ] A profile missing its `version` key fails validation rather than loading
-- [ ] The profile sits in the request's stable prefix
-- [ ] `artists.always` guarantees a Shortlist slot; `artists.watch` guarantees entry into ranking but no slot; `artists.exclude` is a hard filter
-- [ ] Label and genre exclusions apply strong negative weight rather than filtering, so a mistagged record can still reach the Shortlist on other signals
-- [ ] Artist tier, label, genre and personnel are scored deterministically into a base score
-- [ ] `vibe_notes` is the only model judgement, and both it and the Rationale must cite Source text; an uncited judgement does not contribute
-- [ ] A missing ranking signal removes that signal and the release proceeds — the opposite of the eligibility rule
-- [ ] Releases already present in Notion are suppressed on Release Identity regardless of their Status
-- [ ] Past Run traces are never sent to the model
-- [ ] A Run demonstrably ranks differently under two different profiles, evidenced from the trace
-- [ ] Ranking arithmetic, artist tiers and negative weights are tested directly as pure functions
-- [ ] Suppression is tested end to end through the ports
+- [x] The Taste Profile loads from a fixed path as JSON (ADR-0022), is validated with Zod, and fails loudly rather than silently loading empty lists
+- [x] The profile is never written by the agent, at any point, by any path
+- [x] The profile carries a top-level `version` key, hand-incremented on every edit; that value is what the Run records as `profile_version`
+- [x] A profile missing its `version` key fails validation rather than loading
+- [x] The profile sits in the request's stable prefix
+- [x] `artists.always` guarantees a Shortlist slot; `artists.watch` guarantees entry into ranking but no slot; `artists.exclude` is a hard filter
+- [x] Label and genre exclusions apply strong negative weight rather than filtering, so a mistagged record can still reach the Shortlist on other signals
+- [x] Artist tier, label, genre and personnel are scored deterministically into a base score
+- [~] `vibe_notes` is the only model judgement, and both it and the Rationale must cite Source text; an uncited judgement does not contribute — the vibe note is quote-checked against stored Source Text and scores nothing uncited; the Rationale is **not** quote-checked, and ADR-0040 records why
+- [x] A missing ranking signal removes that signal and the release proceeds — the opposite of the eligibility rule
+- [x] Releases already present in Notion are suppressed on Release Identity regardless of their Status
+- [x] Past Run traces are never sent to the model
+- [x] A Run demonstrably ranks differently under two different profiles, evidenced from the trace
+- [x] Ranking arithmetic, artist tiers and negative weights are tested directly as pure functions
+- [x] Suppression is tested end to end through the ports
 
 ## Comments
 
@@ -63,3 +63,38 @@ to tell dissonant death metal from technical death metal.
 Ulcerate and Metallica both had them; the long tail was not sampled, and the long
 tail is where a run actually lives. Worth one probe before genre is weighted
 heavily.
+
+### Implemented, 15 September 2026 — what is done and what is waiting on Ben
+
+Six commits on `feat/ticket-05-taste-profile-ranking`, 298 tests passing, typecheck
+and layering clean. Four decisions were Ben's before a line was written and are
+recorded as ADR-0037 to ADR-0040: the code orders the shortlist and the model's
+order is only the tie-break; Adjacency costs three MusicBrainz requests and only
+the first credited artist's people; a failed suppression read refuses the run;
+and an uncited vibe note scores nothing rather than failing the run.
+
+Two things are outstanding and neither is code:
+
+1. ~~**`npm run smoke:notion` has never met the real service.**~~ **Done, 15
+   September 2026.** Ben opened `api.notion.com` and supplied a key, and the
+   smoke test earned its keep on the first run: it read **zero** identities from
+   272 records, because the database's title property is called `Album` and the
+   specification said `Title`. The database is the contract and the
+   specification is corrected (ADR-0041). It now reads 272 identities across
+   three pages in 1.5 seconds. Not one of them carries a MusicBrainz id — the
+   existing records are hand-entered — so suppression rests on artist and title
+   until the agent writes rows of its own, which is why the read returns both.
+2. **`taste-profile.json` is still all empty lists.** Every mechanism is built and
+   tested, and with an empty profile every release scores zero and the model's
+   order survives untouched. The file is hand-edited by definition, so it is
+   Ben's to fill.
+
+One review finding was a real bug and is fixed: artist tiers matched by
+containment, so `Ulcerate` on the always list would have guaranteed a slot to
+Ulcerate Fester — the different band MusicBrainz offers when asked about the
+first. Names are matched whole now; labels, genres and vibe notes still match
+inside a longer value.
+
+The live MusicBrainz smoke test also settled the ticket's open question about
+genre coverage in the long tail: Ulcerate returned six tags, and the 1991 EP by
+Ulcerate Fester returned none. Genre is therefore weighted no higher than label.

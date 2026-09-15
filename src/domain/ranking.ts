@@ -1,0 +1,222 @@
+/**
+ * Ranking: arithmetic Ben can reason about.
+ *
+ * The taste profile scores the attributes of a release — artist tier, label,
+ * genre, personnel — and the sum decides the order of the shortlist (ADR-0006).
+ * The model chooses *which* releases are worth proposing and writes the
+ * rationale; where it has an opinion about order, it is overruled here, because
+ * an ordering nobody can recompute is an ordering nobody can argue with.
+ *
+ * Three rules shape the arithmetic:
+ *
+ * - `artists.always` is a guaranteed slot rather than a large number, so no
+ *   combination of other signals can outbid it (ADR-0007).
+ * - `labels.exclude` and `genres.exclude` are negative weight rather than
+ *   filters: a mistagged record can still reach the shortlist on other signals.
+ * - A signal the data does not carry is dropped and the release proceeds, which
+ *   is the opposite of the eligibility rule and deliberately so (ADR-0010).
+ *
+ * `vibe_notes` is the one place the model's judgement enters, and it only
+ * counts when the claim is cited: `cited` is settled before it gets here, by
+ * checking the quote against the Source Text this run actually stored.
+ */
+
+import { RANKING_WEIGHTS } from '../../config.ts'
+import type { Candidate } from './candidates.ts'
+import {
+  artistTitleIdentity,
+  candidateIdentity,
+  creditedArtists,
+  normaliseName,
+  sameName,
+} from './candidates.ts'
+import { htmlToText } from './html-text.ts'
+import type { ShortlistItem } from './shortlist.ts'
+import type { TasteProfile } from './taste-profile.ts'
+
+/** One profile term that matched, and what it was worth. For the trace. */
+export interface RankingSignal {
+  readonly signal: 'artist' | 'label' | 'genre' | 'personnel' | 'vibe'
+  readonly term: string
+  readonly points: number
+}
+
+export interface Score {
+  readonly total: number
+  /** An `artists.always` match: a slot, not a score. */
+  readonly guaranteed: boolean
+  readonly signals: readonly RankingSignal[]
+}
+
+/** The model's resemblance judgement, with the Source Text it rests on. */
+export interface CitedVibe {
+  readonly claim: string
+  readonly quote: string
+  /** Whether the quote was found in this run's stored source text. */
+  readonly cited: boolean
+}
+
+/**
+ * A profile term matches a value it appears inside, so `death metal` finds
+ * `dissonant death metal` and `Century Media` finds `Century Media Records`.
+ * A term that matches several values scores once: the profile is what is being
+ * counted, not how many ways the data says the same thing.
+ *
+ * For descriptions only. A *name* is matched whole — see `matchingNames`.
+ */
+const matching = (terms: readonly string[], values: readonly string[]): string[] => {
+  const haystack = values.map(normaliseName).filter((value) => value !== '')
+  return terms.filter((term) => {
+    const needle = normaliseName(term)
+    return needle !== '' && haystack.some((value) => value.includes(needle))
+  })
+}
+
+/**
+ * The same, for names, and whole rather than contained: Ulcerate and Ulcerate
+ * Fester are two bands, and the second is what MusicBrainz offers when asked
+ * about the first. A containment rule would hand a guaranteed slot to a
+ * different band on the strength of a shared word.
+ */
+const matchingNames = (terms: readonly string[], values: readonly string[]): string[] =>
+  terms.filter((term) => values.some((value) => sameName(term, value)))
+
+const scoreNames = (
+  signal: RankingSignal['signal'],
+  terms: readonly string[],
+  values: readonly string[],
+  points: number,
+): RankingSignal[] => matchingNames(terms, values).map((term) => ({ signal, term, points }))
+
+const score = (
+  signal: RankingSignal['signal'],
+  terms: readonly string[],
+  values: readonly string[],
+  points: number,
+): RankingSignal[] => matching(terms, values).map((term) => ({ signal, term, points }))
+
+export const scoreRelease = (
+  candidate: Candidate,
+  profile: TasteProfile,
+  vibe?: CitedVibe,
+): Score => {
+  const looked = candidate.lookup?.found === true ? candidate.lookup : undefined
+  const artists = creditedArtists(candidate)
+
+  // MusicBrainz's label where there is one, and the source's where there is
+  // not. Absent from both is a signal this release does not have.
+  const labels = [looked?.label, candidate.label].filter((value) => value !== undefined)
+
+  const signals: RankingSignal[] = [
+    ...scoreNames('artist', profile.artists.watch, artists, RANKING_WEIGHTS.artistWatch),
+    ...score('label', profile.labels.include, labels, RANKING_WEIGHTS.labelInclude),
+    ...score('label', profile.labels.exclude, labels, RANKING_WEIGHTS.labelExclude),
+    ...score('genre', profile.genres.include, looked?.genres ?? [], RANKING_WEIGHTS.genreInclude),
+    ...score('genre', profile.genres.exclude, looked?.genres ?? [], RANKING_WEIGHTS.genreExclude),
+    ...scoreNames('personnel', profile.personnel.include, looked?.members ?? [], RANKING_WEIGHTS.personnelInclude),
+    ...scoreNames('personnel', profile.personnel.exclude, looked?.members ?? [], RANKING_WEIGHTS.personnelExclude),
+    // An uncited judgement is not a judgement. It is dropped rather than
+    // refused: the release keeps its place and is ranked on its data alone.
+    ...(vibe?.cited === true
+      ? [
+          ...score('vibe', profile.vibe_notes.include, [vibe.claim], RANKING_WEIGHTS.vibeInclude),
+          ...score('vibe', profile.vibe_notes.exclude, [vibe.claim], RANKING_WEIGHTS.vibeExclude),
+        ]
+      : []),
+  ]
+
+  return {
+    total: signals.reduce((sum, each) => sum + each.points, 0),
+    guaranteed: matchingNames(profile.artists.always, artists).length > 0,
+    signals,
+  }
+}
+
+export interface RankedItem {
+  /** The item as it will be written, with `rank` rewritten to its new position. */
+  readonly item: ShortlistItem
+  readonly score: Score
+}
+
+/**
+ * The shortlist in the order the profile puts it, ranks renumbered from one.
+ *
+ * Guaranteed slots first, then score, and the model's own order last. That
+ * final tie-break is the one place its judgement survives: where the profile
+ * has nothing to say about two releases, the reason it preferred one is a
+ * better answer than the order they happened to be discovered in.
+ *
+ * An item naming a release the run never discovered is scored as zero rather
+ * than refused — `validateShortlist` is what refuses it, and ranking runs first
+ * so the trace records what was proposed before it was judged.
+ */
+export const rankShortlist = (
+  items: readonly ShortlistItem[],
+  candidates: readonly Candidate[],
+  profile: TasteProfile,
+  vibes: ReadonlyMap<string, CitedVibe> = new Map(),
+): RankedItem[] => {
+  const discovered = new Map(candidates.map((candidate) => [candidateIdentity(candidate), candidate]))
+
+  const scored = items.map((item, index) => {
+    const identity = artistTitleIdentity(item.artist ?? '', item.title ?? '')
+    const candidate = discovered.get(identity)
+    return {
+      item,
+      index,
+      score:
+        candidate === undefined
+          ? { total: 0, guaranteed: false, signals: [] }
+          : scoreRelease(candidate, profile, vibes.get(identity)),
+    }
+  })
+
+  return scored
+    .sort(
+      (one, other) =>
+        Number(other.score.guaranteed) - Number(one.score.guaranteed) ||
+        other.score.total - one.score.total ||
+        (one.item.rank ?? one.index) - (other.item.rank ?? other.index) ||
+        one.index - other.index,
+    )
+    .map(({ item, score: itemScore }, position) => ({
+      item: { ...item, rank: position + 1 },
+      score: itemScore,
+    }))
+}
+
+/**
+ * Whether each item's vibe note is cited, checked against the Source Text this
+ * run stored for the page the item names.
+ *
+ * The quote has to appear in the page the model says it read — not in any page,
+ * and not in a search result, because Source Text is what a configured source
+ * served (CONTEXT.md) and it is the only text the run kept exactly. Whitespace
+ * is normalised on both sides, since the page is cleaned markup and the quote
+ * is a model's transcription of it; nothing else is forgiven.
+ */
+export const citedVibes = (
+  items: readonly ShortlistItem[],
+  sourceTexts: readonly { readonly url: string; readonly rawBody: string }[],
+): Map<string, CitedVibe> => {
+  const pages = new Map(sourceTexts.map((each) => [each.url, normaliseName(htmlToText(each.rawBody))]))
+  // Keyed on artist and title, as `rankShortlist` resolves candidates: a
+  // release-group id is the stronger identity but arrives only after a lookup,
+  // and both sides of this map have to agree on one key.
+  const cited = new Map<string, CitedVibe>()
+
+  for (const item of items) {
+    const vibe = item.vibe
+    if (vibe === undefined) continue
+
+    const quote = normaliseName(vibe.quote)
+    cited.set(artistTitleIdentity(item.artist ?? '', item.title ?? ''), {
+      ...vibe,
+      cited:
+        quote !== '' &&
+        (item.sourceUrls ?? []).some((url) => pages.get(url)?.includes(quote) === true),
+    })
+  }
+
+  return cited
+}
