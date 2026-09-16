@@ -1,10 +1,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { NOTION_ENDPOINT } from '../config.ts'
+import { NOTION_ENDPOINT, NOTION_PROPERTIES } from '../config.ts'
 import { EXIT_REFUSED, runCli } from './cli.ts'
 import type { ClockPort, HttpPort, ModelPort } from './ports.ts'
 import { openStore } from './store/store.ts'
+
+/** Only the Notion write patches anything; every other fake refuses. */
+const notPatched = async (): Promise<never> => {
+  throw new Error('unexpected patch')
+}
 
 const clock: ClockPort = { now: () => new Date(2026, 8, 14, 9, 0, 0) }
 
@@ -25,11 +30,24 @@ const refuse = async (url: string): Promise<never> => {
 }
 
 /**
- * An empty Notion database, which every run reads before it starts (ADR-0039).
- * It is the one request these tests do serve.
+ * An empty Notion database that carries every property a run writes. Both are
+ * read before a run starts — the schema and the records — and they are the only
+ * requests these tests serve.
  */
+const notionSchema = JSON.stringify({
+  properties: Object.fromEntries(
+    Object.entries(NOTION_PROPERTIES).map(([name, type]) => [name, { type }]),
+  ),
+})
+
+const describing = async (url: string) =>
+  url.startsWith(NOTION_ENDPOINT)
+    ? { status: 200, headers: { 'content-type': 'application/json' }, body: notionSchema }
+    : refuse(url)
+
 const http: HttpPort = {
-  get: refuse,
+  patch: notPatched,
+  get: describing,
   post: async (url) =>
     url.startsWith(NOTION_ENDPOINT)
       ? {
@@ -151,7 +169,8 @@ test('an unusable command line is reported before missing credentials', async ()
 test('a Notion database that cannot be read is a refusal, not a crash', async () => {
   const test_ = harness()
   const refusing: HttpPort = {
-    get: refuse,
+    patch: notPatched,
+    get: describing,
     post: async () => ({ status: 401, headers: {}, body: '{"message": "unauthorized"}' }),
   }
 

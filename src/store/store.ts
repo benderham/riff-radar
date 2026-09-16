@@ -33,7 +33,18 @@ export interface RecordedStep {
   readonly stepIndex: number
   readonly timestamp: string
   readonly durationMs: number
-  readonly kind: 'action' | 'invalid_action' | 'finish' | 'model_error' | 'tool_error'
+  /**
+   * `notion_write` is the one kind no model step produces: it is the post-loop
+   * write, recorded as a step so that what was written — or what blocked it —
+   * sits in the same table as everything else the run did.
+   */
+  readonly kind:
+    | 'action'
+    | 'invalid_action'
+    | 'finish'
+    | 'model_error'
+    | 'tool_error'
+    | 'notion_write'
   readonly modelResponse: string | null
   readonly proposedAction: string | null
   readonly validationResult: string | null

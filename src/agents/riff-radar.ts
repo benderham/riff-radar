@@ -27,7 +27,7 @@ import {
 import type { CliArgs } from '../domain/cli-args.ts'
 import type { Usage } from '../domain/cost.ts'
 import { NO_USAGE, addUsage, estimateCost } from '../domain/cost.ts'
-import { suppressedReleases } from '../clients/notion.ts'
+import { preflightSchema, proposeShortlist, suppressedReleases } from '../clients/notion.ts'
 import { citedVibes, rankShortlist } from '../domain/ranking.ts'
 import type { TerminationReason } from '../domain/run.ts'
 import { WRITE_PERMITTED } from '../domain/run.ts'
@@ -60,6 +60,8 @@ export interface RunOutcome {
   readonly terminationReason: TerminationReason
   readonly shortlistSize: number
   readonly notionWritePerformed: boolean
+  /** Present only when a permitted write was attempted and failed. */
+  readonly notionWriteError?: string
   readonly usage: Usage
   readonly estimatedCost: number
   readonly costIsUpperBound: boolean
@@ -99,6 +101,11 @@ export const runRiffRadar = async ({
   // leave a half-started row behind.
   const startedAt = ports.clock.now()
   const window = resolveWindow(startedAt, args.lastDays)
+
+  // Before the run row, and before a token is spent: a database that is not the
+  // one this writes to is a refusal, and the answer is the same whether it is
+  // found now or after the loop (ticket 06). The agent never alters a schema.
+  await preflightSchema(ports, notionToken, notionDatabaseId)
 
   // Before the run row, for the same reason: a suppression set that could not
   // be read is not a run at all. An unsuppressed run can propose what Notion
@@ -383,11 +390,50 @@ export const runRiffRadar = async ({
 
   const shortlistSize = WRITE_PERMITTED.includes(terminationReason) ? shortlist.length : 0
 
-  // The write is post-loop code, never a model action (ADR-0005), and it does
-  // not exist yet: the Notion client arrives in ticket 06. Until then a run
-  // records honestly that it wrote nothing, whatever the flags said.
-  // `args.dryRun` is deliberately unread until there is a write for it to block.
-  const notionWritePerformed = false
+  // ── The write ──────────────────────────────────────────────────────────────
+  // Post-loop code, never a model action (ADR-0005). Six things block it, and
+  // all six are already settled by the time this line runs: missing credentials
+  // refused the run in the CLI, a database that does not match refused it above,
+  // a failed validation and a wrong termination reason are the same fact —
+  // `terminationReason` — and an empty shortlist makes `shortlistSize` zero.
+  // What is left is the flag.
+  // `shortlistSize` is already zero unless the termination reason permits a
+  // write, so the reason is not tested twice.
+  const mayWrite = !args.dryRun && shortlistSize > 0
+
+  let notionWritePerformed = false
+  let notionWriteError: string | undefined
+
+  if (mayWrite) {
+    const writeAt = ports.clock.now()
+    try {
+      const written = await proposeShortlist(ports, {
+        token: notionToken,
+        databaseId: notionDatabaseId,
+        runId,
+        shortlist,
+      })
+      notionWritePerformed = true
+      recordStep(
+        { ...EMPTY_STEP, kind: 'notion_write', toolResult: JSON.stringify({ written }) },
+        writeAt,
+        ports.clock.now().getTime() - writeAt.getTime(),
+      )
+    } catch (error) {
+      // The run itself is over and its reason is already decided, so a failed
+      // write is reported rather than allowed to rewrite history. What the
+      // message says about the rollback is the part a human needs.
+      notionWriteError = (error as Error).message
+      recordStep(
+        { ...EMPTY_STEP, kind: 'notion_write', error: notionWriteError },
+        writeAt,
+        ports.clock.now().getTime() - writeAt.getTime(),
+      )
+    }
+  }
+  // A blocked write records no step, because nothing was attempted: the run row
+  // carries the flags, the termination reason and the shortlist size, which is
+  // every reason there is.
 
   const estimatedCost = estimateCost(usage)
   store.finishRun({
@@ -407,6 +453,7 @@ export const runRiffRadar = async ({
     terminationReason,
     shortlistSize,
     notionWritePerformed,
+    ...(notionWriteError === undefined ? {} : { notionWriteError }),
     usage,
     estimatedCost,
     costIsUpperBound,

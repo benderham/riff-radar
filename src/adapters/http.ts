@@ -33,18 +33,33 @@ export const httpAdapter = (fetchImpl: typeof fetch = globalThis.fetch): HttpPor
   },
 
   async post(url, body, headers = {}) {
-    const response = await fetchImpl(url, {
-      method: 'POST',
-      headers: {
-        'user-agent': USER_AGENT,
-        accept: 'application/json',
-        'content-type': 'application/json',
-        ...headers,
-      },
-      body,
-      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
-    })
+    return withBody(fetchImpl, 'POST', url, body, headers)
+  },
 
-    return read(response)
+  async patch(url, body, headers = {}) {
+    return withBody(fetchImpl, 'PATCH', url, body, headers)
   },
 })
+
+/** POST and PATCH differ in one word, so they are one function. */
+const withBody = async (
+  fetchImpl: typeof fetch,
+  method: 'POST' | 'PATCH',
+  url: string,
+  body: string,
+  headers: Record<string, string>,
+) => {
+  const response = await fetchImpl(url, {
+    method,
+    headers: {
+      'user-agent': USER_AGENT,
+      accept: 'application/json',
+      'content-type': 'application/json',
+      ...headers,
+    },
+    body,
+    signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+  })
+
+  return read(response)
+}

@@ -34,6 +34,7 @@ const serving = (bodies: readonly (string | { body: string; status: number })[])
   const gets: { url: string; headers?: Record<string, string> }[] = []
   let call = 0
   const http: HttpPort = {
+    patch: async () => { throw new Error('unexpected patch') },
     get: async (url, headers) => {
       gets.push({ url, ...(headers === undefined ? {} : { headers }) })
       const next = bodies[Math.min(call++, bodies.length - 1)]!

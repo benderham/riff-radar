@@ -44,6 +44,13 @@ export interface HttpPort {
    * string (ADR-0033). Sources are read with `get` and always will be.
    */
   post(url: string, body: string, headers?: Record<string, string>): Promise<HttpResponse>
+
+  /**
+   * The same contract again, for the one caller that needs it: undoing a
+   * partial Notion write archives the pages already created, and Notion
+   * archives a page with a PATCH. Nothing else patches anything.
+   */
+  patch(url: string, body: string, headers?: Record<string, string>): Promise<HttpResponse>
 }
 
 /** A tool call as the model proposed it. `argumentsJson` is untrusted text. */

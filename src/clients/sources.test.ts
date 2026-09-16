@@ -35,6 +35,7 @@ const refusePost = async (url: string): Promise<never> => {
 const servingFixture = (body: string, status = 200) => {
   const gets: string[] = []
   const http: HttpPort = {
+    patch: async () => { throw new Error('unexpected patch') },
     get: async (url) => {
       gets.push(url)
       return { status, headers: { 'content-type': 'text/html' }, body }
