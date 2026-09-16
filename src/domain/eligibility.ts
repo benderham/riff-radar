@@ -102,24 +102,39 @@ const dateVerdict = (candidate: Candidate, window: DateWindow): Eligibility => {
   return no(`no source dates it inside ${window.from}..${window.to}; earliest is ${stated}`)
 }
 
+/**
+ * The source's own word about the format, for the two cases where MusicBrainz
+ * has none: a release it has never heard of, and a release group nobody has
+ * typed (ADR-0045). Both are missing a type; neither is evidence of what the
+ * record is not.
+ */
+const statedFormatVerdict = (candidate: Candidate, why: string): Eligibility => {
+  const stated = candidate.format ?? ''
+  if (stated.trim() === '') return no(`${why}, and no source stated a format`)
+  if (SOURCE_FORMAT_EXCLUSIONS.test(stated)) return no(`${why}, and the source called it a ${stated}`)
+  if (!SOURCE_FORMAT_ALBUM.test(stated)) return no(`${why}, and "${stated}" is not a format this recognises`)
+  return YES
+}
+
 const formatVerdict = (candidate: Candidate): Eligibility => {
   const looked = candidate.lookup
 
   if (looked === undefined) return no('not looked up in MusicBrainz, so its format is unconfirmed')
 
-  if (looked.found === false) {
-    const stated = candidate.format ?? ''
-    if (stated.trim() === '') return no('unverified, and no source stated a format')
-    if (SOURCE_FORMAT_EXCLUSIONS.test(stated)) return no(`unverified, and the source called it a ${stated}`)
-    if (!SOURCE_FORMAT_ALBUM.test(stated)) return no(`unverified, and "${stated}" is not a format this recognises`)
-    return YES
-  }
+  if (looked.found === false) return statedFormatVerdict(candidate, 'unverified')
 
   const secondary = looked.secondaryTypes.find((type) => EXCLUDED_SECONDARY.has(type))
   if (secondary !== undefined) return no(`MusicBrainz calls it a ${secondary} release`)
 
+  // An untyped release group carries *more* evidence than one MusicBrainz has
+  // never heard of — a confirmed identity, date, track count and official
+  // release — so refusing it while the unheard-of release passes on a
+  // calendar's word had the rule the wrong way round (ADR-0045). The date
+  // check above has already run, so a reissue cannot arrive through here.
   const primary = looked.primaryType
-  if (primary === undefined) return no('MusicBrainz states no release type')
+  if (primary === undefined) {
+    return statedFormatVerdict(candidate, 'MusicBrainz states no release type')
+  }
   if (primary === 'Album') return YES
   if (primary !== 'EP') return no(`MusicBrainz calls it a ${primary}`)
 

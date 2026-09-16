@@ -70,13 +70,14 @@ const attempted = async (request: () => Promise<HttpResponse>): Promise<HttpResp
 }
 
 export const httpAdapter = (fetchImpl: typeof fetch = globalThis.fetch): HttpPort => ({
-  async get(url, headers = {}) {
+  async get(url, headers = {}, options = {}) {
     return attempted(async () => {
       // The project's own identification leads, and a caller's headers follow,
       // because a search API's key is an addition to who we are and not a
       // disguise: nothing here ever claims to be a browser (ADR-0031).
       const response = await fetchImpl(url, {
         headers: { 'user-agent': USER_AGENT, accept: 'text/html,application/xhtml+xml', ...headers },
+        ...(options.followRedirects === false ? { redirect: 'manual' as const } : {}),
         signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
       })
 

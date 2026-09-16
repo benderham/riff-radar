@@ -160,7 +160,7 @@ const writing = (
     schemaStatus?: number
     createStatus?: readonly number[]
     archiveStatus?: number
-    coverBody?: string
+    hasCover?: boolean
   } = {},
 ) => {
   const calls: { method: string; url: string; body?: string }[] = []
@@ -169,8 +169,10 @@ const writing = (
   const http: HttpPort = {
     get: async (url) => {
       calls.push({ method: 'get', url })
+      // The archive answers "there is art" with a redirect and "there is none"
+      // with a 404; neither carries an image.
       if (url.includes('coverartarchive')) {
-        return { status: over.coverBody === undefined ? 404 : 200, headers: {}, body: over.coverBody ?? '' }
+        return { status: over.hasCover === true ? 307 : 404, headers: {}, body: '' }
       }
       return { status: over.schemaStatus ?? 200, headers: {}, body: over.schema ?? SCHEMA }
     },
@@ -251,9 +253,7 @@ test('the shortlist is written one page per item, each carrying the run', async 
 })
 
 test('cover art is fetched per release and becomes the page cover; its absence is silent', async () => {
-  const { ports, calls } = writing({
-    coverBody: JSON.stringify({ images: [{ image: 'https://img/front.jpg', front: true }] }),
-  })
+  const { ports, calls } = writing({ hasCover: true })
   await proposeShortlist(ports, {
     token: 'secret',
     databaseId: 'db-1',
@@ -261,8 +261,11 @@ test('cover art is fetched per release and becomes the page cover; its absence i
     shortlist: [item()],
   })
 
-  assert.ok(calls.some((call) => call.url === 'https://coverartarchive.org/release-group/rg-1'))
-  assert.match(calls.find((call) => call.url.endsWith('/pages'))!.body!, /img\/front\.jpg/)
+  assert.ok(calls.some((call) => call.url === 'https://coverartarchive.org/release-group/rg-1/front'))
+  assert.match(
+    calls.find((call) => call.url.endsWith('/pages'))!.body!,
+    /coverartarchive\.org\/release-group\/rg-1\/front/,
+  )
 })
 
 test('an unverified release is not asked about at the cover art archive', async () => {

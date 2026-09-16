@@ -1,0 +1,34 @@
+{
+    "created": "2026-09-16T04:12:20.107Z",
+    "count": 1,
+    "offset": 0,
+    "release-groups": [
+        {
+            "id": "8c8418df-b881-491e-bbdc-39454b80f78d",
+            "score": 100,
+            "artist-credit-id": "f17fa328-4a96-3247-a41b-7c5c94c58728",
+            "count": 1,
+            "title": "T",
+            "first-release-date": "2026-09-11",
+            "artist-credit": [
+                {
+                    "name": "Mother of Millions",
+                    "artist": {
+                        "id": "378d9534-a92d-48bc-83a9-208a6db18c69",
+                        "name": "Mother of Millions",
+                        "sort-name": "Mother of Millions",
+                        "disambiguation": "Greek progressive metal band"
+                    }
+                }
+            ],
+            "releases": [
+                {
+                    "id": "c28a690c-ca1c-49dc-b9af-ef387471ccba",
+                    "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+                    "title": "T",
+                    "status": "Official"
+                }
+            ]
+        }
+    ]
+}

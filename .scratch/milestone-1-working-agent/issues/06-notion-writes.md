@@ -6,7 +6,7 @@ Cover art is fetched where it exists and never costs a Run when it does not.
 
 **Blocked by:** 01, 05
 
-**Status:** ready-for-human
+**Status:** done
 
 ## Acceptance criteria
 

@@ -38,7 +38,19 @@ export interface HttpPort {
    * user agent is always sent — and never carries a secret into the trace,
    * because nothing records the request headers.
    */
-  get(url: string, headers?: Record<string, string>): Promise<HttpResponse>
+  get(
+    url: string,
+    headers?: Record<string, string>,
+    options?: {
+      /**
+       * False to report a redirect rather than follow it. One caller needs it:
+       * the Cover Art Archive answers "there is art" with a 307 and "there is
+       * none" with a 404, so the redirect *is* the answer, and following it
+       * would download an image to learn what its status line already said.
+       */
+      readonly followRedirects?: boolean
+    },
+  ): Promise<HttpResponse>
 
   /**
    * The same contract as `get`, with a body. It exists for the one caller that
