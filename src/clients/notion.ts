@@ -29,6 +29,7 @@ import { NOTION_ENDPOINT, NOTION_PAGE_SIZE, NOTION_PROPERTIES, NOTION_VERSION } 
 import { artistTitleIdentity } from '../domain/candidates.ts'
 import { notionPage } from '../domain/notion-page.ts'
 import type { ShortlistItem } from '../domain/shortlist.ts'
+import { describeStatus } from '../domain/http-outcome.ts'
 import type { Ports } from '../ports.ts'
 import { coverArtUrl } from './coverart.ts'
 
@@ -131,7 +132,7 @@ export const suppressedReleases = async (
       // The body is not repeated: Notion echoes the request in its errors, and
       // the request carries the database id and could carry the token.
       throw new SuppressionUnavailable(
-        `Notion refused the suppression query with HTTP ${response.status}`,
+        `Notion refused the suppression query with ${describeStatus(response.status, response.body)}`,
       )
     }
 
@@ -178,7 +179,9 @@ export const preflightSchema = async (
   const response = await ports.http.get(`${NOTION_ENDPOINT}/databases/${databaseId}`, headersFor(token))
 
   if (response.status < 200 || response.status >= 300) {
-    throw new SchemaMismatch(`Notion refused to describe the database with HTTP ${response.status}`)
+    throw new SchemaMismatch(
+      `Notion refused to describe the database with ${describeStatus(response.status, response.body)}`,
+    )
   }
 
   let properties
@@ -209,7 +212,7 @@ const createPage = async (
   if (response.status < 200 || response.status >= 300) {
     // Notion echoes the request in its errors, and the request carries the
     // database id; the status is what says what to do about it.
-    throw new NotionWriteFailed(`Notion refused a page with HTTP ${response.status}`)
+    throw new NotionWriteFailed(`Notion refused a page with ${describeStatus(response.status, response.body)}`)
   }
 
   return z.object({ id: z.string() }).parse(JSON.parse(response.body)).id
@@ -223,7 +226,7 @@ const archivePage = async (ports: Ports, token: string, pageId: string): Promise
     headersFor(token),
   )
   if (response.status < 200 || response.status >= 300) {
-    throw new Error(`HTTP ${response.status} archiving ${pageId}`)
+    throw new Error(`${describeStatus(response.status, response.body)} archiving ${pageId}`)
   }
 }
 

@@ -29,7 +29,9 @@ export interface HttpResponse {
 
 export interface HttpPort {
   /**
-   * Resolves for any status. Only a transport failure rejects.
+   * Resolves for any status, and for no status at all: a request that never
+   * gets an answer comes back as status zero with the reason in the body
+   * (ADR-0043). Nothing here rejects.
    *
    * `headers` exists for the one caller that needs it: a search API
    * authenticates with a key in a header. It is additive — the project's own

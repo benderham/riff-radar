@@ -28,6 +28,7 @@ import type { Usage } from '../domain/cost.ts'
 import { NO_USAGE } from '../domain/cost.ts'
 import { htmlToText } from '../domain/html-text.ts'
 import type { DateWindow } from '../domain/window.ts'
+import { describeStatus } from '../domain/http-outcome.ts'
 import type { Ports } from '../ports.ts'
 
 const EXTRACT_PROMPT = readFileSync(fileURLToPath(new URL('../prompt/extract.md', import.meta.url)), 'utf8')
@@ -97,7 +98,7 @@ export const fetchSource = async (
       ...base,
       cleanedText: '',
       truncated: false,
-      warning: `${url} returned HTTP ${response.status}; no candidates from this source`,
+      warning: `${url} returned ${describeStatus(response.status, response.body)}; no candidates from this source`,
     }
   }
 
