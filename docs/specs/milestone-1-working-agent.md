@@ -13,10 +13,10 @@ The agent replaces discovery, selection and record creation. It does not replace
 ## Agent workflow
 
 1. Resolve the date range to absolute dates.
-2. Preflight the Notion schema.
+2. Preflight the Notion schema, and read what Notion already holds. Either failing refuses the run before the run row exists, so nothing is spent and nothing is left behind (ADR-0039, ADR-0042).
 3. Loop: the model chooses one action per step.
 4. On termination, validate the shortlist.
-5. If nothing blocks the write, upsert the shortlist to Notion.
+5. If nothing blocks the write, create one Notion page per item. There is no upsert: a release Notion already holds was suppressed in step 2 and never reached the model, which is what makes a re-run propose nothing twice.
 6. Persist the trace and final run state.
 
 ## CLI input
@@ -31,7 +31,7 @@ riff-radar run [--last-days N] [--dry-run]
 
 | Source | Included |
 |---|---|
-| `albumoftheyear.org/genre/40-metal/recent/` | yes |
+| `albumoftheyear.org/genre/40-metal/recent/` | no — answers every request with a bot challenge, see ADR-0031 |
 | `en.wikipedia.org/wiki/2026_in_heavy_metal_music` | yes |
 | `loudwire.com/2026-hard-rock-metal-album-release-calendar/` | yes |
 | `metal-archives.com/release/upcoming` | no — upcoming only, see ADR-0002 |
@@ -163,8 +163,9 @@ Any one of these blocks the write entirely. Writes are all-or-nothing; there is 
 - shortlist validation failed;
 - zero items;
 - termination reason not `completed` or `completed_short`;
-- Notion schema preflight failed;
 - missing credentials.
+
+Two of these are reached earlier than the write and refuse the run outright rather than blocking it: missing credentials, in the CLI, and a Notion schema that does not match, in the preflight (ADR-0042). The answer is the same and finding out first costs no model tokens.
 
 ## Technology
 
