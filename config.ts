@@ -228,9 +228,10 @@ export const NOTION_PROPOSED = 'Proposed'
 export const APPLE_MUSIC_SEARCH = 'https://music.apple.com/search?term='
 
 /**
- * Cover art, best-effort (ADR-0042). The JSON index is read rather than the
- * `/front` redirect, so the `http` port never carries an image: the index names
- * an address Notion fetches for itself when it renders the page.
+ * Cover art, best-effort (ADR-0042). `/front` under this answers 307 with the
+ * image's address when there is art and 404 when there is not, so one request
+ * that is not followed settles it and no image ever travels through this
+ * process: Notion fetches the picture for itself when it renders the page.
  *
  * A release with no MusicBrainz id has no cover to ask for, and a failure here
  * is a page without a picture rather than a failed run.

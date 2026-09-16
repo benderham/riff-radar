@@ -6,6 +6,10 @@
  * and one that does not. The second is the case that matters, because a cover
  * that is missing must be silence rather than a failure — a run is never worth
  * losing over a picture.
+ *
+ * It also confirms the shape the client rests on: that the archive answers with
+ * a redirect rather than an image, which is what keeps this project off the
+ * numbered storage hosts the redirect points at.
  */
 
 import process from 'node:process'
