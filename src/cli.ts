@@ -18,6 +18,8 @@ import { httpAdapter } from './adapters/http.ts'
 import { runRiffRadar } from './agents/riff-radar.ts'
 import { NotionRefusal } from './clients/notion.ts'
 import { UsageError, parseCliArgs } from './domain/cli-args.ts'
+import { appleMusicSearchUrl } from './domain/notion-page.ts'
+import type { ShortlistItem } from './domain/shortlist.ts'
 import { tasteProfileSchema } from './domain/taste-profile.ts'
 import type { Ports } from './ports.ts'
 import type { Store } from './store/store.ts'
@@ -39,6 +41,22 @@ export interface CliDependencies {
   readonly log: (line: string) => void
   readonly readTasteProfile?: () => unknown
 }
+
+/**
+ * The shortlist, for the terminal.
+ *
+ * The same items the write turns into pages, printed whether or not it wrote
+ * them: on a dry run this is the whole point of the run, and on a real one it
+ * is what landed in Notion. Pure, so the shape is tested without a run.
+ */
+export const shortlistLines = (shortlist: readonly ShortlistItem[]): string[] =>
+  shortlist.flatMap((item) => [
+    `  ${item.rank}. ${item.artist} — ${item.title} (${item.releaseDate})${
+      item.musicbrainzId === undefined ? ' [unverified]' : ''
+    }`,
+    `     ${item.rationale}`,
+    `     ${appleMusicSearchUrl(item.artist ?? '', item.title ?? '')}`,
+  ])
 
 export const runCli = async ({
   argv,
@@ -93,6 +111,7 @@ export const runCli = async ({
         outcome.notionWritePerformed ? 'yes' : 'no'
       }`,
     )
+    for (const line of shortlistLines(outcome.shortlist)) log(line)
     if (outcome.notionWriteError !== undefined) log(`notion write failed: ${outcome.notionWriteError}`)
     log(
       `${outcome.stepCount} steps; ${outcome.usage.uncachedInputTokens} uncached + ${

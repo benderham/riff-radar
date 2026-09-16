@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { NOTION_ENDPOINT, NOTION_PROPERTIES } from '../config.ts'
-import { EXIT_REFUSED, runCli } from './cli.ts'
+import { EXIT_REFUSED, runCli, shortlistLines } from './cli.ts'
 import type { ClockPort, HttpPort, ModelPort } from './ports.ts'
 import { openStore } from './store/store.ts'
 
@@ -184,4 +184,29 @@ test('a Notion database that cannot be read is a refusal, not a crash', async ()
   assert.equal(code, EXIT_REFUSED)
   assert.match(test_.lines.join('\n'), /cannot start: Notion refused/)
   assert.equal(test_.store?.database.prepare('SELECT count(*) AS n FROM runs').get()?.['n'], 0)
+})
+
+test('the shortlist is printed, so a dry run shows what it would have written', () => {
+  const lines = shortlistLines([
+    {
+      artist: 'Ulcerate',
+      title: 'Cutting the Throat of God',
+      releaseDate: '2026-09-11',
+      rank: 1,
+      rationale: 'Watch-list artist, dissonant death metal.',
+      musicbrainzId: 'rg-1',
+    },
+    { artist: 'Chat Pile', title: 'Cool World', releaseDate: '2026-09-12', rank: 2, rationale: 'Adjacent.' },
+  ])
+
+  assert.deepEqual(lines, [
+    '  1. Ulcerate — Cutting the Throat of God (2026-09-11)',
+    '     Watch-list artist, dissonant death metal.',
+    '     https://music.apple.com/search?term=Ulcerate%20Cutting%20the%20Throat%20of%20God',
+    // A release MusicBrainz has never heard of says so here, because it is the
+    // one line Ben reads before he trusts the row.
+    '  2. Chat Pile — Cool World (2026-09-12) [unverified]',
+    '     Adjacent.',
+    '     https://music.apple.com/search?term=Chat%20Pile%20Cool%20World',
+  ])
 })

@@ -59,6 +59,8 @@ export interface RunOutcome {
   readonly window: DateWindow
   readonly terminationReason: TerminationReason
   readonly shortlistSize: number
+  /** The items, in the order they were ranked. Empty unless the reason permits a write. */
+  readonly shortlist: readonly ShortlistItem[]
   readonly notionWritePerformed: boolean
   /** Present only when a permitted write was attempted and failed. */
   readonly notionWriteError?: string
@@ -452,6 +454,7 @@ export const runRiffRadar = async ({
     window,
     terminationReason,
     shortlistSize,
+    shortlist: shortlistSize === 0 ? [] : shortlist,
     notionWritePerformed,
     ...(notionWriteError === undefined ? {} : { notionWriteError }),
     usage,
