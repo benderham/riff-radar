@@ -68,3 +68,23 @@ A shortlist item's position relative to the others in the same run. Distinct fro
 **Termination Reason**:
 The single recorded explanation of why a run stopped. Every run has exactly one.
 _Avoid_: exit code, outcome, result
+
+**Failure Category**:
+What went wrong outside the process, in one of six words. Distinct from Termination Reason: a category describes a failed external call, a reason describes a stopped run.
+_Avoid_: error type, error code, failure mode
+
+**Checkpoint**:
+The recorded step a run can be restarted from. The trace is the checkpoint; there is no separate saved state.
+_Avoid_: snapshot, savepoint, recovery point
+
+**Resume**:
+Continuing one interrupted run from its last checkpoint, with its working memory and its spent budget carried over. Always asked for by name.
+_Avoid_: retry, restart, continue
+
+**Re-run**:
+A new run over a window an earlier run already covered. It inherits nothing, and what the earlier run wrote to Notion is suppressed, so it proposes what Ben has not seen. Distinct from Resume.
+_Avoid_: rerun of, repeat, second pass
+
+**Degraded**:
+A run that finished without a provider it would normally use, judging on weaker evidence and recording what it could not check.
+_Avoid_: fallback, partial, best-effort

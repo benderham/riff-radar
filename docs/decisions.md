@@ -462,3 +462,115 @@ That ordering was backwards, and the argument for changing it is not that the re
 One thing in the ticket was not implemented as written, and deliberately. It asked that an untyped release be reported as Unverified, "exactly as an unheard-of release does". That would be wrong: Unverified means MusicBrainz cannot identify the release (CONTEXT.md), and here it has — the identity, the date and the track count are all confirmed. Only the format is unknown. Marking it Unverified would throw away a release-group id that suppression depends on, to express an uncertainty about something else entirely. The release keeps its identity; the reason recorded against it says what was actually missing.
 
 **Consequences:** A source that mislabels an untyped release is now believed. The exposure is narrow — it needs MusicBrainz to be missing a type *and* the calendar to be wrong about the format — and the alternative was refusing records like this one, which is a worse trade for a shortlist of five a week. The other half of the fix is not code and is Ben's: MusicBrainz is user-editable, and setting the type corrects the record for everyone.
+
+## ADR-0046: The trace is the checkpoint, and only the candidate list is stored
+
+**Status:** ACCEPTED — Ben's decision, 16 September 2026. Defines milestone 2's checkpointing.
+
+Milestone 2 requires state checkpointed after every step and a run that can resume from it. The obvious design is a second table holding the loop's working memory, serialised per step. It is not taken. `steps` already records, for every step, the model's raw response, the dispatched action, the tool's result, the usage and the timing — which is almost the whole of what the loop holds. A second representation of the same run is a second thing that can disagree with the first, and the trace is the artefact this project exists to make load-bearing.
+
+So resume replays the trace. `messages` is rebuilt from `model_response` and `tool_result`; usage is the sum of the step columns; the consecutive-invalid counter is the trailing run of `invalid_action` steps; the MusicBrainz degraded counter is the trailing run of failed `lookup_release` steps.
+
+One thing is not derivable and is therefore stored. `fetch_source` returns the whole merged candidate list in its result, but `lookup_release` does not: it enriches `context.candidates` in place, collapses them by release group, and returns only reshaped facts about the one release it looked up. Rebuilding candidates after a lookup would mean writing an inverse of that reshaping and re-running the collapse — a function that would break silently and be believed. `steps` gains one nullable column, `candidates_after`, holding the run's candidate list as JSON.
+
+**Consequences:** The candidate list is re-serialised on every step, so a busy run writes it twenty-odd times. That is kilobytes and it buys a resume that cannot be subtly wrong. If the loop ever gains working memory beyond candidates, the honest move is another column rather than a clever derivation. The trace is now the thing a resume trusts, which means a corrupted or truncated trace is a run that cannot be resumed — correctly, because it is also a run that cannot be explained.
+
+## ADR-0047: Resume is explicit, and a resumed run is a new row
+
+**Status:** ACCEPTED — Ben's decision, 16 September 2026.
+
+Two runs over the same window are both legitimate and they are not the same operation. A **Resume** continues one interrupted run from its last checkpoint: Ben lost it to a kill and wants the work back. A **Re-run** starts a fresh run over the same dates: Ben reviewed the first five and wants the next five, which works because what the first run wrote is suppressed.
+
+Nothing infers which was meant. `--resume <run-id>` is required, takes no window argument, and its absence always means a new run — even when an unfinished run for the same dates exists. The CLI may mention such a run; it must not act on it. An inferred resume would silently turn a deliberate second run into a continuation and hand Ben nothing new, which is the failure mode that is hardest to notice.
+
+A resume creates a new run row carrying `resumed_from`, rather than appending to the parent's. The parent keeps its trace and is closed with `aborted`, so exactly one termination reason per run still holds and a run row never changes its mind. Step indices restart at zero in the child, because `step_index` is a position within a run and `UNIQUE (run_id, step_index)` already treats it that way; duplicating the parent's indices would make the child's trace lie about its own length. `scripts/trace.ts` follows `resumed_from` and prints the chain as one story.
+
+A resume is refused when the run id does not exist, when the run already has a termination reason, when it has no recorded steps, or when its `prompt_version`, `profile_version` or `action_schema_version` differs from the current configuration. The last is the one worth stating: a run half-built under an old prompt and finished under a new one produces a trace nobody can reason about, and milestone 3 would have to exclude it from every measurement.
+
+**Consequences:** Editing the prompt or the taste profile invalidates every unfinished run, which is correct and will still be annoying. Two run rows describe one piece of work, so every query that counts runs has to decide whether a resumed pair is one or two; `resumed_from` makes that answerable rather than guessable.
+
+## ADR-0048: Six failure categories, recorded on the step, with no new termination reasons
+
+**Status:** ACCEPTED — Ben's decision, 16 September 2026. Extends ADR-0043.
+
+Today the only explicit distinction between external failures is answered versus never-answered (ADR-0043); everything else is prose in a warning. Milestone 3 has to count failure categories, and counting prose means regexes over a column written for humans.
+
+Six categories, produced by a pure function of status and body in `src/domain/failure.ts`: `transient` (no answer, 5xx), `rate_limited` (429, or a provider's own gate), `refused` (401, 403 — credentials or a bot wall), `not_found` (404, which is an answer), `malformed` (a 2xx whose body failed its schema), and `unavailable` (a provider that has failed enough times to stop knocking). The first two retry; the rest do not. `rate_limited` is kept separate from `transient` only because `Retry-After` changes the backoff.
+
+The category is recorded in a new nullable `failure_category` column on `steps`, constrained to those six values the way `termination_reason` is constrained on `runs`. The prose stays where it is; the category sits beside it as the countable thing, so milestone 3's failure report is a `GROUP BY` and not a parser. Where one step makes several external calls, the recorded category is that of the failure which produced the step's warning — categories are per step, and per-request detail lives in the retry count and the prose.
+
+No new termination reasons. `tool_failure` plus the step's category already answers both "why did the run stop" and "what kind of thing broke", and splitting the reason would force milestone 3 to map ten reasons onto six categories for no gain. The one thing corrected is the existing shoehorn: a model failure records `tool_failure` with a category on its step, so the apology in the loop's comment becomes data.
+
+**Consequences:** Nine termination reasons and six categories are two vocabularies a reader must hold at once. They answer different questions — one is about the run, one is about the outside world — and `CONTEXT.md` now says so. A category that turns out to be too coarse cannot be split without a schema change, because it is a CHECK constraint; that is the same trade already made for termination reasons, and it is the reason the set is deliberately small.
+
+## ADR-0049: Retry lives in the HTTP adapter, bounded at three attempts
+
+**Status:** ACCEPTED — Ben's decision, 16 September 2026.
+
+The adapter already owns the contract that nothing below the clients throws (ADR-0043); it now also owns trying again. Three attempts, exponential backoff of roughly one, two and four seconds with jitter, `Retry-After` honoured when a provider states it, and only for `transient` and `rate_limited`. Everything else is an answer and is returned immediately.
+
+The alternatives were a helper each client wraps its own call in — four call sites and four chances to forget one, with the forgotten one invisible until a Friday — and retrying the whole action at the loop, which is the wrong altitude: it would re-run a page fetch and a model extraction to recover from a dropped packet.
+
+`HttpResponse` gains `attempts`, so a retried call is visible to the client above it and therefore in the trace. Without it, retry would make the system quietly more reliable and completely unexplainable, which is the opposite of what this project is for. MusicBrainz's one-request-per-second gate stays in its client: it is a politeness rule, not a response to failure.
+
+**Consequences:** A retried request inflates its step's `duration_ms`, so milestone 3's latency figures will be lumpy and `attempts` is what explains the lumps. There is deliberately no per-run retry budget; a run that dies to accumulated backoff has not happened yet, and the step and cost ceilings already bound the run. Three attempts against a provider that is down adds about seven seconds per call before the run learns anything, which is what makes MusicBrainz's degraded mode (ADR-0052) necessary rather than merely nice.
+
+## ADR-0050: A resumed run inherits its parent's ceilings
+
+**Status:** ACCEPTED — Ben's decision, 16 September 2026.
+
+Both ceilings are per run in the code: thirty steps and USD 0.25. A resumed run is a new row (ADR-0047), so the question is whether it starts them at zero. It does not: resume loads the parent's accumulated usage and step count and continues against the same limits.
+
+Fresh ceilings would make an interruption a way to buy a bigger budget, and a crash-loop a way to spend without one. The ceilings exist to bound what one *question* costs, not what one process costs, and a resume is the same question. `resumed_from` makes the inherited totals auditable rather than magic.
+
+**Consequences:** Resuming a run that died at step 28 is very nearly pointless — it gets two steps and will probably end `max_steps_exceeded`. That is correct, and the right response is a re-run, but it will look like a broken feature the first time it happens, so the spec says it out loud. The cost accounting for a resumed pair must be read as a chain; `npm run trace` following `resumed_from` is what makes the total visible without a query.
+
+## ADR-0051: A half-written Notion database is correct but incomplete, and suppression already fixes it
+
+**Status:** ACCEPTED — Ben's decision, 16 September 2026. Closes carried-forward item 4 and settles what ADR-0042's rollback is for.
+
+A run killed part way through the Notion write leaves rows behind that its own run row does not know about, and `carried-forward.md` framed the consequence as a hazard: suppression will hide those rows from the next run. That framing was wrong, and the reason is a fact about how Ben actually uses the system.
+
+A second run over the same window is not a repair attempt. It is Ben having reviewed the first five and wanting the next five, and it works precisely because the suppression read drops what Notion already holds and the model proposes what it has not seen. Which means "repeated runs cannot create duplicate Notion records" is a promise about duplicate *releases*, not about one write per window — and a kill that leaves three of five rows behind leaves three rows that are *correct*. The next run suppresses them and proposes the remaining two. That is the desired outcome, reached with no new machinery.
+
+So no write-intent journal and no per-page idempotency key. Both were considered and both add a second mechanism to solve a problem the memory that already exists solves better. Resume re-reads the suppression set and the schema preflight exactly as a fresh run does, which is what makes resume and re-run one startup path differing only in whether working memory is replayed.
+
+**Consequences:** ADR-0042's rollback is now the thing that keeps a *survivable* failure all-or-nothing, not the thing that protects against a kill; a kill needs no protection. A shortlist can be split across two runs, so a release the first run ranked second may reach Notion below one the second run ranked first — Ben reviews everything anyway and rank is per run, but the Notion database is not a single ordered list and never was. The claim now has to be evidenced rather than argued: a run killed mid-write, followed by a re-run, with both traces exported.
+
+## ADR-0052: MusicBrainz degrades after two silent lookups rather than spending the run knocking
+
+**Status:** ACCEPTED — Ben's decision, 16 September 2026. Implements the sketch in carried-forward item 3.
+
+Ben's own machine cannot reach MusicBrainz — his IP is blocked — and every run so far has come from a development sandbox. A run whose lookups all fail survives (ADR-0043) but proposes nothing, because an unlooked-up release is excluded: it ends `validation_failed` holding a shortlist built in good faith. With retry (ADR-0049) each of those futile lookups now costs seven seconds before it fails.
+
+After two consecutive `lookup_release` steps whose failure category is `transient` or `unavailable`, the run is Degraded. From then on `lookup_release` returns immediately without a request, telling the model that MusicBrainz is unavailable and that releases will be judged on their source's stated format — which is already the rule for an untyped release group (ADR-0045), so the machinery exists and nothing new is invented under failure.
+
+What is lost is stated rather than discovered: no reissue or remaster detection, no EP track and duration thresholds, and the label, genre and personnel terms drop out of ranking. `runs` gains `musicbrainz_degraded`, and the shortlist items say so. The run still completes and still writes, because a degraded shortlist Ben reviews is worth more than a dead run, and Ben reviews everything.
+
+No new termination reason: degradation is a property of a run, not a reason it stopped.
+
+**Consequences:** A degraded run can propose a reissue or a live album that a source mislabelled, with nothing to catch it — the same narrow exposure ADR-0045 accepted, now reachable by an outage rather than by a missing field. Two consecutive failures is a low bar and a single flaky minute will trip it; the alternative is a run that spends its ceiling discovering the same fact more slowly. Degraded runs must be excluded from, or labelled in, milestone 3's evaluation, or they will look like a ranking regression.
+
+## ADR-0053: A refused shortlist is handed back once before the run ends
+
+**Status:** ACCEPTED — Ben's decision, 16 September 2026. Amends ADR-0035.
+
+Validation at `finish` is all-or-nothing and `finish` ends the run, so one ineligible item among five means `validation_failed`, nothing written, and the whole run's cost spent. This happened twice in a row on 16 September on the same release. The immediate cause was fixed — the model is now told at lookup time that a release is ineligible — but the structural fault stood: the last step of a run had no way to fail softly.
+
+When `validateShortlist` refuses, the errors are returned to the model as a tool message, using the mechanism that already exists for an invalid action, and the model may call `finish` once more. A second refusal ends the run at `validation_failed`.
+
+One repair, not three. By that point the model has already been told the item is ineligible at lookup time; a second failure means it is not listening, and further attempts buy tokens rather than a shortlist.
+
+The guardrail is untouched and that is the point: the validator still decides, still runs before any write, and still refuses. What changes is only that the model gets one chance to drop an item it should not have included.
+
+**Consequences:** A run can now spend one extra model call on its last step, which the cost ceiling already bounds. `validation_failed` becomes rarer and therefore more meaningful — it now means the model was told twice. The repair attempt is a recorded step like any other, so the trace shows the refusal, the errors handed back, and the corrected shortlist, which is the observable version of a guardrail working.
+
+## ADR-0054: Time passes through the clock port
+
+**Status:** ACCEPTED — Ben's decision, 16 September 2026. Extends ADR-0018 and completes ADR-0049.
+
+Backoff needs time to pass in a way tests can control, or the suite spends seven seconds per retry case. The adapter already injects `fetchImpl` for its own tests, so the cheap move was a second injected `sleep` beside it. `ClockPort` gains `sleep(ms)` instead, and the adapter takes the clock at construction.
+
+The cheap move would have made the outside world reachable from two places, which is exactly what ADR-0018 exists to prevent — and the project already has evidence of the cost: the MusicBrainz gate calls `setTimeout` directly, and its tests only avoid waiting a real second because they happen to control `clock.now()` so the computed delay is zero. That is a test passing for a reason unrelated to what it asserts. The gate moves to the same `sleep`.
+
+**Consequences:** `ClockPort` is no longer only a reader of the current instant, so its name is now slightly narrower than its job. Every fake clock in the test suite grows a method. In exchange there is one place where the process waits, and a test that fakes it sees every wait in the system — including the two that currently compose by accident, retry and the rate-limit gate.
