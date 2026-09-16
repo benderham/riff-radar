@@ -37,15 +37,17 @@ Two runs, two stories, four exported traces:
 
 | # | Ticket | Blocked by |
 | - | ------ | ---------- |
-| 01 | Failure categories | — |
+| 01 | Failure categories, and the schema's four columns | — |
 | 02 | Bounded retry in the HTTP adapter | 01 |
-| 03 | Checkpointed state | 01 |
-| 04 | Resume an interrupted run | 03 |
+| 03 | Resume a killed run | 01 |
+| 04 | What a resume refuses, and what it inherits | 03 |
 | 05 | MusicBrainz degraded mode | 01, 02 |
 | 06 | One repair at `finish` | — |
 | 07 | Milestone evidence | 01–06 |
 
-01 first, because three others need the category function. 06 is blocked by nothing and is the one to drop if the milestone runs long, at the cost of leaving carried-forward item 2 open.
+01 first: it is the prefactor, and three other tickets need the category function. It also carries all four new columns, including three that nothing populates until 03, so that an out-of-date database is deleted once rather than twice.
+
+06 is blocked by nothing and is the one to drop if the milestone runs long, at the cost of leaving carried-forward item 2 open.
 
 ## Out of scope
 

@@ -1,6 +1,6 @@
-# 01: External failures get six names
+# 01: External failures get six names, and the schema gets its columns
 
-**What to build:** A pure function from an HTTP response to one of six failure categories, and a `failure_category` column on `steps` that records it.
+**What to build:** A pure function from an HTTP response to one of six failure categories, wired into every client, plus the four new columns this milestone needs — in one schema change.
 
 **Blocked by:** —
 
@@ -10,7 +10,9 @@
 
 The only explicit distinction between external failures today is answered versus never-answered (`src/domain/http-outcome.ts`, ADR-0043). Everything else is prose: `"Loudwire: HTTP 503"`, `"no answer: fetch failed (ENOTFOUND)"`. A human reads those fine. Milestone 3 has to *count* them, and counting prose means regexes over a column written for people.
 
-Two other tickets need this before they can start. Retry (02) needs to know which failures are worth retrying, and degraded mode (05) needs to know which lookups count towards giving up.
+Three other tickets need this before they can start. Retry (02) needs to know which failures are worth retrying, resume (03) needs the columns, and degraded mode (05) needs to know which lookups count towards giving up.
+
+This is the prefactor, and it is deliberately not a vertical slice. It also carries three columns that nothing populates until ticket 03, which is the point: `assertSchemaIsCurrent` refuses an out-of-date database and tells Ben to delete it, so one schema change means he does that once rather than twice.
 
 ## What
 
@@ -27,11 +29,23 @@ Two other tickets need this before they can start. Retry (02) needs to know whic
 
 `malformed` and `unavailable` are not derivable from a status alone: `malformed` is raised by a client after a parse fails, and `unavailable` is set by ticket 05. The function covers what a status and body can say; the other two are passed in by the caller that knows.
 
+## The columns
+
+Four, all nullable or defaulted, in one change to the schema:
+
+- `steps.failure_category TEXT` — constrained by a `CHECK` listing the six values, in the same style as `runs.termination_reason`. Populated by this ticket.
+- `steps.candidates_after TEXT` — the run's candidate list as JSON. Populated by ticket 03 (ADR-0046).
+- `runs.resumed_from TEXT` — the parent run id, referencing `runs(run_id)`. Populated by ticket 03.
+- `runs.musicbrainz_degraded INTEGER DEFAULT 0` — constrained to 0 or 1. Populated by ticket 05.
+
+No migration. `assertSchemaIsCurrent` will refuse the existing database and name all four; export anything worth keeping with `npm run trace` before deleting it. The rule holds because `*.db` is gitignored and evidence is already committed as exported JSON.
+
 ## Acceptance criteria
 
 - [ ] `src/domain/failure.ts` exports a `FailureCategory` union of exactly those six values and a function mapping `(status, body)` to a category or `undefined` for success
 - [ ] Unit tested across every category, including status 0, 429, 503, 401, 403, 404, and a 2xx
-- [ ] `steps` gains `failure_category TEXT` with a `CHECK` constraint listing the six values, nullable, in the same style as `runs.termination_reason`
+- [ ] All four columns are added in one schema change, with their constraints
+- [ ] `assertSchemaIsCurrent` refuses the old database and names all four new columns — the existing behaviour, confirmed by test, not changed
 - [ ] Every client that records a warning or an error also records the category: sources, MusicBrainz, search, cover art, Notion
 - [ ] A 2xx whose body fails its schema records `malformed` — the extraction path at `src/clients/sources.ts:133` and the Notion parse paths are the cases that exist today
 - [ ] A model call that fails records `tool_failure` as the run's reason and a category on its step, replacing the shoehorn apologised for in the comment at `src/agents/riff-radar.ts:175`
