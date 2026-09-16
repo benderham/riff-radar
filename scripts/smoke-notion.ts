@@ -18,7 +18,8 @@ import process from 'node:process'
 
 import { httpAdapter } from '../src/adapters/http.ts'
 import { NOTION_ENDPOINT, NOTION_VERSION } from '../config.ts'
-import { suppressedReleases } from '../src/clients/notion.ts'
+import { preflightSchema, suppressedReleases } from '../src/clients/notion.ts'
+import { notionPage } from '../src/domain/notion-page.ts'
 import type { Ports } from '../src/ports.ts'
 
 const token = process.env['NOTION_TOKEN'] ?? ''
@@ -66,3 +67,33 @@ console.log(`${byMusicbrainzId} by MusicBrainz id, ${suppressed.size - byMusicbr
 
 if (first !== undefined && missing.length > 0) process.exit(1)
 console.log('\nthe database answers in the shape suppression reads')
+
+// ── The write, in dry run ────────────────────────────────────────────────────
+// The preflight against the real schema, and the page a real shortlist item
+// would become. Nothing is posted: this is the shape of a write, not a write.
+
+try {
+  await preflightSchema(ports, token, databaseId)
+  console.log('preflight: the database carries every property a run writes')
+} catch (error) {
+  console.error(`preflight failed: ${(error as Error).message}`)
+  process.exit(1)
+}
+
+const page = notionPage(
+  {
+    artist: 'Ulcerate',
+    title: 'Cutting the Throat of God',
+    releaseDate: '2026-09-11',
+    sourceUrls: ['https://loudwire.com/2026-hard-rock-metal-album-release-calendar/'],
+    rank: 1,
+    rationale: 'A smoke test, and not a real proposal.',
+    musicbrainzId: '00000000-0000-0000-0000-000000000000',
+  },
+  { databaseId, runId: 'smoke', coverUrl: 'https://example.invalid/front.jpg' },
+)
+
+// The database id is in the body, so the properties are printed and the parent
+// is not: this output goes into a terminal and a terminal goes into a log.
+console.log(`dry run, would create: ${JSON.stringify(page.properties)}`)
+console.log('\nnothing was written')

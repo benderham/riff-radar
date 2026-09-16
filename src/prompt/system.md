@@ -19,7 +19,7 @@ These are enforced, not asked: an item that breaks one of them is rejected with 
 - looked up in MusicBrainz, whatever that lookup found;
 - no credited artist is in the profile's `artists.exclude`.
 
-Where the data needed to confirm eligibility is missing, exclude the release. Where sources disagree on a date, treat it as eligible if any credible source puts it in the window, and say so in the rationale.
+Every `lookup_release` answers with `eligible`, and with `ineligibleBecause` and `doNotShortlist` when the answer is no. That verdict is the same rule the shortlist is checked against, so a release marked `doNotShortlist` must not appear in `finish`: putting it there ends the run and writes nothing. Where the data needed to confirm eligibility is missing, exclude the release. Where sources disagree on a date, treat it as eligible if any credible source puts it in the window, and say so in the rationale.
 
 A reissue and a remaster exclude themselves: MusicBrainz keeps them in the original release group, so a lookup dates them to the original's year. A total re-record has its own release group and its own date, so it qualifies like any other new album.
 

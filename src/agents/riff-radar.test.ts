@@ -6,6 +6,7 @@ import {
   MAX_RUN_COST_USD,
   MUSICBRAINZ_ENDPOINT,
   NOTION_ENDPOINT,
+  NOTION_PROPERTIES,
   PROMPT_VERSION,
   SOURCES,
 } from '../../config.ts'
@@ -22,6 +23,11 @@ import type {
 } from '../ports.ts'
 import { openStore } from '../store/store.ts'
 import { runRiffRadar } from './riff-radar.ts'
+
+/** Only the Notion write patches anything; every other fake refuses. */
+const notPatched = async (): Promise<never> => {
+  throw new Error('unexpected patch')
+}
 
 const fixture = (name: string) =>
   readFileSync(new URL(`../../fixtures/${name}`, import.meta.url), 'utf8')
@@ -95,6 +101,7 @@ const notSearched = async (): Promise<never> => {
 
 /** Every source serves the same page unless a test says otherwise. */
 const fixtureHttp = (body = PAGE, status = 200): HttpPort => ({
+  patch: notPatched,
   get: async (url) =>
     isMusicbrainz(url)
       ? { status: 200, headers: { 'content-type': 'application/json' }, body: musicbrainzBody(url) }
@@ -103,31 +110,69 @@ const fixtureHttp = (body = PAGE, status = 200): HttpPort => ({
 })
 
 /**
- * A Notion database holding whatever a test says it holds, and nothing by
- * default. Every run reads it before it starts, so every fake has to answer:
- * the read is the run's memory, and a run without it does not begin (ADR-0039).
+ * Notion: the schema it describes, the records it holds, the pages it accepts.
+ *
+ * Every run reads it twice before it starts — once for the schema, once for the
+ * memory — so every fake has to answer both, and a run without them does not
+ * begin (ADR-0039, ticket 06). What was written and what was archived come back
+ * beside the port, because the write is the thing under test.
  */
-const withNotion = (http: HttpPort, rows: readonly { artist: string; title: string }[]): HttpPort => ({
-  ...http,
-  post: async (url, body, headers) =>
-    url.startsWith(NOTION_ENDPOINT)
-      ? {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            results: rows.map((row) => ({
-              properties: {
-                Album: { title: [{ plain_text: row.title }] },
-                Artist: { rich_text: [{ plain_text: row.artist }] },
-                Status: { select: { name: 'Rejected' } },
-              },
-            })),
-            has_more: false,
-            next_cursor: null,
-          }),
-        }
-      : http.post(url, body, headers),
+const NOTION_SCHEMA = JSON.stringify({
+  properties: Object.fromEntries(
+    Object.entries(NOTION_PROPERTIES).map(([name, type]) => [name, { type }]),
+  ),
 })
+
+const withNotion = (
+  http: HttpPort,
+  rows: readonly { artist: string; title: string }[],
+  over: { schema?: string; createStatus?: readonly number[] } = {},
+) => {
+  const written: { properties: Record<string, Record<string, unknown>> }[] = []
+  const archived: string[] = []
+  const json = { 'content-type': 'application/json' }
+
+  const port: HttpPort = {
+    ...http,
+    get: async (url, headers) =>
+      url.startsWith(NOTION_ENDPOINT)
+        ? { status: 200, headers: json, body: over.schema ?? NOTION_SCHEMA }
+        : http.get(url, headers),
+
+    post: async (url, body, headers) => {
+      if (url === `${NOTION_ENDPOINT}/pages`) {
+        written.push(JSON.parse(body))
+        const status = over.createStatus?.[written.length - 1] ?? 200
+        return { status, headers: json, body: JSON.stringify({ id: `page-${written.length}` }) }
+      }
+
+      return url.startsWith(NOTION_ENDPOINT)
+        ? {
+            status: 200,
+            headers: json,
+            body: JSON.stringify({
+              results: rows.map((row) => ({
+                properties: {
+                  Album: { title: [{ plain_text: row.title }] },
+                  Artist: { rich_text: [{ plain_text: row.artist }] },
+                  Status: { select: { name: 'Rejected' } },
+                },
+              })),
+              has_more: false,
+              next_cursor: null,
+            }),
+          }
+        : http.post(url, body, headers)
+    },
+
+    patch: async (url) => {
+      archived.push(url)
+      return { status: 200, headers: json, body: '{}' }
+    },
+  }
+
+  return { port, written, archived }
+}
 
 /** Every `now()` is a second after the last, so durations are observable. */
 const tickingClock = (from = new Date(2026, 8, 14, 9, 0, 0)): ClockPort => {
@@ -242,15 +287,21 @@ const run = async (
     http: HttpPort
     profile: TasteProfile
     alreadyInNotion: readonly { artist: string; title: string }[]
+    notionSchema: string
+    createStatus: readonly number[]
   }> = {},
 ) => {
   const store = openStore(':memory:')
+  const notion = withNotion(args.http ?? fixtureHttp(), args.alreadyInNotion ?? [], {
+    ...(args.notionSchema === undefined ? {} : { schema: args.notionSchema }),
+    ...(args.createStatus === undefined ? {} : { createStatus: args.createStatus }),
+  })
   const outcome = await runRiffRadar({
     args: { command: 'run', lastDays: 7, dryRun: args.dryRun ?? false, raw: 'run' },
     ports: {
       clock: tickingClock(),
       model,
-      http: withNotion(args.http ?? fixtureHttp(), args.alreadyInNotion ?? []),
+      http: notion.port,
     },
     store,
     profile: args.profile ?? profile,
@@ -264,8 +315,15 @@ const run = async (
     .prepare('SELECT * FROM steps WHERE run_id = ? ORDER BY step_index')
     .all(outcome.runId)
 
-  return { outcome, store, runRow, stepRows }
+  return { outcome, store, runRow, stepRows, written: notion.written, archived: notion.archived }
 }
+
+/**
+ * The finish step, which is no longer the last step: a run that writes to
+ * Notion records that afterwards.
+ */
+const finishRow = (stepRows: readonly Record<string, unknown>[]): Record<string, unknown> =>
+  stepRows.findLast((row) => row['kind'] === 'finish') ?? assert.fail('no finish step')
 
 // ── Termination reasons ──────────────────────────────────────────────────────
 
@@ -300,7 +358,7 @@ test('finish with an invalid shortlist ends the run validation_failed', async ()
   assert.equal(outcome.terminationReason, 'validation_failed')
   assert.equal(outcome.shortlistSize, 0, 'an invalid shortlist is not a shortlist')
   assert.equal(runRow?.['notion_write_performed'], 0)
-  assert.match(String(stepRows.at(-1)?.['error']), /no source URL/)
+  assert.match(String(finishRow(stepRows)?.['error']), /no source URL/)
 })
 
 test('three consecutive invalid actions end the run invalid_action_limit', async () => {
@@ -427,7 +485,11 @@ test('the model may correct itself: the invalid counter resets on a valid action
   const { outcome, stepRows } = await run(model.port)
 
   assert.equal(outcome.terminationReason, 'completed_short')
-  assert.equal(stepRows.length, 7, 'four invalid actions, never three in a row, then a lookup and a finish')
+  assert.equal(
+    stepRows.length,
+    8,
+    'four invalid actions, never three in a row, then a lookup, a finish and the write',
+  )
 })
 
 test('a failed validation is returned to the model as that step result', async () => {
@@ -548,7 +610,7 @@ test('the trace records the resolved absolute window, not the flag', async () =>
     ports: {
       clock: tickingClock(),
       model: scriptedModel(finishes(items(1))).port,
-      http: withNotion(fixtureHttp(), []),
+      http: withNotion(fixtureHttp(), []).port,
     },
     store,
     profile,
@@ -580,12 +642,98 @@ test('the run records when it started and when it ended', async () => {
   assert.ok(String(runRow?.['ended_at']) > String(runRow?.['started_at']))
 })
 
-test('no run writes to Notion yet, dry or not', async () => {
-  for (const dryRun of [true, false]) {
-    const { outcome, runRow } = await run(scriptedModel(finishes(items(5))).port, { dryRun })
+// ── The Notion write (ticket 06) ─────────────────────────────────────────────
+
+/** A run that ends `completed_short` with two eligible releases: the write's happy path. */
+const proposingTwo = () =>
+  scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), ...looksUpThenFinishes(2)).port
+
+test('a completed run writes one Proposed page per item, carrying the run', async () => {
+  const { outcome, runRow, written, stepRows } = await run(proposingTwo())
+
+  assert.equal(outcome.notionWritePerformed, true)
+  assert.equal(runRow?.['notion_write_performed'], 1)
+  assert.equal(written.length, 2)
+
+  for (const page of written) {
+    assert.deepEqual(page.properties['Status'], { select: { name: 'Proposed' } })
+    assert.equal(
+      (page.properties['Run ID']!['rich_text'] as { text: { content: string } }[])[0]?.text.content,
+      outcome.runId,
+    )
+    assert.ok(String(page.properties['Apple Music']!['url']).startsWith('https://music.apple.com/search'))
+    assert.ok(!Object.keys(page.properties).includes('Rating'))
+  }
+
+  const write = stepRows.at(-1)
+  assert.equal(write?.['kind'], 'notion_write')
+  assert.equal(JSON.parse(String(write?.['tool_result'])).written, 2)
+})
+
+test('--dry-run does everything except write', async () => {
+  const { outcome, runRow, written, stepRows } = await run(proposingTwo(), { dryRun: true })
+
+  assert.equal(outcome.terminationReason, 'completed_short')
+  assert.equal(outcome.shortlistSize, 2, 'the shortlist is still produced and still validated')
+  assert.equal(outcome.notionWritePerformed, false)
+  assert.equal(runRow?.['notion_write_performed'], 0)
+  assert.deepEqual(written, [])
+  assert.equal(stepRows.at(-1)?.['kind'], 'finish')
+})
+
+test('a termination reason other than completed blocks the write', async () => {
+  // An invalid shortlist, an empty one, and a run that never reached `finish`.
+  const blocked = [
+    scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes([item(1, { rationale: '' })])).port,
+    scriptedModel(finishes([])).port,
+    scriptedModel(...Array.from({ length: 3 }, () => proposes('no_such_tool', '{}'))).port,
+  ]
+
+  for (const model of blocked) {
+    const { outcome, runRow, written } = await run(model)
+    assert.ok(!['completed', 'completed_short'].includes(outcome.terminationReason))
     assert.equal(outcome.notionWritePerformed, false)
     assert.equal(runRow?.['notion_write_performed'], 0)
+    assert.deepEqual(written, [])
   }
+})
+
+test('a write that fails part way through leaves the database as it found it', async () => {
+  const { outcome, runRow, archived, stepRows } = await run(proposingTwo(), { createStatus: [200, 400] })
+
+  assert.equal(outcome.notionWritePerformed, false)
+  assert.equal(runRow?.['notion_write_performed'], 0)
+  assert.equal(archived.length, 1, 'the page that was written is archived again')
+  assert.match(String(outcome.notionWriteError), /rolled back/)
+  assert.equal(stepRows.at(-1)?.['kind'], 'notion_write')
+  assert.match(String(stepRows.at(-1)?.['error']), /HTTP 400/)
+})
+
+test('a database missing a property refuses the run before it starts', async () => {
+  const { Rationale, ...properties } = JSON.parse(NOTION_SCHEMA).properties
+  const store = openStore(':memory:')
+  const model = scriptedModel(finishes([]))
+
+  await assert.rejects(
+    () =>
+      runRiffRadar({
+        args: { command: 'run', lastDays: 7, dryRun: false, raw: 'run' },
+        ports: {
+          clock: tickingClock(),
+          model: model.port,
+          http: withNotion(fixtureHttp(), [], { schema: JSON.stringify({ properties }) }).port,
+        },
+        store,
+        profile,
+        searchApiKey: 'test-key',
+        notionToken: 'test-notion-token',
+        notionDatabaseId: 'test-database',
+      }),
+    /Rationale \(rich_text\) is missing/,
+  )
+
+  assert.equal(store.database.prepare('SELECT count(*) AS n FROM runs').get()?.['n'], 0)
+  assert.equal(model.calls, 0, 'not one model token is spent on a database that cannot be written to')
 })
 
 test('two runs in one database are distinct rows with distinct steps', async () => {
@@ -594,7 +742,7 @@ test('two runs in one database are distinct rows with distinct steps', async () 
   const ports = {
     clock: tickingClock(),
     model: scriptedModel(finishes(items(1))).port,
-    http: withNotion(fixtureHttp(), []),
+    http: withNotion(fixtureHttp(), []).port,
   }
 
   const request = {
@@ -618,6 +766,7 @@ test('two runs in one database are distinct rows with distinct steps', async () 
 
 test('a release listed by two sources is one candidate carrying both URLs', async () => {
   const byUrl: HttpPort = withMusicbrainz({
+    patch: notPatched,
     get: async (url) => ({
       status: 200,
       headers: {},
@@ -658,6 +807,7 @@ test('a source that yields nothing warns on the step and the run carries on', as
   // One source refuses, the other serves: the shortlist comes from what is left.
   const { outcome, store, stepRows } = await run(model.port, {
     http: withMusicbrainz({
+      patch: notPatched,
       get: async (url) =>
         url === SOURCES.loudwire
           ? { status: 403, headers: {}, body: 'go away' }
@@ -682,6 +832,7 @@ test('a source fetch that throws ends the run as a tool failure', async () => {
   const model = scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes(items(1)))
   const { outcome, stepRows } = await run(model.port, {
     http: {
+      patch: notPatched,
       get: async () => {
         throw new Error('getaddrinfo ENOTFOUND')
       },
@@ -710,6 +861,7 @@ const SEARCH_BODY = JSON.stringify({
 
 /** A page for a source over GET, the search payload for the search endpoint over POST. */
 const searchingHttp = (searchStatus = 200): HttpPort => withMusicbrainz({
+  patch: notPatched,
   get: async () => ({ status: 200, headers: {}, body: PAGE }),
   post: async () => ({
     status: searchStatus,
@@ -748,7 +900,7 @@ test('a release only a search mentioned cannot reach the shortlist', async () =>
   assert.equal(outcome.terminationReason, 'validation_failed')
   assert.equal(outcome.shortlistSize, 0)
   assert.equal(runRow?.['notion_write_performed'], 0)
-  assert.match(String(stepRows.at(-1)?.['error']), /not among the candidates/)
+  assert.match(String(finishRow(stepRows)?.['error']), /not among the candidates/)
 })
 
 test('a search that fails leaves the run running', async () => {
@@ -772,7 +924,7 @@ const tasting = (over: Partial<TasteProfile>): TasteProfile =>
 
 /** The order the finish step recorded, which is the order that would be written. */
 const rankedOrder = (stepRows: readonly Record<string, unknown>[]): string[] =>
-  JSON.parse(String(stepRows.at(-1)?.['tool_result'])).shortlist.map(
+  JSON.parse(String(finishRow(stepRows)?.['tool_result'])).shortlist.map(
     (item: ShortlistItem) => item.artist,
   )
 
@@ -792,11 +944,11 @@ test('two profiles rank the same releases differently, and the trace says why', 
 
   // The model proposed the same order both times; the profile moved it.
   assert.deepEqual(
-    JSON.parse(String(first.stepRows.at(-1)?.['proposed_action']))[0].arguments,
-    JSON.parse(String(second.stepRows.at(-1)?.['proposed_action']))[0].arguments,
+    JSON.parse(String(finishRow(first.stepRows)?.['proposed_action']))[0].arguments,
+    JSON.parse(String(finishRow(second.stepRows)?.['proposed_action']))[0].arguments,
   )
 
-  const ranking = JSON.parse(String(first.stepRows.at(-1)?.['tool_result'])).ranking
+  const ranking = JSON.parse(String(finishRow(first.stepRows)?.['tool_result'])).ranking
   assert.deepEqual(ranking[0].signals, [{ signal: 'artist', term: 'Blood Incantation', points: 3 }])
   assert.equal(ranking[0].rank, 1)
 })
@@ -860,7 +1012,7 @@ test('a shortlist naming a suppressed release cannot be validated: it is not a c
   // Suppression and provenance are the same guardrail from two directions:
   // only a source fetch adds candidates, and a suppressed release is not one.
   assert.equal(outcome.terminationReason, 'validation_failed')
-  assert.match(String(stepRows.at(-1)?.['error']), /not among the candidates/)
+  assert.match(String(finishRow(stepRows)?.['error']), /not among the candidates/)
 })
 
 test('re-running a week after a write proposes nothing twice', async () => {
@@ -868,9 +1020,20 @@ test('re-running a week after a write proposes nothing twice', async () => {
     scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), ...looksUpThenFinishes(2)).port
 
   const first = await run(script())
-  const proposed = JSON.parse(String(first.stepRows.at(-1)?.['tool_result'])).shortlist.map(
-    (each: ShortlistItem) => ({ artist: each.artist ?? '', title: each.title ?? '' }),
-  )
+  assert.equal(first.outcome.notionWritePerformed, true)
+
+  // Read back out of the pages the write actually created, not out of the
+  // finish step: what suppression reads next Friday is the cell, and a cell
+  // written under a name suppression does not look for would suppress nothing.
+  const plain = (property: Record<string, unknown> | undefined): string =>
+    ((property?.['title'] ?? property?.['rich_text']) as { text: { content: string } }[])[0]?.text
+      .content ?? ''
+
+  const proposed = first.written.map((page) => ({
+    artist: plain(page.properties['Artist']),
+    title: plain(page.properties['Album']),
+  }))
+  assert.deepEqual(proposed.map((each) => each.artist), ['Ulcerate', 'Chat Pile'])
 
   const second = await run(
     scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes([])).port,
@@ -881,7 +1044,7 @@ test('re-running a week after a write proposes nothing twice', async () => {
   assert.equal(fetched.alreadyProposed, proposed.length)
   assert.equal(
     fetched.candidates.filter((candidate: { artist: string }) =>
-      proposed.some((each: { artist: string }) => each.artist === candidate.artist),
+      proposed.some((each) => each.artist === candidate.artist),
     ).length,
     0,
   )
@@ -889,8 +1052,9 @@ test('re-running a week after a write proposes nothing twice', async () => {
 
 test('a suppression read that fails refuses the run, leaving no row behind', async () => {
   const store = openStore(':memory:')
+  // The schema is described, so the preflight passes and the query is what fails.
   const refusing: HttpPort = {
-    ...fixtureHttp(),
+    ...withNotion(fixtureHttp(), []).port,
     post: async () => ({ status: 401, headers: {}, body: '{"message": "unauthorized"}' }),
   }
 

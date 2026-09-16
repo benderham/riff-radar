@@ -18,6 +18,7 @@ const BODY = readFileSync('fixtures/tavily-search.json', 'utf8')
 const respondWith = (body: string, status = 200) => {
   const calls: { url: string; body: string; headers?: Record<string, string> }[] = []
   const http: HttpPort = {
+    patch: async () => { throw new Error('unexpected patch') },
     get: async () => {
       throw new Error('a search is a POST; nothing here should GET')
     },

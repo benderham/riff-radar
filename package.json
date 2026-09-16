@@ -10,12 +10,14 @@
     "riff-radar": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --import tsx src/cli.ts",
     "test": "node --disable-warning=ExperimentalWarning --import tsx --test \"src/**/*.test.ts\" \"scripts/**/*.test.ts\" \"*.test.ts\"",
     "typecheck": "tsc --noEmit",
+    "trace": "node --disable-warning=ExperimentalWarning --import tsx scripts/trace.ts",
     "check:layering": "node --import tsx scripts/check-layering.ts",
     "check": "npm run typecheck && npm run check:layering && npm test",
     "smoke:model": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --import tsx scripts/smoke-model.ts",
     "smoke:sources": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --import tsx scripts/smoke-sources.ts",
     "smoke:search": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --import tsx scripts/smoke-search.ts",
     "smoke:musicbrainz": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --import tsx scripts/smoke-musicbrainz.ts",
+    "smoke:coverart": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --import tsx scripts/smoke-coverart.ts",
     "smoke:notion": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --import tsx scripts/smoke-notion.ts"
   },
   "dependencies": {

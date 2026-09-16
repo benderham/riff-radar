@@ -9,7 +9,7 @@
  */
 
 /** Versions stamped onto every run, so a trace says which configuration produced it. */
-export const PROMPT_VERSION = 5
+export const PROMPT_VERSION = 6
 export const ACTION_SCHEMA_VERSION = 1
 
 /**
@@ -193,3 +193,46 @@ export const MUSICBRAINZ_MAX_ATTEMPTS = 3
  * raising this never requires refetching.
  */
 export const MAX_SOURCE_TEXT_CHARS = 80_000
+
+/**
+ * The properties a run writes, and the type each must have (ADR-0041).
+ *
+ * This table is the preflight and the page builder at once (ADR-0042): the preflight
+ * refuses a database that does not match it, and nothing is written that is not
+ * named here. `Rating` is deliberately absent — it is Ben's column, and the way
+ * to guarantee the agent never writes it is that no code can name it.
+ *
+ * `Album Cover` is not here either, because it is not a property: it is the
+ * page's own cover image, set as `cover.external.url` when the page is created.
+ */
+export const NOTION_PROPERTIES = {
+  Album: 'title',
+  Artist: 'rich_text',
+  'Release Date': 'date',
+  'Apple Music': 'url',
+  Status: 'select',
+  'MusicBrainz ID': 'rich_text',
+  'Source URL': 'url',
+  Rationale: 'rich_text',
+  'Run ID': 'rich_text',
+} as const
+
+/** The only Status the agent writes. Ben sets the other two. */
+export const NOTION_PROPOSED = 'Proposed'
+
+/**
+ * Apple Music has no public catalogue API this project is entitled to use, and
+ * a search URL needs no key and cannot go stale: it is a link Ben clicks on a
+ * Friday, and the search page finds the album whatever its identifiers are.
+ */
+export const APPLE_MUSIC_SEARCH = 'https://music.apple.com/search?term='
+
+/**
+ * Cover art, best-effort (ADR-0042). The JSON index is read rather than the
+ * `/front` redirect, so the `http` port never carries an image: the index names
+ * an address Notion fetches for itself when it renders the page.
+ *
+ * A release with no MusicBrainz id has no cover to ask for, and a failure here
+ * is a page without a picture rather than a failed run.
+ */
+export const COVER_ART_ENDPOINT = 'https://coverartarchive.org/release-group'

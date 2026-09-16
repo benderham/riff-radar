@@ -16,8 +16,10 @@ import { DATABASE_PATH, TASTE_PROFILE_PATH, missingCredentials } from '../config
 import { fireworksModel } from './adapters/fireworks.ts'
 import { httpAdapter } from './adapters/http.ts'
 import { runRiffRadar } from './agents/riff-radar.ts'
-import { SuppressionUnavailable } from './clients/notion.ts'
+import { NotionRefusal } from './clients/notion.ts'
 import { UsageError, parseCliArgs } from './domain/cli-args.ts'
+import { appleMusicSearchUrl } from './domain/notion-page.ts'
+import type { ShortlistItem } from './domain/shortlist.ts'
 import { tasteProfileSchema } from './domain/taste-profile.ts'
 import type { Ports } from './ports.ts'
 import type { Store } from './store/store.ts'
@@ -25,6 +27,11 @@ import { openStore } from './store/store.ts'
 
 export const EXIT_OK = 0
 export const EXIT_REFUSED = 2
+/**
+ * A run that did everything right and could not write. Distinct from a refusal,
+ * because a refusal spent nothing and left nothing: this one spent a run.
+ */
+export const EXIT_WRITE_FAILED = 3
 
 export interface CliDependencies {
   readonly argv: readonly string[]
@@ -34,6 +41,22 @@ export interface CliDependencies {
   readonly log: (line: string) => void
   readonly readTasteProfile?: () => unknown
 }
+
+/**
+ * The shortlist, for the terminal.
+ *
+ * The same items the write turns into pages, printed whether or not it wrote
+ * them: on a dry run this is the whole point of the run, and on a real one it
+ * is what landed in Notion. Pure, so the shape is tested without a run.
+ */
+export const shortlistLines = (shortlist: readonly ShortlistItem[]): string[] =>
+  shortlist.flatMap((item) => [
+    `  ${item.rank}. ${item.artist} — ${item.title} (${item.releaseDate})${
+      item.musicbrainzId === undefined ? ' [unverified]' : ''
+    }`,
+    `     ${item.rationale}`,
+    `     ${appleMusicSearchUrl(item.artist ?? '', item.title ?? '')}`,
+  ])
 
 export const runCli = async ({
   argv,
@@ -88,6 +111,8 @@ export const runCli = async ({
         outcome.notionWritePerformed ? 'yes' : 'no'
       }`,
     )
+    for (const line of shortlistLines(outcome.shortlist)) log(line)
+    if (outcome.notionWriteError !== undefined) log(`notion write failed: ${outcome.notionWriteError}`)
     log(
       `${outcome.stepCount} steps; ${outcome.usage.uncachedInputTokens} uncached + ${
         outcome.usage.cachedInputTokens
@@ -95,11 +120,14 @@ export const runCli = async ({
         outcome.costIsUpperBound ? 'at most ' : ''
       }$${outcome.estimatedCost.toFixed(4)}`,
     )
-    return EXIT_OK
+    // Not a success: Ben's Friday depends on the rows being there, and a zero
+    // exit code would say they are.
+    return outcome.notionWriteError === undefined ? EXIT_OK : EXIT_WRITE_FAILED
   } catch (error) {
-    // The one failure that is a refusal rather than a crash: Notion could not
-    // be read, so the run never started and nothing was spent (ADR-0039).
-    if (!(error instanceof SuppressionUnavailable)) throw error
+    // The two failures that are refusals rather than crashes: Notion could not
+    // be read (ADR-0039), or its database is not the one this writes to. Both
+    // happen before the run row, so nothing was spent and nothing was left.
+    if (!(error instanceof NotionRefusal)) throw error
     log(`cannot start: ${error.message}`)
     return EXIT_REFUSED
   } finally {

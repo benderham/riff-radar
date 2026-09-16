@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 import { MUSICBRAINZ_MAX_ATTEMPTS, MUSICBRAINZ_MIN_INTERVAL_MS, USER_AGENT } from '../../config.ts'
+import { NO_ANSWER } from '../domain/http-outcome.ts'
 import type { ClockPort, HttpPort, Ports } from '../ports.ts'
 import { lookupRelease, nextRequestDelayMs } from './musicbrainz.ts'
 
@@ -34,6 +35,7 @@ const serving = (bodies: readonly (string | { body: string; status: number })[])
   const gets: { url: string; headers?: Record<string, string> }[] = []
   let call = 0
   const http: HttpPort = {
+    patch: async () => { throw new Error('unexpected patch') },
     get: async (url, headers) => {
       gets.push({ url, ...(headers === undefined ? {} : { headers }) })
       const next = bodies[Math.min(call++, bodies.length - 1)]!
@@ -211,6 +213,32 @@ test('retries are bounded, and a service that stays down is a warning', async ()
 
   assert.equal(gets.length, MUSICBRAINZ_MAX_ATTEMPTS)
   assert.match(String(refused.warning), /503/)
+})
+
+test('a dead socket is retried, and then warned about by name (ADR-0043)', async () => {
+  // What the adapter hands a client when the request never got an answer: not a
+  // throw, and not a status. A run lost its whole shortlist to one of these.
+  const dead = { body: 'fetch failed: getaddrinfo ENOTFOUND musicbrainz.org', status: NO_ANSWER }
+  const { gets, ports } = serving([dead])
+  const refused = await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
+
+  assert.equal(gets.length, MUSICBRAINZ_MAX_ATTEMPTS)
+  assert.match(String(refused.warning), /no answer: fetch failed: getaddrinfo ENOTFOUND/)
+  assert.equal(refused.lookup.found, false, 'unverified, which is missing evidence, not invalidity')
+})
+
+test('a socket that comes back is the run carrying on, not a failed lookup', async () => {
+  const { ports } = serving([
+    { body: 'fetch failed: ECONNRESET', status: NO_ANSWER },
+    GROUP,
+    RELEASE_LABELS,
+    GENRES,
+    ARTIST_RELS,
+  ])
+  const found = await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
+
+  assert.equal(found.warning, undefined)
+  assert.ok(found.lookup.found === true)
 })
 
 test('a 404 is not retried: it will say the same thing three times', async () => {

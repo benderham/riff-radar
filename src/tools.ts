@@ -31,10 +31,13 @@ import {
   collapseByReleaseGroup,
   dropSuppressed,
   mergeCandidates,
+  releaseIdentityOf,
 } from './domain/candidates.ts'
+import { isEligible } from './domain/eligibility.ts'
 import type { Usage } from './domain/cost.ts'
 import type { ShortlistItem } from './domain/shortlist.ts'
 import { shortlistItemSchema } from './domain/shortlist.ts'
+import type { TasteProfile } from './domain/taste-profile.ts'
 import type { DateWindow } from './domain/window.ts'
 import type { Ports, ProposedToolCall, ToolDefinition } from './ports.ts'
 import type { Store } from './store/store.ts'
@@ -70,6 +73,8 @@ export interface ToolContext {
    * the run and never added to: this is memory, not a finding (ADR-0009).
    */
   readonly suppressed: ReadonlySet<string>
+  /** What Ben wants, so a lookup can tell the model whether what it found qualifies. */
+  readonly profile: TasteProfile
   /** The run's candidates, deduplicated on release identity. Actions may add. */
   candidates: readonly Candidate[]
 }
@@ -191,6 +196,19 @@ export const tools = {
         facts = { musicbrainzId: releaseGroupId, ...rest }
       }
 
+      // The verdict, at the moment it becomes knowable.
+      //
+      // The rules are enforced at `finish` and stay there (ADR-0035), but a
+      // model that cannot see them spends its shortlist on releases the
+      // validator will refuse — and it did: two runs in a row died on a release
+      // whose lookup looked perfect from here, because MusicBrainz states no
+      // type for it and the absence of a field is not a signal anyone can read.
+      // The guardrail is unchanged; what changes is that the model is told.
+      const judged = context.candidates.find(
+        (candidate) => candidateIdentity(candidate) === identity || releaseIdentityOf(candidate) === identity,
+      )
+      const verdict = judged === undefined ? undefined : isEligible(judged, context.window, context.profile)
+
       return {
         done: false,
         ...(found.warning === undefined ? {} : { warning: found.warning }),
@@ -199,6 +217,11 @@ export const tools = {
           title,
           ...(found.warning === undefined ? {} : { warning: found.warning }),
           ...facts,
+          ...(verdict === undefined
+            ? {}
+            : verdict.eligible
+              ? { eligible: true }
+              : { eligible: false, ineligibleBecause: verdict.reason, doNotShortlist: true }),
         }),
       }
     },

@@ -16,6 +16,7 @@
 import { z } from 'zod'
 
 import { SEARCH_ENDPOINT, SEARCH_RESULT_COUNT } from '../../config.ts'
+import { describeStatus } from '../domain/http-outcome.ts'
 import type { Ports } from '../ports.ts'
 
 export interface SearchResult {
@@ -70,7 +71,10 @@ export const searchWeb = async (
   const base = { query, url: SEARCH_ENDPOINT, status: response.status, results: [] } as const
 
   if (response.status < 200 || response.status >= 300) {
-    return { ...base, warning: `search for "${query}" returned HTTP ${response.status}` }
+    return {
+      ...base,
+      warning: `search for "${query}" returned ${describeStatus(response.status, response.body)}`,
+    }
   }
 
   let parsed: unknown

@@ -24,6 +24,7 @@ import {
   MUSICBRAINZ_MIN_INTERVAL_MS,
   MUSICBRAINZ_MIN_SCORE,
 } from '../../config.ts'
+import { NO_ANSWER, describeStatus } from '../domain/http-outcome.ts'
 import type { MusicbrainzLookup } from '../domain/candidates.ts'
 import type { Ports } from '../ports.ts'
 
@@ -73,9 +74,17 @@ const once = async (ports: Ports, url: string) => {
   return ports.http.get(url, { accept: 'application/json' })
 }
 
-/** A refusal this service makes when it is busy, and will likely not repeat. */
+/**
+ * A refusal this service makes when it is busy, and will likely not repeat —
+ * and a request that never got an answer at all, which is the same bet: a dead
+ * socket is the most transient thing there is, and giving up on the first one
+ * cost a run its whole shortlist once (ADR-0043).
+ */
 const isTransient = (status: number, body: string): boolean =>
-  status === 503 || status === 429 || (status === 200 && body.includes('"error"'))
+  status === NO_ANSWER ||
+  status === 503 ||
+  status === 429 ||
+  (status === 200 && body.includes('"error"'))
 
 /**
  * Up to `MUSICBRAINZ_MAX_ATTEMPTS`, spaced by the same one-second gate.
@@ -164,7 +173,9 @@ const key = (value: string): string =>
  * trusting the status: it is a 200 whose payload is an apology.
  */
 const bodyOf = (what: string, status: number, body: string): { data: unknown } | { warning: string } => {
-  if (status < 200 || status >= 300) return { warning: `${what} returned HTTP ${status}` }
+  if (status < 200 || status >= 300) {
+    return { warning: `${what} returned ${describeStatus(status, body)}` }
+  }
 
   let data: unknown
   try {

@@ -29,7 +29,9 @@ export interface HttpResponse {
 
 export interface HttpPort {
   /**
-   * Resolves for any status. Only a transport failure rejects.
+   * Resolves for any status, and for no status at all: a request that never
+   * gets an answer comes back as status zero with the reason in the body
+   * (ADR-0043). Nothing here rejects.
    *
    * `headers` exists for the one caller that needs it: a search API
    * authenticates with a key in a header. It is additive — the project's own
@@ -44,6 +46,13 @@ export interface HttpPort {
    * string (ADR-0033). Sources are read with `get` and always will be.
    */
   post(url: string, body: string, headers?: Record<string, string>): Promise<HttpResponse>
+
+  /**
+   * The same contract again, for the one caller that needs it: undoing a
+   * partial Notion write archives the pages already created, and Notion
+   * archives a page with a PATCH. Nothing else patches anything.
+   */
+  patch(url: string, body: string, headers?: Record<string, string>): Promise<HttpResponse>
 }
 
 /** A tool call as the model proposed it. `argumentsJson` is untrusted text. */
