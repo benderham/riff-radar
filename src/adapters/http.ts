@@ -33,11 +33,32 @@ const read = async (response: Response) => ({
  * — `ENOTFOUND`, `ECONNRESET`, the timeout — in `cause`, so the trace is worth
  * nothing without it: "fetch failed" was the message that sent a human to the
  * database to find out which host had gone away.
+ *
+ * Three things a first version missed, each of which produced `fetch failed:`
+ * and nothing after it. An `AggregateError` carries its real reasons in
+ * `errors` and has no message of its own — and that is the *interesting* case,
+ * because it means every address was tried and every address failed, which is
+ * what a host that resolves to both an IPv6 and an IPv4 address looks like when
+ * only one of the two works. A `code` like `ENOTFOUND` hangs off the error
+ * rather than sitting in its message. And an error with no message at all still
+ * has a name worth printing.
  */
 const because = (error: unknown): string => {
-  const reasons: string[] = []
-  for (let at = error; at instanceof Error; at = at.cause) reasons.push(at.message)
-  return reasons.join(': ') || String(error)
+  if (!(error instanceof Error)) return String(error)
+
+  const code = (error as { code?: unknown }).code
+  const self = [error.message || error.name, typeof code === 'string' ? `(${code})` : '']
+    .filter(Boolean)
+    .join(' ')
+
+  const inner =
+    error instanceof AggregateError && error.errors.length > 0
+      ? `[${error.errors.map(because).join(', ')}]`
+      : error.cause === undefined
+        ? ''
+        : because(error.cause)
+
+  return [self, inner].filter(Boolean).join(': ')
 }
 
 const attempted = async (request: () => Promise<HttpResponse>): Promise<HttpResponse> => {

@@ -109,3 +109,27 @@ test('a rejection that is not an Error is still reported rather than thrown', as
   assert.equal(response.status, NO_ANSWER)
   assert.equal(response.body, 'no')
 })
+
+test('an unanswered request names every address that failed, not just "fetch failed"', async () => {
+  // What a dual-stack host looks like when only one of its two addresses works:
+  // an AggregateError with no message of its own, one entry per address tried.
+  const both = new AggregateError(
+    [
+      Object.assign(new Error('connect ENETUNREACH 2620:0:861:ed1a::1:443'), { code: 'ENETUNREACH' }),
+      Object.assign(new Error('connect ECONNREFUSED 185.15.59.224:443'), { code: 'ECONNREFUSED' }),
+    ],
+    '',
+  )
+  const dead = async () => {
+    throw new Error('fetch failed', { cause: both })
+  }
+
+  const response = await httpAdapter(dead as unknown as typeof fetch).get('https://musicbrainz.org')
+
+  assert.equal(response.status, NO_ANSWER)
+  assert.equal(
+    response.body,
+    'fetch failed: AggregateError: [connect ENETUNREACH 2620:0:861:ed1a::1:443 (ENETUNREACH), ' +
+      'connect ECONNREFUSED 185.15.59.224:443 (ECONNREFUSED)]',
+  )
+})
