@@ -9,7 +9,7 @@
  */
 
 /** Versions stamped onto every run, so a trace says which configuration produced it. */
-export const PROMPT_VERSION = 5
+export const PROMPT_VERSION = 6
 export const ACTION_SCHEMA_VERSION = 1
 
 /**

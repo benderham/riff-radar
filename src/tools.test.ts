@@ -5,6 +5,7 @@ import { z } from 'zod'
 
 import { SEARCH_ENDPOINT, SOURCES } from '../config.ts'
 import type { Candidate } from './domain/candidates.ts'
+import { tasteProfileSchema } from './domain/taste-profile.ts'
 import type { HttpPort, ModelPort, Ports } from './ports.ts'
 import { openStore } from './store/store.ts'
 import type { ToolContext } from './tools.ts'
@@ -45,6 +46,16 @@ const PAGE = `<!doctype html>
  * A context with a real store behind it, because what `fetch_source` records is
  * half of what it does: a fake store would leave the evidence untested.
  */
+/** An empty profile: these tests are about dispatch, not about taste. */
+const profile = tasteProfileSchema.parse({
+  version: 1,
+  artists: { always: [], watch: [], exclude: [] },
+  labels: { include: [], exclude: [] },
+  genres: { include: [], exclude: [] },
+  personnel: { include: [], exclude: [] },
+  vibe_notes: { include: [], exclude: [] },
+})
+
 const context = (over: { http?: HttpPort; model?: ModelPort } = {}) => {
   const store = openStore(':memory:')
   store.startRun({
@@ -84,6 +95,7 @@ const context = (over: { http?: HttpPort; model?: ModelPort } = {}) => {
     runId: 'run-1',
     window: { from: '2026-09-08', to: '2026-09-14' },
     searchApiKey: 'test-key',
+    profile,
     suppressed: new Set<string>(),
     candidates: [],
   }
@@ -395,4 +407,67 @@ test('a search that fails is an ordinary step result with a warning', async () =
   assert.equal(dispatched.done, false)
   assert.ok(!dispatched.done && dispatched.warning?.includes('429'))
   assert.ok(!dispatched.done && dispatched.result.length > 0, 'the model is told, not left waiting')
+})
+
+test('a lookup tells the model whether what it found qualifies', async () => {
+  const result = validateAction(call('lookup_release', '{"artist": "Ulcerate", "title": "Cutting the Throat of God"}'))
+  assert.ok(result.ok)
+
+  // The fixture is the real 2024 album, so what it proves is the other half of
+  // the rule: MusicBrainz's release-group date is what catches a reissue, and
+  // the model now hears that instead of discovering it at `finish`.
+  const { toolContext } = context({ http: lookingUp(MB_GROUP) })
+  toolContext.candidates = [discovered({ releaseDates: ['2026-09-12'] })]
+  const dispatched = await dispatch(result.name, result.input, toolContext)
+
+  assert.ok(!dispatched.done)
+  const answer = JSON.parse(dispatched.result)
+  assert.equal(answer.eligible, false)
+  assert.match(answer.ineligibleBecause, /a reissue or remaster, not new work/)
+})
+
+test('a release that qualifies is told so, in one word the model can act on', async () => {
+  const inWindow = JSON.parse(MB_GROUP)
+  inWindow['release-groups'][0]['first-release-date'] = '2026-09-12'
+
+  const { toolContext } = context({ http: lookingUp(JSON.stringify(inWindow)) })
+  toolContext.candidates = [discovered({ releaseDates: ['2026-09-12'] })]
+  const result = validateAction(call('lookup_release', '{"artist": "Ulcerate", "title": "Cutting the Throat of God"}'))
+  assert.ok(result.ok)
+
+  const dispatched = await dispatch(result.name, result.input, toolContext)
+  assert.ok(!dispatched.done)
+  assert.equal(JSON.parse(dispatched.result).eligible, true)
+})
+
+test('a release the validator will refuse says so at lookup, not at finish', async () => {
+  // The case that cost two real runs: MusicBrainz states no type for this
+  // release group, so every field the model can see looks perfect and the
+  // shortlist dies at `finish`. The rule still lives there (ADR-0035); this is
+  // the model being told, one step after the fact becomes knowable.
+  const typeless = JSON.stringify({
+    'release-groups': [
+      {
+        id: 'rg-typeless',
+        title: 'Cutting the Throat of God',
+        score: 100,
+        'secondary-types': [],
+        'first-release-date': '2026-09-12',
+        'artist-credit': [{ name: 'Ulcerate' }],
+      },
+    ],
+  })
+
+  const { toolContext } = context({ http: lookingUp(typeless) })
+  toolContext.candidates = [discovered()]
+  const result = validateAction(call('lookup_release', '{"artist": "Ulcerate", "title": "Cutting the Throat of God"}'))
+  assert.ok(result.ok)
+
+  const dispatched = await dispatch(result.name, result.input, toolContext)
+  assert.ok(!dispatched.done)
+
+  const answer = JSON.parse(dispatched.result)
+  assert.equal(answer.eligible, false)
+  assert.match(answer.ineligibleBecause, /states no release type/)
+  assert.equal(answer.doNotShortlist, true)
 })

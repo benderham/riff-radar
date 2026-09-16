@@ -140,6 +140,7 @@ export const runRiffRadar = async ({
     window,
     searchApiKey,
     suppressed,
+    profile,
     candidates: [],
   }
 
