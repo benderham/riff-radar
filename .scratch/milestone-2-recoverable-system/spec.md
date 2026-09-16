@@ -167,7 +167,7 @@ The milestone's seven outcomes, each closed by evidence rather than assertion:
 
 **A migration system.** Four columns are added and the existing database will be refused and deleted. Building migrations would be machinery bought to protect a file that is deliberately not versioned.
 
-**A second specification document.** Milestone 1 has a spec in the issue tracker and another under `docs/specs` saying overlapping things. This milestone has one, here.
+**A second specification document.** Milestone 1 has a spec in the issue tracker and another under `docs/specs` saying overlapping things, and two decisions have since had to correct both. This milestone has one specification, here; `docs/specs/milestone-2-recoverable-system.md` is a pointer to it so that directory stays a complete index.
 
 **Anything about later milestones.** No evaluation dataset, no evaluation runner, no case study, no comparison against a baseline.
 
