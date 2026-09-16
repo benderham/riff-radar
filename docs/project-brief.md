@@ -39,6 +39,8 @@ The system completes the workflow from CLI input to proposed Notion records. The
 
 ### 2. Recoverable system
 
+Failure points milestone 1 exposed and left alone are listed in `.scratch/milestone-2-recoverable-system/carried-forward.md`, with the evidence behind each. Read it before writing this milestone's tickets.
+
 Agent actions and final outputs use validated schemas. State is checkpointed after every completed step, external failures follow explicit retry or escalation behaviour, and interrupted runs can resume without repeating completed work or duplicating Notion records.
 
 ### 3. Measurable system
