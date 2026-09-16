@@ -6,7 +6,7 @@ Most of the ranking is arithmetic Ben can reason about. The model contributes on
 
 **Blocked by:** 04
 
-**Status:** ready-for-human
+**Status:** done
 
 ## Acceptance criteria
 
@@ -98,3 +98,7 @@ inside a longer value.
 The live MusicBrainz smoke test also settled the ticket's open question about
 genre coverage in the long tail: Ulcerate returned six tags, and the 1991 EP by
 Ulcerate Fester returned none. Genre is therefore weighted no higher than label.
+
+## Comments
+
+Closed 16 September 2026. Both things it was waiting on are done: the taste profile is filled in (PR #10), and `npm run smoke:notion` has run against the real database — it is what found the `Album` property name (ADR-0041). Run `bae956af` shows the profile changing the order for real: Green Lung first on a watch-list artist and an included label, recorded in the finish step's ranking breakdown.

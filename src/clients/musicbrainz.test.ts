@@ -17,6 +17,7 @@ const EP_RECORDINGS = fixture('musicbrainz-ep-recordings.json')
 const RELEASE_LABELS = fixture('musicbrainz-release-labels.json')
 const GENRES = fixture('musicbrainz-genres.json')
 const ARTIST_RELS = fixture('musicbrainz-artist-rels.json')
+const UNTYPED = fixture('musicbrainz-untyped-group.json')
 
 /**
  * A clock that leaps an hour between readings, so the gate is never owed
@@ -327,4 +328,17 @@ test('"[no label]" is MusicBrainz saying there is none, not a label named that',
 
   assert.ok(found.lookup.found === true)
   assert.equal(found.lookup.label, undefined)
+})
+
+test('a release group MusicBrainz has not typed comes back without a type, not without a lookup', async () => {
+  // Captured from the live service: *Mother of Millions — T*, which has an
+  // identity, a date and an official release, and no primary type at all.
+  const { ports } = serving([UNTYPED, RELEASE_LABELS, GENRES, ARTIST_RELS])
+  const found = await lookupRelease(ports, 'Mother of Millions', 'T')
+
+  assert.equal(found.warning, undefined)
+  assert.ok(found.lookup.found === true)
+  assert.equal(found.lookup.primaryType, undefined, 'absent, rather than invented')
+  assert.equal(found.lookup.releaseGroupId, '8c8418df-b881-491e-bbdc-39454b80f78d')
+  assert.equal(found.lookup.firstReleaseDate, '2026-09-11')
 })

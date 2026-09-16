@@ -6,7 +6,7 @@ This is the largest ticket in the milestone and the one the project exists to te
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-review (part A complete, commit 037c41a; part B complete)
+**Status:** done
 
 ## Session break
 
@@ -52,3 +52,7 @@ Two sittings. Part A stands alone and is demoable without a model; part B is the
 - [x] Exactly one Termination Reason is recorded per Run
 - [x] A live smoke test against the model provider exists, invoked separately and excluded from the automated suite
 - [x] Every Termination Reason reachable in this ticket is covered by a test driven through the injected ports
+
+## Comments
+
+Closed 16 September 2026. Both parts were complete; what was left was review, and two real runs have now exercised the loop end to end — one terminating `completed` at 27 steps and one `completed_short` at 22, each with exactly one recorded reason, and every fake it shipped with replaced by a live service. See `docs/evidence/milestone-1.md`.

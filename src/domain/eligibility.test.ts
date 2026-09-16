@@ -23,6 +23,12 @@ const excluding = (...artists: string[]): TasteProfile => ({
   artists: { ...NO_OPINIONS.artists, exclude: artists },
 })
 
+/** `untyped` rather than a `primaryType: undefined` override, which the strict optional types refuse. */
+const untypedGroup = (over: Partial<Extract<MusicbrainzLookup, { found: true }>> = {}): MusicbrainzLookup => {
+  const { primaryType: _none, ...rest } = found(over) as Extract<MusicbrainzLookup, { found: true }>
+  return rest
+}
+
 const found = (over: Partial<Extract<MusicbrainzLookup, { found: true }>> = {}): MusicbrainzLookup => ({
   found: true,
   releaseGroupId: 'rg-1',
@@ -181,4 +187,51 @@ test('an unverified release the source called a live album is still excluded', (
 test('an unverified release no source described is excluded', () => {
   // The base candidate states no format, which is the case being tested.
   assert.match(why({ lookup: { found: false } as MusicbrainzLookup }), /no source stated a format/)
+})
+
+// ── A release group nobody has typed (ticket 08) ─────────────────────────────
+
+test('an untyped release group is judged on the source\'s word, not refused', () => {
+  // The case that cost three runs: MusicBrainz knows *Mother of Millions — T*,
+  // dates it, counts its tracks — and nobody has set its type. That is more
+  // evidence than an unheard-of release carries, not less (ADR-0045).
+  const untyped = { lookup: untypedGroup(), format: 'full-length' }
+  assert.equal(isEligible(candidate(untyped), WINDOW, NO_OPINIONS).eligible, true)
+})
+
+test('an untyped release group the source called a live album is still excluded', () => {
+  const untyped = { lookup: untypedGroup(), format: 'live album' }
+  assert.match(why(untyped), /states no release type, and the source called it a live album/)
+})
+
+test('an untyped release group no source described is still excluded', () => {
+  assert.match(why({ lookup: untypedGroup() }), /no source stated a format/)
+})
+
+test('an untyped release group cannot smuggle a reissue past the date rule', () => {
+  const reissue = {
+    lookup: untypedGroup({ firstReleaseDate: '1985' }),
+    format: 'full-length',
+  }
+  assert.match(why(reissue), /before 2026-09-08: a reissue or remaster/)
+})
+
+test('an untyped release group is not a way around the EP thresholds', () => {
+  // The thresholds apply to what MusicBrainz calls an EP. An untyped group is
+  // not called anything, so it is judged on the source's word — and a source
+  // that says EP is refused there rather than let through unmeasured.
+  const statedEp = { lookup: untypedGroup(), format: 'EP' }
+  assert.match(why(statedEp), /the source called it a EP/)
+
+  const typedEp = { lookup: found({ primaryType: 'EP', trackCount: 2, durationMs: 400_000 }) }
+  assert.match(why(typedEp), /an EP of 2 tracks/)
+})
+
+test('every other MusicBrainz verdict still decides on its own word', () => {
+  // A stated type is evidence; the fallback exists only where there is none.
+  assert.match(why({ lookup: found({ primaryType: 'Single' }), format: 'full-length' }), /calls it a Single/)
+  assert.match(
+    why({ lookup: found({ secondaryTypes: ['Live'] }), format: 'full-length' }),
+    /calls it a Live release/,
+  )
 })

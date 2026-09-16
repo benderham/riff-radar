@@ -4,7 +4,7 @@
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## Why
 
@@ -25,15 +25,19 @@ That ordering is backwards. An untyped release group carries *more* evidence tha
 
 ## Acceptance criteria
 
-- [ ] A release group with no `primary-type` falls through to the same source-format rule that an unheard-of release already uses: a stated album format passes, a stated live album, single or compilation does not, and no stated format at all still excludes
-- [ ] A release group with no `primary-type` is reported as Unverified — the Notion row and the shortlist item say so, exactly as an unheard-of release does, because MusicBrainz has not in fact confirmed what it is
-- [ ] Every other MusicBrainz verdict is unchanged: a stated `Single`, `Broadcast` or `Other`, and every excluded secondary type, still exclude on MusicBrainz's word rather than the source's
-- [ ] The release-group date still governs: an untyped group first released before the window is still a reissue, and the new path cannot smuggle one in
-- [ ] An EP that MusicBrainz types as an EP still pays for its second request and still meets the track and duration thresholds; an untyped group is not a way around them
-- [ ] `lookup_release` reports the resulting verdict to the model as it now does for every other case
-- [ ] Tested against a recorded fixture of a real untyped release group — capture *T*'s, since it is the record that found this
-- [ ] The decision is recorded in `docs/decisions.md`, amending ADR-0034, including what it costs: a source that mislabels an untyped release is now believed
+- [x] A release group with no `primary-type` falls through to the same source-format rule that an unheard-of release already uses: a stated album format passes, a stated live album, single or compilation does not, and no stated format at all still excludes
+- [ ] ~~A release group with no `primary-type` is reported as Unverified — the Notion row and the shortlist item say so, exactly as an unheard-of release does~~ — **not implemented, deliberately.** Unverified means MusicBrainz cannot identify the release; here it has. Marking it Unverified would discard a release-group id that suppression depends on, to express an uncertainty about the format instead. The release keeps its identity, and the recorded reason names what was actually missing. See ADR-0045.
+- [x] Every other MusicBrainz verdict is unchanged: a stated `Single`, `Broadcast` or `Other`, and every excluded secondary type, still exclude on MusicBrainz's word rather than the source's
+- [x] The release-group date still governs: an untyped group first released before the window is still a reissue, and the new path cannot smuggle one in
+- [x] An EP that MusicBrainz types as an EP still pays for its second request and still meets the track and duration thresholds; an untyped group is not a way around them
+- [x] `lookup_release` reports the resulting verdict to the model as it now does for every other case
+- [x] Tested against a recorded fixture of a real untyped release group — capture *T*'s, since it is the record that found this
+- [x] The decision is recorded in `docs/decisions.md`, amending ADR-0034, including what it costs: a source that mislabels an untyped release is now believed
 
 ## Notes
 
 Ben's other fix is upstream and is not this ticket: MusicBrainz is user-editable, and setting *T*'s primary type to `Album` corrects the record for everyone. Both are worth doing. This ticket exists because the next untyped release group will not be one anybody noticed.
+
+## Comments
+
+Implemented 16 September 2026. `statedFormatVerdict` in `src/domain/eligibility.ts` is now shared by both cases that lack a type — the unheard-of release and the untyped release group — and the fixture is a real capture of *T*'s release group, `fixtures/musicbrainz-untyped-group.json`. One criterion was refused with its reasoning recorded above and in ADR-0045.

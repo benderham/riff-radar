@@ -6,7 +6,7 @@ This ticket produces evidence, not features. If something needed here is missing
 
 **Blocked by:** 03, 06
 
-**Status:** ready-for-human
+**Status:** done
 
 ## Acceptance criteria
 
