@@ -5,6 +5,8 @@
  * `completed_short` permit a Notion write; the other seven do not.
  */
 
+import type { StoredRun } from '../store/store.ts'
+
 export const TERMINATION_REASONS = [
   'completed',
   'completed_short',
@@ -54,10 +56,7 @@ export interface RunVersions {
  * is whether the parent got anywhere, and counting is the caller's business.
  */
 export const resumeRefusal = (
-  parent: {
-    readonly runId: string
-    readonly terminationReason: TerminationReason | null
-  } & RunVersions,
+  parent: StoredRun,
   stepCount: number,
   current: RunVersions,
 ): string | undefined => {
@@ -71,18 +70,16 @@ export const resumeRefusal = (
     return `run ${parent.runId} recorded no steps, so there is nothing to continue. Start a re-run instead`
   }
 
+  // Every version that moved, at once: reporting them one at a time would mean
+  // three refusals to learn one fact, and none of them is fixable anyway — the
+  // answer is a re-run under the current versions.
   const moved = [
     ['prompt version', parent.promptVersion, current.promptVersion],
     ['profile version', parent.profileVersion, current.profileVersion],
     ['action-schema version', parent.actionSchemaVersion, current.actionSchemaVersion],
-  ].filter(([, was, now]) => was !== now)
+  ].flatMap(([what, was, now]) => (was === now ? [] : [`${what} (${was}, now ${now})`]))
 
-  // Every one that moved, at once: fixing them one at a time would mean three
-  // refusals to learn one fact, and none of them is fixable anyway — the answer
-  // is a re-run under the current versions.
   return moved.length === 0
     ? undefined
-    : `run ${parent.runId} ran under a different ${moved
-        .map(([what, was, now]) => `${what} (${was}, now ${now})`)
-        .join(', a different ')}. Start a re-run instead`
+    : `run ${parent.runId} ran under a different ${moved.join(', a different ')}. Start a re-run instead`
 }

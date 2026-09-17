@@ -243,19 +243,16 @@ export const runRiffRadar = async ({
   let consecutiveInvalid = replayed?.consecutiveInvalid ?? 0
   let stepIndex = 0
 
-  // Derived from the parent's steps rather than stored beside them, so it
-  // cannot disagree with the trace it is counted from. Step indices still
-  // restart at zero: this bounds the loop, it does not number the rows.
-  const inheritedSteps = chainSteps.length
-
   // Said now rather than at the end, because a run that resumes with two steps
   // left will end at the ceiling, and that is only understandable if it was
-  // announced first.
+  // announced first. The cost is clamped and the steps are not: the last step
+  // of a run can carry it past the budget, but the loop stops at the step
+  // ceiling exactly.
   if (parent !== undefined) {
     const spent = estimateCost(usage)
     log(
-      `resumed from ${parent.runId}: ${inheritedSteps} of ${MAX_STEPS} steps and $${spent.toFixed(4)} of ` +
-        `$${MAX_RUN_COST_USD.toFixed(4)} already used — ${Math.max(MAX_STEPS - inheritedSteps, 0)} steps and ` +
+      `resumed from ${parent.runId}: ${chainSteps.length} of ${MAX_STEPS} steps and $${spent.toFixed(4)} of ` +
+        `$${MAX_RUN_COST_USD.toFixed(4)} already used — ${MAX_STEPS - chainSteps.length} steps and ` +
         `$${Math.max(MAX_RUN_COST_USD - spent, 0).toFixed(4)} left`,
     )
   }
@@ -283,8 +280,10 @@ export const runRiffRadar = async ({
   while (terminationReason === undefined) {
     // Both ceilings are tested before the call and in a fixed order, because
     // exactly one reason is recorded: a run that hits both records the step
-    // ceiling, and which one it records must not depend on timing.
-    if (inheritedSteps + stepIndex >= MAX_STEPS) {
+    // ceiling, and which one it records must not depend on timing. The chain's
+    // steps count towards the step ceiling as its spend does towards the cost
+    // one, counted from the trace rather than stored beside it (ADR-0050).
+    if (chainSteps.length + stepIndex >= MAX_STEPS) {
       terminationReason = 'max_steps_exceeded'
       break
     }
