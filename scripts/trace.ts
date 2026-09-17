@@ -124,19 +124,24 @@ if (process.argv[1]?.endsWith('trace.ts')) {
     console.log(`run     ${runId}${run['resumed_from'] == null ? '' : `  (resumed from ${String(run['resumed_from']).slice(0, 8)})`}`)
     console.log(`window  ${run['resolved_from']} to ${run['resolved_to']}  (${run['cli_args']})`)
     console.log(`stopped ${run['termination_reason'] ?? '(never finished)'}`)
-    console.log(
-      `cost    $${Number(run['estimated_cost']).toFixed(4)}${run['cost_is_upper_bound'] === 1 ? ' (a ceiling: no cache figures)' : ''}` +
-        `  ·  shortlist ${run['shortlist_size']}  ·  notion write ${run['notion_write_performed'] === 1 ? 'yes' : 'no'}`,
-    )
-    console.log(`prompt v${run['prompt_version']}  profile v${run['profile_version']}  model ${run['model_id']}\n`)
-
     const steps = database
       .prepare(`SELECT * FROM steps WHERE run_id = ? ORDER BY step_index`)
       .all(runId)
-    counted.push({
+    const thisRun = {
       cost: steps.reduce((total, step) => total + Number(step['cost']), 0),
       steps: steps.length,
-    })
+    }
+    counted.push(thisRun)
+
+    // Two figures, because they answer two questions: the row's cost is what the
+    // chain had spent by the end of this run, which is what its ceilings were
+    // measured against (ADR-0050), and the steps' own sum is what this run spent.
+    console.log(
+      `cost    $${Number(run['estimated_cost']).toFixed(4)} by here${run['cost_is_upper_bound'] === 1 ? ' (a ceiling: no cache figures)' : ''}` +
+        `  ·  ${thisRun.steps} steps and $${thisRun.cost.toFixed(4)} of its own` +
+        `  ·  shortlist ${run['shortlist_size']}  ·  notion write ${run['notion_write_performed'] === 1 ? 'yes' : 'no'}`,
+    )
+    console.log(`prompt v${run['prompt_version']}  profile v${run['profile_version']}  model ${run['model_id']}\n`)
 
     console.log(`${cell('#', 4)}${cell('kind', 14)}${cell('tool', 16)}${cell('args', 46)}${cell('ms', 7)}note`)
     for (const step of steps) {
