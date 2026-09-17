@@ -116,10 +116,17 @@ export const runRiffRadar = async ({
   // is read before anything else because its row is where the window comes
   // from: `--resume` takes none, and recomputing one from today's date would
   // quietly move the run being continued.
-  const parent = args.resumeRunId === undefined ? undefined : store.runOf(args.resumeRunId)
-  if (args.resumeRunId !== undefined && parent === undefined) {
-    throw new ResumeRefusal(`no run ${args.resumeRunId} to resume`)
+  const asked = args.resumeRunId === undefined ? [] : store.runsMatching(args.resumeRunId)
+  if (args.resumeRunId !== undefined && asked.length !== 1) {
+    throw new ResumeRefusal(
+      asked.length === 0
+        ? `no run ${args.resumeRunId} to resume`
+        : `${args.resumeRunId} matches ${asked.length} runs: ${asked
+            .map((each) => each.runId)
+            .join(', ')}`,
+    )
   }
+  const parent = args.resumeRunId === undefined ? undefined : asked[0]
 
   const window =
     parent === undefined
@@ -151,6 +158,22 @@ export const runRiffRadar = async ({
   // construction (ADR-0039). It throws, and nothing has been spent.
   const suppressed = await suppressedReleases(ports, notionToken, notionDatabaseId)
 
+  // The parent is closed before the child is started, so that exactly one
+  // termination reason per run still holds and no run row ever changes its mind:
+  // its work has been handed on, and the only honest thing left to say about it
+  // is that it was aborted. Before, because a parent that cannot be closed — it
+  // already ended, so this is a re-run rather than a resume — must not leave a
+  // started child behind. Its accounting is the chain up to and including it,
+  // which is what every run row in a chain holds (ADR-0050).
+  if (parent !== undefined && replayed !== undefined) {
+    store.abortRun({
+      runId: parent.runId,
+      endedAt: startedAt.toISOString(),
+      ...replayed.usage,
+      estimatedCost: estimateCost(replayed.usage),
+    })
+  }
+
   const runId = randomUUID()
   store.startRun({
     runId,
@@ -164,20 +187,6 @@ export const runRiffRadar = async ({
     modelId: MODEL_ID,
     ...(parent === undefined ? {} : { resumedFrom: parent.runId }),
   })
-
-  // The parent is closed now rather than later, so that exactly one termination
-  // reason per run still holds and no run row ever changes its mind: its work
-  // has been handed on, and the only honest thing left to say about it is that
-  // it was aborted. Its accounting is the chain up to and including it, which is
-  // what every run row in a chain holds (ADR-0050) — `replayed` is that sum.
-  if (parent !== undefined && replayed !== undefined) {
-    store.abortRun({
-      runId: parent.runId,
-      endedAt: startedAt.toISOString(),
-      ...replayed.usage,
-      estimatedCost: estimateCost(replayed.usage),
-    })
-  }
 
   // The stable prefix never moves: everything that varies is appended after it.
   // A resume appends what the parent's trace says was said after it (ADR-0046).

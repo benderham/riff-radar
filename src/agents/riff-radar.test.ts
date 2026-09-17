@@ -1519,3 +1519,57 @@ test('a resume is refused by the schema preflight, exactly as a fresh run is', a
   assert.equal(parentRow?.['termination_reason'], null)
   assert.equal(store.database.prepare('SELECT count(*) AS n FROM runs').get()?.['n'], 1)
 })
+
+// The id a person has in hand is the one the tool printed, and `npm run trace`
+// prints the first eight characters of it.
+test('a resume takes the first few characters of a run id', async () => {
+  const store = openStore(':memory:')
+  const parent = killedAfter(store, await prefixOfARealRun(2))
+
+  const { runRow } = await run(scriptedModel(finishes(items(1))).port, {
+    store,
+    resumeRunId: parent.slice(0, 6),
+    dryRun: true,
+  })
+
+  assert.equal(runRow?.['resumed_from'], parent)
+})
+
+test('a prefix matching two runs is refused, naming both, and starts nothing', async () => {
+  const store = openStore(':memory:')
+  killedAfter(store, await prefixOfARealRun(1))
+  store.startRun({
+    runId: 'killed-parent-two',
+    startedAt: '2026-09-14T09:00:00.000Z',
+    cliArgs: 'run',
+    resolvedFrom: '2026-09-08',
+    resolvedTo: '2026-09-14',
+    promptVersion: PROMPT_VERSION,
+    profileVersion: profile.version,
+    actionSchemaVersion: ACTION_SCHEMA_VERSION,
+    modelId: MODEL_ID,
+  })
+
+  await assert.rejects(
+    () => run(scriptedModel(finishes([])).port, { store, resumeRunId: 'killed-parent', dryRun: true }),
+    /matches 2 runs/,
+  )
+  assert.equal(store.database.prepare('SELECT count(*) AS n FROM runs').get()?.['n'], 2)
+})
+
+// A resume hands the parent's work on exactly once. Ticket 04 turns this into a
+// refusal with a message; what matters here is that it leaves nothing behind.
+test('resuming a run whose work was already handed on starts no second child', async () => {
+  const store = openStore(':memory:')
+  const parent = killedAfter(store, await prefixOfARealRun(2))
+
+  await run(scriptedModel(finishes(items(1))).port, { store, resumeRunId: parent, dryRun: true })
+  const after = () => store.database.prepare('SELECT count(*) AS n FROM runs').get()?.['n']
+  const before = after()
+
+  await assert.rejects(
+    () => run(scriptedModel(finishes([])).port, { store, resumeRunId: parent, dryRun: true }),
+    /already ended/,
+  )
+  assert.equal(after(), before, 'a refused resume leaves no half-started run')
+})

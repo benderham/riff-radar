@@ -476,3 +476,28 @@ test('aborting keeps the one-reason-per-run guarantee, in both directions', () =
     /already ended/,
   )
 })
+
+test('a run is findable by the first few characters of its id, as the listing prints it', () => {
+  const store = openStore(':memory:')
+  store.startRun({ ...started, runId: 'f55f647d-aaaa-bbbb-cccc-dddddddddddd' })
+
+  assert.deepEqual(
+    store.runsMatching('f55f647d').map((run) => run.runId),
+    ['f55f647d-aaaa-bbbb-cccc-dddddddddddd'],
+  )
+  assert.deepEqual(store.runsMatching('nope'), [])
+  // The exact read is still exact: a chain is walked by whole ids.
+  assert.equal(store.runOf('f55f647d'), undefined)
+  assert.equal(store.runOf('f55f647d-aaaa-bbbb-cccc-dddddddddddd')?.runId, 'f55f647d-aaaa-bbbb-cccc-dddddddddddd')
+})
+
+test('an ambiguous prefix reports every run it matches, oldest first', () => {
+  const store = openStore(':memory:')
+  store.startRun({ ...started, runId: 'ab-second', startedAt: '2026-09-14T10:00:00.000Z' })
+  store.startRun({ ...started, runId: 'ab-first', startedAt: '2026-09-14T09:00:00.000Z' })
+
+  assert.deepEqual(
+    store.runsMatching('ab').map((run) => run.runId),
+    ['ab-first', 'ab-second'],
+  )
+})

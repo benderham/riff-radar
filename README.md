@@ -64,7 +64,8 @@ npm run riff-radar -- run --resume <run-id>    # continue a run that was killed
 ```
 
 `--resume` continues one interrupted run from its last recorded step, using that
-run's window rather than a new one. Without it a run is always new, even when an
+run's window rather than a new one. It takes the first few characters of a run
+id, the same as `npm run trace`, and refuses a prefix that matches two runs. Without it a run is always new, even when an
 unfinished run over the same dates exists: continuing work and asking the
 question again are different requests, and nothing guesses which was meant.
 

@@ -168,8 +168,17 @@ export interface Store {
    * and no past run's anything is reachable through it (ADR-0009).
    */
   sourceTextsOf(runId: string): StoredSourceText[]
-  /** The run with this id, or nothing. What `--resume` is given, read back. */
+  /** The run with exactly this id, or nothing. How a chain is walked. */
   runOf(runId: string): StoredRun | undefined
+  /**
+   * Every run whose id starts with this, oldest first.
+   *
+   * `--resume` resolves what it was given through here rather than matching it
+   * whole, because the id a person has in hand is the one the tool printed, and
+   * both `npm run trace`'s listing and its own argument are prefixes. More than
+   * one match is for the caller to refuse; this only reports them.
+   */
+  runsMatching(prefix: string): StoredRun[]
   /** Every step of a run, in the order it took them. The input to a replay. */
   stepsOf(runId: string): TracedStep[]
   finishRun(run: FinishedRun): void
@@ -309,22 +318,23 @@ export const openStore = (path: string): Store => {
     },
 
     runOf(runId) {
-      const row = database
+      return this.runsMatching(runId).find((run) => run.runId === runId)
+    },
+
+    runsMatching(prefix) {
+      return database
         .prepare(
           `SELECT run_id, resolved_from, resolved_to, termination_reason, resumed_from
-             FROM runs WHERE run_id = ?`,
+             FROM runs WHERE run_id LIKE ? ORDER BY started_at`,
         )
-        .get(runId)
-
-      return row === undefined
-        ? undefined
-        : {
-            runId: row['run_id'] as string,
-            resolvedFrom: row['resolved_from'] as string,
-            resolvedTo: row['resolved_to'] as string,
-            terminationReason: row['termination_reason'] as TerminationReason | null,
-            resumedFrom: row['resumed_from'] as string | null,
-          }
+        .all(`${prefix}%`)
+        .map((row) => ({
+          runId: row['run_id'] as string,
+          resolvedFrom: row['resolved_from'] as string,
+          resolvedTo: row['resolved_to'] as string,
+          terminationReason: row['termination_reason'] as TerminationReason | null,
+          resumedFrom: row['resumed_from'] as string | null,
+        }))
     },
 
     stepsOf(runId) {
