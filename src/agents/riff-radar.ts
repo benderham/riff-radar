@@ -262,11 +262,12 @@ export const runRiffRadar = async ({
   let usage: Usage = replayed?.usage ?? NO_USAGE
   let costIsUpperBound = false
   let consecutiveInvalid = replayed?.consecutiveInvalid ?? 0
-  // A separate counter on purpose (ADR-0053): a repair is not an invalid action
-  // and does not count towards that limit, and an invalid action between the
-  // two `finish` calls does not consume the repair. It is the chain's, and
-  // derived from the refused finishes in the trace rather than stored.
-  let repairsSpent = replayed?.shortlistRefusals ?? 0
+  // Tracked apart from the invalid-action count on purpose (ADR-0053): a repair
+  // is not an invalid action and does not count towards that limit, and an
+  // invalid action between the two `finish` calls does not consume the repair.
+  // It is the chain's, and read out of the refused finishes in the trace rather
+  // than stored.
+  let mayRepair = replayed?.repairSpent !== true
   let stepIndex = 0
 
   // Said now rather than at the end, because a run that resumes with two steps
@@ -504,8 +505,8 @@ export const runRiffRadar = async ({
       // attempts buy tokens rather than a shortlist. The step and cost ceilings
       // still decide whether there is a call left to make with it, because the
       // loop tests them at the top before anything else.
-      if (errors !== null && repairsSpent === 0) {
-        repairsSpent += 1
+      if (errors !== null && mayRepair) {
+        mayRepair = false
         recordStep(finishStep(), at, elapsed())
         messages.push(
           { role: 'assistant', content: response.content, toolCalls: [call] },

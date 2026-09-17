@@ -38,7 +38,7 @@ test('an empty trace replays to nothing', () => {
     usage: { uncachedInputTokens: 0, cachedInputTokens: 0, outputTokens: 0 },
     consecutiveInvalid: 0,
     consecutiveLookupFailures: 0,
-    shortlistRefusals: 0,
+    repairSpent: false,
   })
 })
 
@@ -220,7 +220,7 @@ test('a refused finish replays as the errors the model was handed back', () => {
   ])
 })
 
-test('the repair count is the number of refused finishes', () => {
+test('a refused finish is the repair, spent', () => {
   const refused = traced({
     kind: 'finish',
     modelResponse: said('', { id: 'call-9', name: 'finish', argumentsJson: '{}' }),
@@ -231,11 +231,11 @@ test('the repair count is the number of refused finishes', () => {
     modelResponse: said('', { id: 'call-9', name: 'finish', argumentsJson: '{}' }),
   })
 
-  assert.equal(replay([fetched]).shortlistRefusals, 0)
-  assert.equal(replay([fetched, refused]).shortlistRefusals, 1)
+  assert.equal(replay([fetched]).repairSpent, false)
+  assert.equal(replay([fetched, refused]).repairSpent, true)
   // An accepted finish is not a repair spent, and neither is a failure of some
   // other kind: only the validator refusing a shortlist consumes the one chance.
-  assert.equal(replay([accepted, traced({ kind: 'tool_error', error: 'boom' })]).shortlistRefusals, 0)
+  assert.equal(replay([accepted, traced({ kind: 'tool_error', error: 'boom' })]).repairSpent, false)
 })
 
 // A refused finish is answered, so it is not one of these — the sibling test

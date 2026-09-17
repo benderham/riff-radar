@@ -8,7 +8,7 @@
  *
  * Six things come back out: the message history, the candidate list, the
  * accumulated usage, the consecutive-invalid count, the run of silent
- * MusicBrainz lookups and the repairs already spent at finish. Only the
+ * MusicBrainz lookups and whether the repair at finish is already spent. Only the
  * candidate list is stored; the rest are derived here, which is what this file
  * exists to make provable.
  *
@@ -123,13 +123,12 @@ export interface Replayed {
    */
   readonly consecutiveLookupFailures: number
   /**
-   * How many shortlists the validator has refused in this chain, which is how
-   * many repairs have been spent (ADR-0053). One is the limit, and it is
-   * counted rather than stored for the same reason the rest of this is: a
-   * refused `finish` is already a recorded step carrying the errors it was
-   * told.
+   * Whether the validator has already refused a shortlist in this chain, and so
+   * whether the one repair is gone (ADR-0053). Derived rather than stored for
+   * the same reason the rest of this is: a refused `finish` is already a
+   * recorded step carrying the errors it was told.
    */
-  readonly shortlistRefusals: number
+  readonly repairSpent: boolean
 }
 
 const parseJson = <T>(schema: z.ZodType<T>, json: string, what: string): T => {
@@ -231,6 +230,6 @@ export const replay = (steps: readonly TracedStep[]): Replayed => {
     usage: steps.reduce<Usage>(addUsage, NO_USAGE),
     consecutiveInvalid: trailing,
     consecutiveLookupFailures: lookups.length - 1 - answered,
-    shortlistRefusals: steps.filter(wasRefused).length,
+    repairSpent: repairedAt !== -1,
   }
 }
