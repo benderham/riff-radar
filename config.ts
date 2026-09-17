@@ -207,10 +207,16 @@ export const MAX_SOURCE_TEXT_CHARS = 80_000
 /**
  * The properties a run writes, and the type each must have (ADR-0041).
  *
- * This table is the preflight and the page builder at once (ADR-0042): the preflight
- * refuses a database that does not match it, and nothing is written that is not
- * named here. `Rating` is deliberately absent — it is Ben's column, and the way
- * to guarantee the agent never writes it is that no code can name it.
+ * This table is the preflight's contract (ADR-0042): it refuses a database that
+ * does not match. `notionPage` spells each property out rather than generating
+ * it from here, because the nine share a name and a type and nothing else — a
+ * title, a date, a url and a select are four different shapes of value — and a
+ * builder general enough to emit all four would be longer than the nine lines
+ * it replaced. What keeps the two in step is a test, not a shared table:
+ * `notion-page.test.ts` asserts the builder names nothing absent from here.
+ *
+ * `Rating` is deliberately absent — it is Ben's column, and the way to
+ * guarantee the agent never writes it is that no code can name it.
  *
  * `Album Cover` is not here either, because it is not a property: it is the
  * page's own cover image, set as `cover.external.url` when the page is created.

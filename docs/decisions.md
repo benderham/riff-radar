@@ -608,3 +608,23 @@ So `model_response` now holds `{content, toolCalls, raw}`: the two parsed halves
 The alternative was a second stored column holding the message history, which ADR-0046 rules out for the reason it gives: a second representation of the run is a second thing that can disagree with the first. This is not that. `raw` is still the evidence of what arrived; `content` and `toolCalls` are the same response as the loop understood it, and the loop is what a resume continues.
 
 **Consequences:** The column's shape changed, so a trace written before this reads back as a response the replay refuses — correctly, since it also cannot be resumed. The two committed milestone-1 evidence exports keep the old shape and are historical records rather than resumable runs. Anything that wants the provider's body verbatim now reads `model_response -> '$.raw'` rather than the whole column; nothing currently does, including `npm run trace`.
+
+## ADR-0056: The layering rule is a convention, not a bespoke linter
+
+**Status:** ACCEPTED — 17 September 2026, from a whole-repo over-engineering audit.
+
+`scripts/check-layering.ts` enforced one rule — `domain/` imports nothing from `clients/` or `adapters/` — with a hand-written regular expression over import specifiers, 75 lines of it, plus 89 lines of test and a step in `npm run check`. The rule is right and is not in dispute. What is in dispute is paying a bespoke import-graph parser to hold it, in a single-author repository where the rule has never been broken and where breaking it requires typing an import path that is visibly wrong.
+
+The alternatives were both worse. ESLint with `import/no-restricted-paths` is a real linter rather than a regex, but it is a dependency tree an order of magnitude larger than the thing it checks and ADR-0013 caps the budget deliberately. Keeping the script means maintaining a second, weaker TypeScript module resolver: it already only understood relative specifiers, and it would have to grow every time the import surface did.
+
+So the rule moves to where the project's other conventions live — `AGENTS.md` and the file headers — and the linter is deleted.
+
+**Consequences:** A layering violation is now caught by review rather than by `npm run check`, which is a real loss of automation and the reason this is recorded rather than done quietly. If one is ever found in review, the cheap answer is a single `grep -rE "from '\.\./(clients|adapters)/" src/domain` in the check script — one line, no parser, no dependency — and this decision is superseded rather than reopened. `npm run check` is now `typecheck && test`.
+
+## ADR-0057: The command line is tokenised by `node:util`, not by hand
+
+**Status:** ACCEPTED — 17 September 2026, from the same audit.
+
+`parseCliArgs` walked `argv` with an index it mutated inside a `for` loop, which is the shape that quietly mishandles a flag at the end of the line. Node 22 ships `parseArgs` in `node:util`, which is exactly ADR-0013's stated preference: the standard library in place of a dependency, and now in place of our own code too. It settles unknown flags, missing values and ordering; what stays hand-written is the part that is about this command rather than about argument syntax — the single positional, the whole-number rule for `--last-days`, the `--resume` guard, and the pair that contradict each other.
+
+**Consequences:** `--last-days=14` is now accepted and means what `--last-days 14` means. The old parser rejected the equals form, and the test asserting that rejection has been rewritten rather than deleted, because the rejection was an artefact of a parser that only ever looked at the next token and not a rule anyone chose. Nothing else about the grammar moves. The file is no shorter — 96 lines against 91 — which is worth stating plainly: the win here is a deleted hand-rolled tokeniser, not a smaller file.

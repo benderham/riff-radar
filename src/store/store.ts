@@ -172,35 +172,19 @@ export interface StoredSourceText {
   readonly rawBody: string
 }
 
-export interface Store {
-  readonly database: DatabaseSync
-  startRun(run: StartedRun): void
-  recordStep(step: RecordedStep): void
-  recordSourceText(text: RecordedSourceText): void
-  /**
-   * The pages this run stored. The one read in the interface, and deliberately
-   * narrow: it serves checking a quote against the page it claims to come from,
-   * and no past run's anything is reachable through it (ADR-0009).
-   */
-  sourceTextsOf(runId: string): StoredSourceText[]
-  /** The run with exactly this id, or nothing. How a chain is walked. */
-  runOf(runId: string): StoredRun | undefined
-  /**
-   * Every run whose id starts with this, oldest first.
-   *
-   * `--resume` resolves what it was given through here rather than matching it
-   * whole, because the id a person has in hand is the one the tool printed, and
-   * both `npm run trace`'s listing and its own argument are prefixes. More than
-   * one match is for the caller to refuse; this only reports them.
-   */
-  runsMatching(prefix: string): StoredRun[]
-  /** Every step of a run, in the order it took them. The input to a replay. */
-  stepsOf(runId: string): TracedStep[]
-  finishRun(run: FinishedRun): void
-  /** Closes a run `aborted` because a resume took its work on. */
-  abortRun(run: AbortedRun): void
-  close(): void
-}
+/**
+ * The store, as its one implementation defines it (ADR-0018): SQLite is not
+ * behind a port, and tests open a real in-memory database rather than a fake,
+ * so a hand-kept interface beside `openStore` would be a second copy of the
+ * same shape with nothing to hold it honest.
+ *
+ * `database` is exposed so tests — and a person with a SQL client — can read a
+ * run back without any tooling of ours. `runsMatching` takes a prefix, not a
+ * whole id, because the id a person has in hand is the one the tool printed:
+ * both `npm run trace`'s listing and `--resume` pass prefixes. More than one
+ * match is for the caller to refuse; the store only reports them.
+ */
+export type Store = ReturnType<typeof openStore>
 
 const columnsOf = (database: DatabaseSync, table: string) =>
   database.prepare(`PRAGMA table_info(${table})`).all().map((row) => row['name'] as string)
@@ -236,7 +220,48 @@ const assertSchemaIsCurrent = (database: DatabaseSync, path: string): void => {
   }
 }
 
-export const openStore = (path: string): Store => {
+/**
+ * Ending a run, whichever way it ended.
+ *
+ * The WHERE clause is the guarantee: a run already holding a termination reason
+ * matches nothing, so a second ending changes no row and is reported rather
+ * than silently overwriting the first. Exactly one reason per run, whoever
+ * writes it. What the two endings disagree about is only which columns they are
+ * entitled to set, so that is the one thing passed in.
+ */
+const endRun = (
+  database: DatabaseSync,
+  run: AbortedRun,
+  terminationReason: TerminationReason,
+  extra: readonly (readonly [column: string, value: number])[],
+): void => {
+  const result = database
+    .prepare(
+      `UPDATE runs SET
+         ended_at = ?, termination_reason = ?,
+         uncached_input_tokens = ?, cached_input_tokens = ?, output_tokens = ?,
+         estimated_cost = ?, musicbrainz_degraded = ?
+         ${extra.map(([column]) => `, ${column} = ?`).join('')}
+       WHERE run_id = ? AND termination_reason IS NULL`,
+    )
+    .run(
+      run.endedAt,
+      terminationReason,
+      run.uncachedInputTokens,
+      run.cachedInputTokens,
+      run.outputTokens,
+      run.estimatedCost,
+      run.musicbrainzDegraded ? 1 : 0,
+      ...extra.map(([, value]) => value),
+      run.runId,
+    )
+
+  if (result.changes === 0) {
+    throw new Error(`run ${run.runId} has already ended, or does not exist`)
+  }
+}
+
+export const openStore = (path: string) => {
   const database = new DatabaseSync(path)
   database.exec(SCHEMA)
   assertSchemaIsCurrent(database, path)
@@ -244,7 +269,7 @@ export const openStore = (path: string): Store => {
   return {
     database,
 
-    startRun(run) {
+    startRun(run: StartedRun): void {
       database
         .prepare(
           `INSERT INTO runs (
@@ -267,7 +292,7 @@ export const openStore = (path: string): Store => {
         )
     },
 
-    recordStep(step) {
+    recordStep(step: RecordedStep): void {
       database
         .prepare(
           `INSERT INTO steps (
@@ -303,7 +328,7 @@ export const openStore = (path: string): Store => {
         )
     },
 
-    recordSourceText(text) {
+    recordSourceText(text: RecordedSourceText): void {
       database
         .prepare(
           `INSERT INTO source_texts (
@@ -325,18 +350,18 @@ export const openStore = (path: string): Store => {
         )
     },
 
-    sourceTextsOf(runId) {
+    sourceTextsOf(runId: string): StoredSourceText[] {
       return database
         .prepare(`SELECT url, raw_body FROM source_texts WHERE run_id = ? ORDER BY fetched_at`)
         .all(runId)
         .map((row) => ({ url: row['url'] as string, rawBody: row['raw_body'] as string }))
     },
 
-    runOf(runId) {
+    runOf(runId: string): StoredRun | undefined {
       return this.runsMatching(runId).find((run) => run.runId === runId)
     },
 
-    runsMatching(prefix) {
+    runsMatching(prefix: string): StoredRun[] {
       return database
         .prepare(
           `SELECT run_id, resolved_from, resolved_to, resumed_from, termination_reason,
@@ -356,7 +381,7 @@ export const openStore = (path: string): Store => {
         }))
     },
 
-    stepsOf(runId) {
+    stepsOf(runId: string): TracedStep[] {
       return database
         .prepare(
           `SELECT kind, model_response, tool_result, tool_name, failure_category,
@@ -379,64 +404,21 @@ export const openStore = (path: string): Store => {
         }))
     },
 
-    abortRun(run) {
-      // The same WHERE clause as `finishRun`, carrying the same guarantee:
-      // exactly one termination reason per run, whoever writes it.
-      const result = database
-        .prepare(
-          `UPDATE runs SET
-             ended_at = ?, termination_reason = 'aborted',
-             uncached_input_tokens = ?, cached_input_tokens = ?, output_tokens = ?,
-             estimated_cost = ?, musicbrainz_degraded = ?
-           WHERE run_id = ? AND termination_reason IS NULL`,
-        )
-        .run(
-          run.endedAt,
-          run.uncachedInputTokens,
-          run.cachedInputTokens,
-          run.outputTokens,
-          run.estimatedCost,
-          run.musicbrainzDegraded ? 1 : 0,
-          run.runId,
-        )
-
-      if (result.changes === 0) {
-        throw new Error(`run ${run.runId} has already ended, or does not exist`)
-      }
+    abortRun(run: AbortedRun): void {
+      // Nothing about what it produced: an aborted run handed its work on and
+      // is in no position to claim a shortlist length or a write (ADR-0047).
+      endRun(database, run, 'aborted', [])
     },
 
-    finishRun(run) {
-      // The WHERE clause carries the guarantee: a run already holding a reason
-      // matches nothing, so a second ending changes no row and is reported.
-      const result = database
-        .prepare(
-          `UPDATE runs SET
-             ended_at = ?, termination_reason = ?,
-             uncached_input_tokens = ?, cached_input_tokens = ?, output_tokens = ?,
-             estimated_cost = ?, shortlist_size = ?, notion_write_performed = ?,
-             cost_is_upper_bound = ?, musicbrainz_degraded = ?
-           WHERE run_id = ? AND termination_reason IS NULL`,
-        )
-        .run(
-          run.endedAt,
-          run.terminationReason,
-          run.uncachedInputTokens,
-          run.cachedInputTokens,
-          run.outputTokens,
-          run.estimatedCost,
-          run.shortlistSize,
-          run.notionWritePerformed ? 1 : 0,
-          run.costIsUpperBound ? 1 : 0,
-          run.musicbrainzDegraded ? 1 : 0,
-          run.runId,
-        )
-
-      if (result.changes === 0) {
-        throw new Error(`run ${run.runId} has already ended, or does not exist`)
-      }
+    finishRun(run: FinishedRun): void {
+      endRun(database, run, run.terminationReason, [
+        ['shortlist_size', run.shortlistSize],
+        ['notion_write_performed', run.notionWritePerformed ? 1 : 0],
+        ['cost_is_upper_bound', run.costIsUpperBound ? 1 : 0],
+      ])
     },
 
-    close() {
+    close(): void {
       database.close()
     },
   }

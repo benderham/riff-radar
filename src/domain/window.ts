@@ -20,7 +20,7 @@ export interface DateWindow {
 }
 
 /** Formats a Date as `YYYY-MM-DD` from its local-time components. */
-export const toLocalDate = (at: Date): string => at.toLocaleDateString('en-CA')
+const toLocalDate = (at: Date): string => at.toLocaleDateString('en-CA')
 
 /** `lastDays` is validated where it is parsed, in `parseCliArgs`. */
 export const resolveWindow = (now: Date, lastDays: number): DateWindow => {
