@@ -151,6 +151,10 @@ const parseJson = <T>(schema: z.ZodType<T>, json: string, what: string): T => {
  * A finish the validator refused, as against one that ended its run. The error
  * column is the difference and no new kind is needed: a finish that completed,
  * or reported a quiet week, has nothing to say there.
+ *
+ * A trace can hold two of these — the repair and the second refusal that ended
+ * the run — which is why the count is what the repair budget reads, and why
+ * only the first of them said anything to the model.
  */
 const wasRefused = (step: TracedStep): boolean => step.kind === 'finish' && step.error !== null
 
@@ -164,11 +168,13 @@ const wasRefused = (step: TracedStep): boolean => step.kind === 'finish' && step
  * of it would leave a proposed call with no answer, which is a conversation no
  * provider accepts.
  *
- * The exception is the refused finish, which did answer: it handed the
- * validator's errors back and the run carried on (ADR-0053).
+ * The exception is the one repaired finish, which did answer: it handed the
+ * validator's errors back and the run carried on (ADR-0053). Only the first
+ * refusal in a chain did that — a second is what ends the run, and replaying it
+ * as an invitation to try again would be a history that never happened.
  */
-const messagesOf = (step: TracedStep): ModelMessage[] => {
-  if (step.kind !== 'action' && step.kind !== 'invalid_action' && !wasRefused(step)) return []
+const messagesOf = (step: TracedStep, repaired: boolean): ModelMessage[] => {
+  if (step.kind !== 'action' && step.kind !== 'invalid_action' && !repaired) return []
   if (step.modelResponse === null) return []
 
   const { content, toolCalls } = parseJson(modelResponseSchema, step.modelResponse, 'a model response')
@@ -184,7 +190,7 @@ const messagesOf = (step: TracedStep): ModelMessage[] => {
     ...(call === undefined ? {} : { toolCalls: [call] }),
   }
 
-  if (step.kind === 'finish') {
+  if (repaired) {
     return call === undefined ? [] : [said, shortlistRefusalMessage(step.error ?? '', call.id)]
   }
 
@@ -198,6 +204,10 @@ const messagesOf = (step: TracedStep): ModelMessage[] => {
 }
 
 export const replay = (steps: readonly TracedStep[]): Replayed => {
+  // The one refusal that was handed back rather than final, by position: the
+  // budget is one, so a second refused finish is the run ending.
+  const repairedAt = steps.findIndex(wasRefused)
+
   const latest = steps.map((step) => step.candidatesAfter).findLast((each) => each !== null)
 
   // Trailing, not total: the counter the loop keeps resets on every valid
@@ -213,7 +223,7 @@ export const replay = (steps: readonly TracedStep[]): Replayed => {
   const answered = lookups.findLastIndex((step) => !wentSilent(step.failureCategory))
 
   return {
-    messages: steps.flatMap(messagesOf),
+    messages: steps.flatMap((step, index) => messagesOf(step, index === repairedAt)),
     candidates:
       latest === undefined
         ? []

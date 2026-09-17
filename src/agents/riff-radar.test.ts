@@ -2051,6 +2051,37 @@ test('an empty shortlist is still no_candidates and is never handed back', async
   assert.equal(stepRows.filter((row) => row['kind'] === 'finish').length, 1)
 })
 
+// The repair costs a model call like any other step, so a run that cannot
+// afford one does not get it: both ceilings are tested at the top of the loop,
+// before the call, exactly as they were before the repair existed.
+test('a run over the cost ceiling gets no call to repair with either', async () => {
+  const model = scriptedModel(...found, {
+    ...finishes(unsourced),
+    usage: { uncachedInputTokens: 0, cachedInputTokens: 0, outputTokens: 10_000_000 },
+  })
+  const { outcome, stepRows } = await run(model.port)
+
+  assert.equal(outcome.terminationReason, 'budget_exceeded')
+  assert.equal(
+    stepRows.filter((row) => row['kind'] === 'finish').length,
+    1,
+    'the refusal was recorded and then the budget stopped the repair',
+  )
+})
+
+// ADR-0025 wins over ADR-0053 where they meet, and this is where: dropping
+// every item is a legitimate repair, and what is left is a quiet week rather
+// than a second refusal. `validation_failed` therefore means the model was told
+// twice and still named something; it does not mean it was told twice and gave
+// up. Pinned because it is a composition of two rules rather than either.
+test('a repair that drops every item is a quiet week, not a second refusal', async () => {
+  const model = scriptedModel(...found, finishes(unsourced), finishes([]))
+  const { outcome, written } = await run(model.port)
+
+  assert.equal(outcome.terminationReason, 'no_candidates')
+  assert.equal(written.length, 0)
+})
+
 test('a run at its step ceiling gets no extra call to repair with', async () => {
   const store = openStore(':memory:')
   const parent = killedAfter(store, idleSteps(MAX_STEPS - 1))
