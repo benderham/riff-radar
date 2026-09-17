@@ -50,23 +50,29 @@ test('a retried step says how many attempts it took, so the seconds are explaine
   )
 })
 
-test('a chain reads as one story: every run, and the youngest run for the total', () => {
-  // A resumed run inherits its parent's spend (ADR-0050), so its own row
-  // already holds the chain's accounting. Summing the rows would count the
-  // parent twice; the youngest row is the total.
+test('a chain is totalled from its steps, which no run inherits', () => {
+  // A run row's cost includes its ancestors' (ADR-0050), so the rows cannot be
+  // summed — and the youngest row is usually the killed one, which never wrote
+  // a total at all. The steps are the only figures that are each their own.
   assert.deepEqual(
     chainSummary([
-      { estimated_cost: 0.04, steps: 12 },
-      { estimated_cost: 0.07, steps: 5 },
+      { cost: 0.04, steps: 12 },
+      { cost: 0.03, steps: 5 },
     ]),
     { runs: 2, steps: 17, cost: 0.07 },
   )
 })
 
+test('a chain whose latest run never finished still reports what it spent', () => {
+  assert.deepEqual(
+    chainSummary([
+      { cost: 0.04, steps: 12 },
+      { cost: 0, steps: 0 },
+    ]),
+    { runs: 2, steps: 12, cost: 0.04 },
+  )
+})
+
 test('one run is a chain of one, and says the same thing', () => {
-  assert.deepEqual(chainSummary([{ estimated_cost: 0.04, steps: 12 }]), {
-    runs: 1,
-    steps: 12,
-    cost: 0.04,
-  })
+  assert.deepEqual(chainSummary([{ cost: 0.04, steps: 12 }]), { runs: 1, steps: 12, cost: 0.04 })
 })

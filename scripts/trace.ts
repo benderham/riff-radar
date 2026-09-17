@@ -44,19 +44,22 @@ export const noteOf = (step: Record<string, unknown>): string => {
 }
 
 /**
- * A chain of runs, totalled.
+ * A chain of runs, totalled from its steps.
  *
- * Steps add up, because each row's steps are its own. Cost does not: a resumed
- * run loads its parent's accumulated spend and continues against the same
- * ceiling (ADR-0050), so its row already holds the chain's total and summing
- * the rows would count the parent twice. The youngest row is the answer.
+ * Not from the run rows: a resumed run loads its parent's accumulated spend and
+ * continues against the same ceiling (ADR-0050), so `runs.estimated_cost`
+ * already includes its ancestors and summing the rows would count them twice —
+ * while taking only the youngest row reads zero for the common case, a chain
+ * whose latest run is the one that was killed and never wrote its total. A
+ * step's cost is its own and is written when the step is, so the steps add up
+ * whether or not any run in the chain ever ended.
  */
 export const chainSummary = (
-  runs: readonly { readonly estimated_cost: unknown; readonly steps: number }[],
+  runs: readonly { readonly cost: number; readonly steps: number }[],
 ): { runs: number; steps: number; cost: number } => ({
   runs: runs.length,
   steps: runs.reduce((total, run) => total + run.steps, 0),
-  cost: Number(runs.at(-1)?.estimated_cost ?? 0),
+  cost: runs.reduce((total, run) => total + run.cost, 0),
 })
 
 // Nothing runs on import: the formatting above is tested, and this is a script.
@@ -117,7 +120,7 @@ if (process.argv[1]?.endsWith('trace.ts')) {
     chain.push(younger)
   }
 
-  const counted: { estimated_cost: unknown; steps: number }[] = []
+  const counted: { cost: number; steps: number }[] = []
 
   for (const run of chain) {
     const runId = String(run['run_id'])
@@ -133,7 +136,10 @@ if (process.argv[1]?.endsWith('trace.ts')) {
     const steps = database
       .prepare(`SELECT * FROM steps WHERE run_id = ? ORDER BY step_index`)
       .all(runId)
-    counted.push({ estimated_cost: run['estimated_cost'], steps: steps.length })
+    counted.push({
+      cost: steps.reduce((total, step) => total + Number(step['cost']), 0),
+      steps: steps.length,
+    })
 
     console.log(`${cell('#', 4)}${cell('kind', 14)}${cell('tool', 16)}${cell('args', 46)}${cell('ms', 7)}note`)
     for (const step of steps) {

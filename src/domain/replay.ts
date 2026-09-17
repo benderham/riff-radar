@@ -13,7 +13,8 @@
  *
  * Pure. A trace it cannot read is refused whole rather than replayed in part,
  * because a run that cannot be reconstructed is also a run that cannot be
- * explained.
+ * explained — and refused as a `ResumeRefusal`, because it happens before the
+ * run row, where nothing has been spent and the CLI reports rather than crashes.
  */
 
 import { z } from 'zod'
@@ -21,6 +22,7 @@ import { z } from 'zod'
 import type { Candidate } from './candidates.ts'
 import type { Usage } from './cost.ts'
 import { NO_USAGE, addUsage } from './cost.ts'
+import { ResumeRefusal } from './run.ts'
 import type { ModelMessage, ProposedToolCall } from '../ports.ts'
 import type { TracedStep } from '../store/store.ts'
 
@@ -61,6 +63,19 @@ const candidatesSchema = z.array(
   }),
 )
 
+/**
+ * What the model is told when its action was refused, in the two shapes it can
+ * arrive in: answering a call it made, or answering the step it did not.
+ *
+ * Exported because the loop says it and the replay says it again: two copies of
+ * this sentence would drift, and the drift would be a replayed conversation
+ * that differs from the one the model actually had.
+ */
+export const refusalMessage = (error: string, callId?: string): ModelMessage =>
+  callId === undefined
+    ? { role: 'user', content: `Invalid action: ${error}` }
+    : { role: 'tool', toolCallId: callId, content: `Invalid action, not dispatched: ${error}` }
+
 export interface Replayed {
   /** Appended after the stable prefix and the run brief, in the order they happened. */
   readonly messages: readonly ModelMessage[]
@@ -74,11 +89,13 @@ const parseJson = <T>(schema: z.ZodType<T>, json: string, what: string): T => {
   try {
     value = JSON.parse(json)
   } catch {
-    throw new Error(`this run cannot be replayed: ${what} is not readable JSON`)
+    throw new ResumeRefusal(`this run cannot be replayed: ${what} is not readable JSON`)
   }
 
   const parsed = schema.safeParse(value)
-  if (!parsed.success) throw new Error(`this run cannot be replayed: ${what} is not what it should be`)
+  if (!parsed.success) {
+    throw new ResumeRefusal(`this run cannot be replayed: ${what} is not what it should be`)
+  }
   return parsed.data
 }
 
@@ -115,16 +132,7 @@ const messagesOf = (step: TracedStep): ModelMessage[] => {
       : [said, { role: 'tool', toolCallId: call.id, content: step.toolResult ?? '' }]
   }
 
-  return [
-    said,
-    call === undefined
-      ? { role: 'user', content: `Invalid action: ${step.error ?? ''}` }
-      : {
-          role: 'tool',
-          toolCallId: call.id,
-          content: `Invalid action, not dispatched: ${step.error ?? ''}`,
-        },
-  ]
+  return [said, refusalMessage(step.error ?? '', call?.id)]
 }
 
 export const replay = (steps: readonly TracedStep[]): Replayed => {

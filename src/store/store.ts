@@ -120,6 +120,24 @@ export interface FinishedRun {
   readonly costIsUpperBound: boolean
 }
 
+/**
+ * A run closed because its work was handed to a resume (ADR-0047).
+ *
+ * Narrower than `FinishedRun` on purpose. A run that ended itself declares what
+ * it produced; an aborted one produced nothing and is in no position to say
+ * whether it wrote to Notion or how long its shortlist was — those columns stay
+ * unset rather than being filled in with a plausible zero that its own steps
+ * might contradict. What it did spend is a fact, summed from its trace.
+ */
+export interface AbortedRun {
+  readonly runId: string
+  readonly endedAt: string
+  readonly uncachedInputTokens: number
+  readonly cachedInputTokens: number
+  readonly outputTokens: number
+  readonly estimatedCost: number
+}
+
 export interface RecordedSourceText {
   readonly sourceTextId: string
   readonly runId: string
@@ -155,6 +173,8 @@ export interface Store {
   /** Every step of a run, in the order it took them. The input to a replay. */
   stepsOf(runId: string): TracedStep[]
   finishRun(run: FinishedRun): void
+  /** Closes a run `aborted` because a resume took its work on. */
+  abortRun(run: AbortedRun): void
   close(): void
 }
 
@@ -325,6 +345,31 @@ export const openStore = (path: string): Store => {
           cachedInputTokens: row['cached_input_tokens'] as number,
           outputTokens: row['output_tokens'] as number,
         }))
+    },
+
+    abortRun(run) {
+      // The same WHERE clause as `finishRun`, carrying the same guarantee:
+      // exactly one termination reason per run, whoever writes it.
+      const result = database
+        .prepare(
+          `UPDATE runs SET
+             ended_at = ?, termination_reason = 'aborted',
+             uncached_input_tokens = ?, cached_input_tokens = ?, output_tokens = ?,
+             estimated_cost = ?
+           WHERE run_id = ? AND termination_reason IS NULL`,
+        )
+        .run(
+          run.endedAt,
+          run.uncachedInputTokens,
+          run.cachedInputTokens,
+          run.outputTokens,
+          run.estimatedCost,
+          run.runId,
+        )
+
+      if (result.changes === 0) {
+        throw new Error(`run ${run.runId} has already ended, or does not exist`)
+      }
     },
 
     finishRun(run) {

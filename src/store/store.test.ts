@@ -428,3 +428,51 @@ test('a candidate list round-trips through the column it is stored in', () => {
   const [only] = store.stepsOf('run-1')
   assert.deepEqual(JSON.parse(only?.candidatesAfter ?? 'null'), candidates)
 })
+
+test('an aborted run records what it spent and claims nothing else', () => {
+  const store = openStore(':memory:')
+  store.startRun(started)
+  store.abortRun({
+    runId: 'run-1',
+    endedAt: '2026-09-14T09:00:05.000Z',
+    uncachedInputTokens: 200,
+    cachedInputTokens: 40,
+    outputTokens: 20,
+    estimatedCost: 0.0002,
+  })
+
+  const row = store.database.prepare('SELECT * FROM runs WHERE run_id = ?').get('run-1')
+  assert.equal(row?.['termination_reason'], 'aborted')
+  assert.equal(row?.['ended_at'], '2026-09-14T09:00:05.000Z')
+  assert.equal(row?.['uncached_input_tokens'], 200)
+  // A run whose work was handed on is in no position to say what it produced.
+  assert.equal(row?.['shortlist_size'], 0)
+  assert.equal(row?.['notion_write_performed'], 0)
+})
+
+test('aborting keeps the one-reason-per-run guarantee, in both directions', () => {
+  const store = openStore(':memory:')
+  store.startRun(started)
+  const aborting = {
+    runId: 'run-1',
+    endedAt: '2026-09-14T09:00:05.000Z',
+    uncachedInputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+    estimatedCost: 0,
+  }
+  store.abortRun(aborting)
+
+  assert.throws(() => store.abortRun(aborting), /already ended/)
+  assert.throws(
+    () =>
+      store.finishRun({
+        ...aborting,
+        terminationReason: 'completed',
+        shortlistSize: 5,
+        notionWritePerformed: true,
+        costIsUpperBound: false,
+      }),
+    /already ended/,
+  )
+})

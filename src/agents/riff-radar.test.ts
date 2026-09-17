@@ -1477,3 +1477,45 @@ test('a resume of a resume inherits the whole chain, not just its parent', async
     'the whole chain is paid for',
   )
 })
+
+// ADR-0047: two runs over the same window are both legitimate and are not the
+// same operation. Nothing infers which was meant, so an unfinished run for the
+// same dates changes nothing about a run started without the flag.
+test('without the flag a run is new, even with an unfinished run over the same window', async () => {
+  const store = openStore(':memory:')
+  const killed = killedAfter(store, await prefixOfARealRun(2))
+  const model = scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes([]))
+
+  const { outcome, runRow } = await run(model.port, { store, dryRun: true })
+
+  assert.equal(runRow?.['resumed_from'], null, 'a run without --resume resumes nothing')
+  assert.notEqual(outcome.runId, killed)
+  // The other run is untouched: not continued, not closed, not commented on.
+  const killedRow = store.database.prepare('SELECT * FROM runs WHERE run_id = ?').get(killed)
+  assert.equal(killedRow?.['termination_reason'], null)
+  assert.equal(killedRow?.['ended_at'], null)
+  // And it started over: the first thing it did was fetch a source for itself.
+  assert.deepEqual((model.requests[0]?.messages ?? []).map((each) => each.role), ['system', 'user'])
+})
+
+test('a resume is refused by the schema preflight, exactly as a fresh run is', async () => {
+  const store = openStore(':memory:')
+  const parent = killedAfter(store, await prefixOfARealRun(2))
+
+  await assert.rejects(
+    () =>
+      run(scriptedModel(finishes([])).port, {
+        store,
+        resumeRunId: parent,
+        dryRun: true,
+        notionSchema: JSON.stringify({ properties: { Album: { type: 'title' } } }),
+      }),
+    /Notion database/,
+  )
+
+  // Refused before the run row, so the parent is still there to be resumed once
+  // the database is put right.
+  const parentRow = store.database.prepare('SELECT * FROM runs WHERE run_id = ?').get(parent)
+  assert.equal(parentRow?.['termination_reason'], null)
+  assert.equal(store.database.prepare('SELECT count(*) AS n FROM runs').get()?.['n'], 1)
+})

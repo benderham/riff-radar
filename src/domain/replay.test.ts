@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import type { TracedStep } from '../store/store.ts'
 import { recordedModelResponse, replay } from './replay.ts'
+import { ResumeRefusal } from './run.ts'
 
 const said = (content: string, ...calls: readonly { id: string; name: string; argumentsJson: string }[]) =>
   recordedModelResponse({ content, toolCalls: calls, raw: { provider: 'shape' } })
@@ -149,4 +150,11 @@ test('the consecutive-invalid count is the trailing run of invalid actions', () 
 test('a trace that cannot be read is refused rather than half replayed', () => {
   assert.throws(() => replay([traced({ modelResponse: '{ truncated' })]), /cannot be replayed/)
   assert.throws(() => replay([traced({ candidatesAfter: '[{"artist":42}]' })]), /cannot be replayed/)
+})
+
+// It happens before the run row, where nothing has been spent, so it is the
+// same kind of refusal as a missing run id rather than a crash.
+test('an unreadable trace is refused the way a resume is refused', () => {
+  assert.throws(() => replay([traced({ modelResponse: '{ truncated' })]), ResumeRefusal)
+  assert.throws(() => replay([traced({ candidatesAfter: '[{"artist":42}]' })]), ResumeRefusal)
 })

@@ -34,7 +34,7 @@ import type { CliArgs } from '../domain/cli-args.ts'
 import type { Usage } from '../domain/cost.ts'
 import { NO_USAGE, addUsage, estimateCost } from '../domain/cost.ts'
 import { categoryOf } from '../domain/failure.ts'
-import { recordedModelResponse, replay } from '../domain/replay.ts'
+import { recordedModelResponse, refusalMessage, replay } from '../domain/replay.ts'
 import { preflightSchema, proposeShortlist, suppressedReleases } from '../clients/notion.ts'
 import { citedVibes, rankShortlist } from '../domain/ranking.ts'
 import type { TerminationReason } from '../domain/run.ts'
@@ -116,13 +116,10 @@ export const runRiffRadar = async ({
   // is read before anything else because its row is where the window comes
   // from: `--resume` takes none, and recomputing one from today's date would
   // quietly move the run being continued.
-  const parent =
-    args.resumeRunId === undefined
-      ? undefined
-      : (store.runOf(args.resumeRunId) ??
-        (() => {
-          throw new ResumeRefusal(`no run ${args.resumeRunId} to resume`)
-        })())
+  const parent = args.resumeRunId === undefined ? undefined : store.runOf(args.resumeRunId)
+  if (args.resumeRunId !== undefined && parent === undefined) {
+    throw new ResumeRefusal(`no run ${args.resumeRunId} to resume`)
+  }
 
   const window =
     parent === undefined
@@ -171,19 +168,14 @@ export const runRiffRadar = async ({
   // The parent is closed now rather than later, so that exactly one termination
   // reason per run still holds and no run row ever changes its mind: its work
   // has been handed on, and the only honest thing left to say about it is that
-  // it was aborted. Its accounting is what its own steps spent.
+  // it was aborted. Its accounting is the chain up to and including it, which is
+  // what every run row in a chain holds (ADR-0050) — `replayed` is that sum.
   if (parent !== undefined && replayed !== undefined) {
-    store.finishRun({
+    store.abortRun({
       runId: parent.runId,
       endedAt: startedAt.toISOString(),
-      terminationReason: 'aborted',
       ...replayed.usage,
       estimatedCost: estimateCost(replayed.usage),
-      shortlistSize: 0,
-      notionWritePerformed: false,
-      // Not derivable from the steps, which record tokens rather than whether
-      // the provider broke them down. The child records its own.
-      costIsUpperBound: false,
     })
   }
 
@@ -317,11 +309,7 @@ export const runRiffRadar = async ({
         content: response.content,
         ...(call === undefined ? {} : { toolCalls: [call] }),
       })
-      messages.push(
-        call === undefined
-          ? { role: 'user', content: `Invalid action: ${error}` }
-          : { role: 'tool', toolCallId: call.id, content: `Invalid action, not dispatched: ${error}` },
-      )
+      messages.push(refusalMessage(error, call?.id))
 
       if (consecutiveInvalid >= INVALID_ACTION_LIMIT) terminationReason = 'invalid_action_limit'
     }
