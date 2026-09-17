@@ -64,6 +64,6 @@ Cheap if it is ever wanted: a run that writes a shortlist of five while a poller
 
 `d2b59538`'s row reads `$0.0000` and its steps read `$0.0437`, because a run row is written at the end. `npm run trace` already totals from steps (ADR-0050). Milestone 3's failure and cost reporting has to do the same, or it will be blind to exactly the runs it exists to describe.
 
-## 10. Degraded mode is evidenced by tests and a diary entry, not by an exported trace
+## 10. ~~Degraded mode is evidenced by tests and a diary entry~~ — closed 17 September
 
-Runs `e480b9c1` and `3e657aa3` on Ben's machine are the real thing and are still only in his local database. `docs/evidence/milestone-2.md` carries the export command; until it is run, the criterion rests on unit tests and on the diary.
+Ben exported `e480b9c1` and `3e657aa3` from his own machine and committed them. What the pair leaves open is smaller and is recorded here rather than dropped: both are dry runs, so the caveat ADR-0052 puts in a degraded record's `Rationale` has still never reached Notion. It is covered by a test and by the flag on the shortlist items in those traces.

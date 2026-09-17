@@ -1,8 +1,8 @@
 # Milestone 2: the evidence
 
-Four runs on 17 September 2026, from the development sandbox. All four traces are committed beside this file as JSON, exported from `riff-radar.db` with nothing removed but the stored page HTML, which is recorded by size, status and candidate count instead.
+Six runs on 17 September 2026. Four from the development sandbox and two from Ben's own machine, where MusicBrainz blocks his IP. All six traces are committed beside this file as JSON, exported from `riff-radar.db` with nothing removed but the stored page HTML, which is recorded by size, status and candidate count instead.
 
-Two stories. **Evidence run 1** is an interruption and its resume: a run killed at step six and continued by run id. **Evidence run 2** is a run killed during its Notion write, and the re-run of the same window that followed it.
+Three stories. **Evidence run 1** is an interruption and its resume: a run killed at step six and continued by run id. **Evidence run 2** is a run killed during its Notion write, and the re-run of the same window that followed it. **The degraded pair** is the one failure that cannot be staged in the sandbox, run where it happens for free.
 
 | | `c4d95544` | `51f702ca` | `d2b59538` | `d5d6e816` |
 |---|---|---|---|---|
@@ -76,24 +76,29 @@ So the remainder case is closed deterministically instead, by the test the miles
 
 ## Degraded mode
 
-Not evidenced here, and deliberately: MusicBrainz answers the sandbox and blocks Ben's IP, so the failure reproduces for free on his machine and has to be staged in this one. Two runs on his machine on 17 September already exercised it — `e480b9c1`, which degraded after two silent lookups and ended `no_candidates`, and `3e657aa3`, which completed with five proposals and both reissues correctly left off. Both are in his local `riff-radar.db` and neither has been exported.
+Not reproducible in the sandbox, where MusicBrainz answers, and free on Ben's machine, where it blocks his IP. Two runs from that machine, both `run --dry-run` over 2026-09-11 to 2026-09-17, exported and committed by Ben:
 
-To close this criterion, run this in the repository on that machine and commit what it writes:
+| | `e480b9c1` | `3e657aa3` |
+|---|---|---|
+| Started | 04:53 UTC | 05:03 UTC |
+| Termination reason | `no_candidates` | `completed` |
+| `musicbrainz_degraded` | 1 | 1 |
+| Steps | 15 | 17 |
+| Wall clock | 3m 55s | 3m 17s |
+| Cost | $0.0237 | $0.0123 |
+| Cached input | 79,400 of 129,624 tokens (61%) | 145,146 of 152,296 (95%) |
+| Lookups | 12: two that failed, ten that asked nothing | 14: two that failed, twelve that asked nothing |
+| Shortlist | 0 | 5, every item `judgedWithoutMusicbrainz` |
 
-```bash
-node --disable-warning=ExperimentalWarning -e '
-const { DatabaseSync } = require("node:sqlite"); const { writeFileSync } = require("node:fs");
-for (const prefix of ["e480b9c1", "3e657aa3"]) {
-  const db = new DatabaseSync("riff-radar.db", { readOnly: true });
-  const run = db.prepare("select * from runs where run_id like ?").get(prefix + "%");
-  const steps = db.prepare("select * from steps where run_id = ? order by step_index").all(run.run_id);
-  const sources = db.prepare("select * from source_texts where run_id = ? order by fetched_at").all(run.run_id)
-    .map(({ raw_body, ...rest }) => ({ ...rest, raw_body_bytes: Buffer.byteLength(raw_body ?? "") }));
-  writeFileSync(`docs/evidence/milestone-2-run-${prefix}-degraded.json`, JSON.stringify({ run, steps, sources }, null, 1) + "\n");
-}'
-```
+**The threshold, in the trace.** Both runs read the same two calendars, then the categories tell the story in one column: steps 2 and 3 are `lookup_release` with `failure_category = 'transient'` — two silent lookups against a provider that never answered — and every lookup after them is `unavailable`, which is the category set by the run rather than derived from a status (ADR-0048), on a step that made no request at all. Twenty-two lookups across the two runs cost nothing after the second, which is the arithmetic ADR-0052 exists for: three attempts with backoff against a blocked provider would otherwise have been minutes of knocking to learn what the second lookup already knew.
 
-That is the same export the four traces here were made with. Until it is run, criterion 8 of the ticket rests on the diary entry for 17 September and on `src/agents/riff-radar.test.ts`, which pins the two-silences threshold, the answer the degraded lookup gives the model and the caveat that reaches Notion.
+**What the model was told.** The degraded lookup's result carries it, so it is in the trace rather than only in the prompt:
+
+> MusicBrainz is unavailable for the rest of this run; releases are judged on the source's own word: a stated album passes, a stated live album, EP, single, compilation or reissue does not, and a release no source described is taken on the calendar that listed it. No reissue or remaster detection, no EP track-count or duration thresholds, and the label, genre and personnel terms drop out of the ranking. Judge the title yourself — an anniversary edition or a re-release says so in its name, and nothing else is left to catch it.
+
+**The pair is a before and an after, ten minutes apart.** `e480b9c1` degraded exactly as specified and proposed nothing: its ten silent lookups say they were judged on "the source's stated format, as an untyped release group already is", and every one of the ten came back ineligible, because thirteen of fourteen candidates stated no format at all. Every acceptance criterion of ticket 05 was met and the decision's purpose was not — the dead run degraded mode exists to prevent had been reached by another route. `3e657aa3`, after the rule was corrected so that silence is the calendar's word while a source that describes a release is still believed, completed with five items, all five stamped `judgedWithoutMusicbrainz`, and both reissues on the calendar — *The Last Stand 10th Anniversary Edition* and *The Damn Truth Re-Release* — correctly left off, on their titles alone. That is the full record of the fault, the fix and the evidence for both.
+
+**Two things the pair does not show.** Both runs are dry runs, so the caveat ADR-0052 puts in the Notion `Rationale` has still never been written to Notion; it is covered by `src/agents/riff-radar.test.ts` and by the shortlist items in these traces, which carry the flag the write reads. And the ranking totals in `3e657aa3` are all zero, which is not degradation: `matching()` asks whether a value contains a term, so a profile label of `Reigning Phoenix Music` finds nothing in Loudwire's `Reigning Phoenix`. That is milestone 3's first ticket.
 
 ## What the runs say about two numbers
 
@@ -103,7 +108,7 @@ That is the same export the four traces here were made with. Until it is run, cr
 
 ## What is not proven
 
-- Degraded mode, from Ben's machine. See above.
+- The Notion caveat a degraded run writes. Both degraded runs were dry runs; the flag reaches the shortlist and the write is tested, but no degraded row has been written to Notion.
 - A shortlist split across two runs by a kill between two page creations. The mechanism is tested; the live version was attempted twice and not achieved, and is described above rather than claimed.
 - The EP thresholds and the `artists.always` guarantee still have not fired outside their unit tests. Unchanged from milestone 1.
 - No human verdict on the five rows `d2b59538` wrote. They are `Proposed`, they are correct, and they are deliberately not tidied: they are the evidence.

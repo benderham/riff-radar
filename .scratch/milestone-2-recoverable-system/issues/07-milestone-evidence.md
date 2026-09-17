@@ -4,7 +4,7 @@
 
 **Blocked by:** 01, 02, 03, 04, 05, 06
 
-**Status:** ready-for-human
+**Status:** done
 
 ## Why
 
@@ -29,7 +29,7 @@ Each criterion cites its evidence:
 - [x] **Checkpointed** — every step of evidence run 1's parent has a non-null `candidates_after`
 - [x] **Resume** — evidence run 1's pair, with the step counts proving no completed work was repeated and the inherited budget shown
 - [x] **No duplicate Notion records** — evidence run 2's pair, with the Notion database state before and after, showing the remaining releases proposed and nothing proposed twice
-- [ ] Degraded mode is evidenced — from Ben's own machine, where MusicBrainz is blocked, which is the one place the real failure reproduces for free
+- [x] Degraded mode is evidenced — from Ben's own machine, where MusicBrainz is blocked, which is the one place the real failure reproduces for free
 - [x] Latency, token use and estimated cost for all four traces, as milestone 1's evidence file reports them
 - [x] Anything still carried forward is appended to `carried-forward.md` with its evidence, for milestone 3
 
@@ -47,4 +47,4 @@ Four traces under `docs/evidence/`, and `docs/evidence/milestone-2.md` closing e
 
 Evidence run 2 went differently and the file says so. `d2b59538` was killed during its write, but after the fifth create rather than between two, so it leaves five correct rows behind and a run row that denies writing — which is the state the criterion is about, and the re-run `d5d6e816` suppresses all five and proposes none of them twice. What that pair cannot show is a shortlist split across two runs. A second live attempt at a between-creates kill ended `max_steps_exceeded` before it reached `finish`, and a third was not bought at three cents a try; the remainder case is closed instead by the fake the milestone's testing decisions asked for — *a run killed part way through its write leaves rows the next run suppresses*, which stands the killed state up in a real store and asserts the next run proposes the third release and only the third. The kill itself cannot be staged in process: every failure a fake can produce triggers the compensating rollback, and a killed process rolls nothing back.
 
-**Still open**, which is why this is `ready-for-human` rather than `done`: degraded mode needs an export from Ben's machine; the command is in the evidence file. Four items are appended to `carried-forward.md`, the first of which is the step ceiling breaking a *re-run* rather than a first run.
+Degraded mode was the one criterion this session could not close: MusicBrainz answers the sandbox. Ben exported `e480b9c1` and `3e657aa3` from his own machine and committed them, and the evidence file now reads the pair as a before and an after ten minutes apart — the run that degraded correctly and proposed nothing, and the run that completed with five after the rule was corrected. Six traces, not four. Four items are appended to `carried-forward.md`, the first of which is the step ceiling breaking a *re-run* rather than a first run.
