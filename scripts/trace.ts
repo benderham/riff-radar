@@ -3,7 +3,8 @@
  *
  * No argument lists the last ten runs. An argument — the first few characters
  * of a run id are enough — prints that run's steps, its warnings and errors,
- * and what it proposed.
+ * and what it proposed. A run that resumed another, or was resumed, prints as
+ * the whole chain: one piece of work, however many rows it took (ADR-0047).
  *
  * This is a convenience, never a dependency. The milestone's evidence rule is
  * that a run is reconstructable with a SQL client and nothing else, so this
@@ -42,6 +43,22 @@ export const noteOf = (step: Record<string, unknown>): string => {
   return `${category}${said}`
 }
 
+/**
+ * A chain of runs, totalled.
+ *
+ * Steps add up, because each row's steps are its own. Cost does not: a resumed
+ * run loads its parent's accumulated spend and continues against the same
+ * ceiling (ADR-0050), so its row already holds the chain's total and summing
+ * the rows would count the parent twice. The youngest row is the answer.
+ */
+export const chainSummary = (
+  runs: readonly { readonly estimated_cost: unknown; readonly steps: number }[],
+): { runs: number; steps: number; cost: number } => ({
+  runs: runs.length,
+  steps: runs.reduce((total, run) => total + run.steps, 0),
+  cost: Number(runs.at(-1)?.estimated_cost ?? 0),
+})
+
 // Nothing runs on import: the formatting above is tested, and this is a script.
 if (process.argv[1]?.endsWith('trace.ts')) {
   const database = new DatabaseSync(DATABASE_PATH, { readOnly: true })
@@ -71,51 +88,89 @@ if (process.argv[1]?.endsWith('trace.ts')) {
     process.exit(0)
   }
 
-  const run = database.prepare(`SELECT * FROM runs WHERE run_id LIKE ? ORDER BY started_at`).get(`${prefix}%`)
+  const matched = database
+    .prepare(`SELECT * FROM runs WHERE run_id LIKE ? ORDER BY started_at`)
+    .get(`${prefix}%`)
 
-  if (run === undefined) {
+  if (matched === undefined) {
     console.error(`no run whose id starts with "${prefix}"`)
     process.exit(1)
   }
 
-  const runId = String(run['run_id'])
-  console.log(`run     ${runId}`)
-  console.log(`window  ${run['resolved_from']} to ${run['resolved_to']}  (${run['cli_args']})`)
-  console.log(`stopped ${run['termination_reason'] ?? '(never finished)'}`)
-  console.log(
-    `cost    $${Number(run['estimated_cost']).toFixed(4)}${run['cost_is_upper_bound'] === 1 ? ' (a ceiling: no cache figures)' : ''}` +
-      `  ·  shortlist ${run['shortlist_size']}  ·  notion write ${run['notion_write_performed'] === 1 ? 'yes' : 'no'}`,
-  )
-  console.log(`prompt v${run['prompt_version']}  profile v${run['profile_version']}  model ${run['model_id']}\n`)
+  const rowOf = (runId: unknown) =>
+    database.prepare(`SELECT * FROM runs WHERE run_id = ?`).get(String(runId))
 
-  const steps = database
-    .prepare(`SELECT * FROM steps WHERE run_id = ? ORDER BY step_index`)
-    .all(runId)
+  // Up to the root by `resumed_from`, then down again by whoever resumed this
+  // one: whichever link of a chain is named, the whole chain is printed.
+  const chain = [matched]
+  for (let at = matched; at['resumed_from'] != null; ) {
+    const older = rowOf(at['resumed_from'])
+    if (older === undefined) break
+    chain.unshift(older)
+    at = older
+  }
+  for (;;) {
+    const younger = database
+      .prepare(`SELECT * FROM runs WHERE resumed_from = ?`)
+      .get(String(chain.at(-1)?.['run_id']))
+    if (younger === undefined) break
+    chain.push(younger)
+  }
 
-  console.log(`${cell('#', 4)}${cell('kind', 14)}${cell('tool', 16)}${cell('args', 46)}${cell('ms', 7)}note`)
-  for (const step of steps) {
-    const note = noteOf(step)
+  const counted: { estimated_cost: unknown; steps: number }[] = []
+
+  for (const run of chain) {
+    const runId = String(run['run_id'])
+    console.log(`run     ${runId}${run['resumed_from'] == null ? '' : `  (resumed from ${String(run['resumed_from']).slice(0, 8)})`}`)
+    console.log(`window  ${run['resolved_from']} to ${run['resolved_to']}  (${run['cli_args']})`)
+    console.log(`stopped ${run['termination_reason'] ?? '(never finished)'}`)
     console.log(
-      cell(step['step_index'], 4) +
-        cell(step['kind'], 14) +
-        cell(step['tool_name'], 16) +
-        cell(step['tool_args'] ?? step['validation_result'], 46) +
-        cell(step['duration_ms'], 7) +
-        cell(note, 200).trimEnd(),
+      `cost    $${Number(run['estimated_cost']).toFixed(4)}${run['cost_is_upper_bound'] === 1 ? ' (a ceiling: no cache figures)' : ''}` +
+        `  ·  shortlist ${run['shortlist_size']}  ·  notion write ${run['notion_write_performed'] === 1 ? 'yes' : 'no'}`,
     )
+    console.log(`prompt v${run['prompt_version']}  profile v${run['profile_version']}  model ${run['model_id']}\n`)
+
+    const steps = database
+      .prepare(`SELECT * FROM steps WHERE run_id = ? ORDER BY step_index`)
+      .all(runId)
+    counted.push({ estimated_cost: run['estimated_cost'], steps: steps.length })
+
+    console.log(`${cell('#', 4)}${cell('kind', 14)}${cell('tool', 16)}${cell('args', 46)}${cell('ms', 7)}note`)
+    for (const step of steps) {
+      const note = noteOf(step)
+      console.log(
+        cell(step['step_index'], 4) +
+          cell(step['kind'], 14) +
+          cell(step['tool_name'], 16) +
+          cell(step['tool_args'] ?? step['validation_result'], 46) +
+          cell(step['duration_ms'], 7) +
+          cell(note, 200).trimEnd(),
+      )
+    }
+
+    // The finish step holds the shortlist and the arithmetic that ordered it, which
+    // is the one thing worth printing whole rather than in a column.
+    const finish = steps.findLast((step) => step['kind'] === 'finish')
+    if (finish?.['tool_result'] !== undefined) {
+      console.log('\nfinish:')
+      console.log(JSON.stringify(JSON.parse(String(finish['tool_result'])), null, 2))
+    }
+    if (chain.length > 1) console.log('')
   }
 
-  // The finish step holds the shortlist and the arithmetic that ordered it, which
-  // is the one thing worth printing whole rather than in a column.
-  const finish = steps.findLast((step) => step['kind'] === 'finish')
-  if (finish?.['tool_result'] !== undefined) {
-    console.log('\nfinish:')
-    console.log(JSON.stringify(JSON.parse(String(finish['tool_result'])), null, 2))
+  if (chain.length > 1) {
+    const total = chainSummary(counted)
+    console.log(`chain   ${total.runs} runs, ${total.steps} steps, $${total.cost.toFixed(4)} in total\n`)
   }
 
+  // Every page the chain stored, whichever of its runs fetched it: a resume
+  // continues one piece of work, and the evidence reads as one list.
   const pages = database
-    .prepare(`SELECT url, status, length(raw_body) AS bytes, candidate_count, warning FROM source_texts WHERE run_id = ? ORDER BY fetched_at`)
-    .all(runId)
+    .prepare(
+      `SELECT url, status, length(raw_body) AS bytes, candidate_count, warning
+         FROM source_texts WHERE run_id IN (${chain.map(() => '?').join(', ')}) ORDER BY fetched_at`,
+    )
+    .all(...chain.map((run) => String(run['run_id'])))
 
   if (pages.length > 0) {
     console.log('\nsource texts, stored whole:')

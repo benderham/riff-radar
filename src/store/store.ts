@@ -26,6 +26,12 @@ export interface StartedRun {
   readonly profileVersion: number
   readonly actionSchemaVersion: number
   readonly modelId: string
+  /**
+   * The run this one continues, when it is a resume (ADR-0047). A resume is a
+   * new row rather than an appendix to its parent's, and this is the link that
+   * makes the pair readable as one piece of work.
+   */
+  readonly resumedFrom?: string
 }
 
 export interface RecordedStep {
@@ -62,10 +68,43 @@ export interface RecordedStep {
    * outside the run failed, which is most of them.
    */
   readonly failureCategory: FailureCategory | null
+  /**
+   * The run's candidate list after this step, as JSON. Written on every step,
+   * because it is the only part of the loop's working memory a resume cannot
+   * replay from the rest of the trace (ADR-0046).
+   */
+  readonly candidatesAfter: string | null
   readonly uncachedInputTokens: number
   readonly cachedInputTokens: number
   readonly outputTokens: number
   readonly cost: number
+}
+
+/** A run as a resume needs to see it: which window it covered, and whether it is over. */
+export interface StoredRun {
+  readonly runId: string
+  readonly resolvedFrom: string
+  readonly resolvedTo: string
+  readonly terminationReason: TerminationReason | null
+  readonly resumedFrom: string | null
+}
+
+/**
+ * A step as a replay reads it: what the model said, what the tool answered,
+ * what the run held afterwards, and what it cost. Narrower than
+ * `RecordedStep` on purpose — a replay reconstructs working memory, and the
+ * columns written for a human to read are not part of that.
+ */
+export interface TracedStep {
+  readonly kind: RecordedStep['kind']
+  readonly modelResponse: string | null
+  readonly toolResult: string | null
+  /** The refusal an invalid action was told, which is part of the history it replays. */
+  readonly error: string | null
+  readonly candidatesAfter: string | null
+  readonly uncachedInputTokens: number
+  readonly cachedInputTokens: number
+  readonly outputTokens: number
 }
 
 export interface FinishedRun {
@@ -111,6 +150,10 @@ export interface Store {
    * and no past run's anything is reachable through it (ADR-0009).
    */
   sourceTextsOf(runId: string): StoredSourceText[]
+  /** The run with this id, or nothing. What `--resume` is given, read back. */
+  runOf(runId: string): StoredRun | undefined
+  /** Every step of a run, in the order it took them. The input to a replay. */
+  stepsOf(runId: string): TracedStep[]
   finishRun(run: FinishedRun): void
   close(): void
 }
@@ -162,8 +205,9 @@ export const openStore = (path: string): Store => {
         .prepare(
           `INSERT INTO runs (
              run_id, started_at, cli_args, resolved_from, resolved_to,
-             prompt_version, profile_version, action_schema_version, model_id
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             prompt_version, profile_version, action_schema_version, model_id,
+             resumed_from
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           run.runId,
@@ -175,6 +219,7 @@ export const openStore = (path: string): Store => {
           run.profileVersion,
           run.actionSchemaVersion,
           run.modelId,
+          run.resumedFrom ?? null,
         )
     },
 
@@ -185,8 +230,9 @@ export const openStore = (path: string): Store => {
              step_id, run_id, step_index, timestamp, duration_ms, kind,
              model_response, proposed_action, validation_result, dispatched_action,
              tool_name, tool_args, tool_result, error, warning, failure_category,
+             candidates_after,
              uncached_input_tokens, cached_input_tokens, output_tokens, cost
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           step.stepId,
@@ -205,6 +251,7 @@ export const openStore = (path: string): Store => {
           step.error,
           step.warning,
           step.failureCategory,
+          step.candidatesAfter,
           step.uncachedInputTokens,
           step.cachedInputTokens,
           step.outputTokens,
@@ -239,6 +286,45 @@ export const openStore = (path: string): Store => {
         .prepare(`SELECT url, raw_body FROM source_texts WHERE run_id = ? ORDER BY fetched_at`)
         .all(runId)
         .map((row) => ({ url: row['url'] as string, rawBody: row['raw_body'] as string }))
+    },
+
+    runOf(runId) {
+      const row = database
+        .prepare(
+          `SELECT run_id, resolved_from, resolved_to, termination_reason, resumed_from
+             FROM runs WHERE run_id = ?`,
+        )
+        .get(runId)
+
+      return row === undefined
+        ? undefined
+        : {
+            runId: row['run_id'] as string,
+            resolvedFrom: row['resolved_from'] as string,
+            resolvedTo: row['resolved_to'] as string,
+            terminationReason: row['termination_reason'] as TerminationReason | null,
+            resumedFrom: row['resumed_from'] as string | null,
+          }
+    },
+
+    stepsOf(runId) {
+      return database
+        .prepare(
+          `SELECT kind, model_response, tool_result, error, candidates_after,
+                  uncached_input_tokens, cached_input_tokens, output_tokens
+             FROM steps WHERE run_id = ? ORDER BY step_index`,
+        )
+        .all(runId)
+        .map((row) => ({
+          kind: row['kind'] as RecordedStep['kind'],
+          modelResponse: row['model_response'] as string | null,
+          toolResult: row['tool_result'] as string | null,
+          error: row['error'] as string | null,
+          candidatesAfter: row['candidates_after'] as string | null,
+          uncachedInputTokens: row['uncached_input_tokens'] as number,
+          cachedInputTokens: row['cached_input_tokens'] as number,
+          outputTokens: row['output_tokens'] as number,
+        }))
     },
 
     finishRun(run) {

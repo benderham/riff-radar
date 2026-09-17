@@ -22,3 +22,13 @@ export type TerminationReason = (typeof TERMINATION_REASONS)[number]
 /** The only two reasons a shortlist may reach Notion. */
 export const WRITE_PERMITTED: readonly string[] = ['completed', 'completed_short']
 
+/**
+ * A resume that cannot be honoured, refused before the run row.
+ *
+ * A refusal rather than a crash: nothing has been spent and nothing has been
+ * written, which is the same contract the credential and schema checks keep, so
+ * it is reported and exits the way they do. Ticket 04 adds its siblings.
+ */
+export class ResumeRefusal extends Error {
+  override readonly name = 'ResumeRefusal'
+}

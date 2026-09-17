@@ -211,3 +211,48 @@ test('the shortlist is printed, so a dry run shows what it would have written', 
     '     https://music.apple.com/search?term=Chat%20Pile%20Cool%20World',
   ])
 })
+
+test('a resume of a run this database has never seen is refused, not crashed on', async () => {
+  const h = harness()
+  const code = await runCli({ argv: ['run', '--resume', 'nope-1234'], env, ...h.deps })
+
+  assert.equal(code, EXIT_REFUSED)
+  assert.match(h.lines.join('\n'), /cannot start/)
+  assert.match(h.lines.join('\n'), /nope-1234/)
+  // The refusal happens before the run row, so nothing is left behind.
+  assert.equal(h.store?.database.prepare('SELECT count(*) AS n FROM runs').get()?.['n'], 0)
+})
+
+test('a resumed run says which run it is continuing', async () => {
+  const h = harness()
+  // A run that was killed: started, never ended. The CLI opens a fresh
+  // in-memory database per call, so this one is handed to it instead.
+  const store = openStore(':memory:')
+  store.startRun({
+    runId: 'killed-1',
+    startedAt: '2026-09-14T09:00:00.000Z',
+    cliArgs: 'run',
+    resolvedFrom: '2026-09-08',
+    resolvedTo: '2026-09-14',
+    promptVersion: 1,
+    profileVersion: 1,
+    actionSchemaVersion: 1,
+    modelId: 'test-model',
+  })
+
+  const code = await runCli({
+    argv: ['run', '--resume', 'killed-1'],
+    env,
+    ...h.deps,
+    openStore: () => ({ ...store, close: () => {} }),
+  })
+
+  assert.equal(code, 0)
+  assert.match(h.lines.join('\n'), /resumed from killed-1/)
+  assert.equal(
+    store.database.prepare('SELECT resumed_from FROM runs WHERE run_id != ?').get('killed-1')?.[
+      'resumed_from'
+    ],
+    'killed-1',
+  )
+})

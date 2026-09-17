@@ -11,6 +11,11 @@
  * three consecutive invalid actions, a cost ceiling, and an unrecoverable tool
  * or model failure. The Notion write is post-loop code, never an action
  * (ADR-0005), and happens only when the reason permits it.
+ *
+ * A resume enters the same loop with its working memory replayed from the
+ * parent's trace instead of empty (ADR-0046). Everything else about the start of
+ * a run is identical, deliberately: the schema preflight and the suppression
+ * read happen again, which is what lets a half-written parent correct itself.
  */
 
 import { randomUUID } from 'node:crypto'
@@ -24,14 +29,16 @@ import {
   PROMPT_VERSION,
   SHORTLIST_SIZE,
 } from '../../config.ts'
+import { dropSuppressed } from '../domain/candidates.ts'
 import type { CliArgs } from '../domain/cli-args.ts'
 import type { Usage } from '../domain/cost.ts'
 import { NO_USAGE, addUsage, estimateCost } from '../domain/cost.ts'
 import { categoryOf } from '../domain/failure.ts'
+import { recordedModelResponse, replay } from '../domain/replay.ts'
 import { preflightSchema, proposeShortlist, suppressedReleases } from '../clients/notion.ts'
 import { citedVibes, rankShortlist } from '../domain/ranking.ts'
 import type { TerminationReason } from '../domain/run.ts'
-import { WRITE_PERMITTED } from '../domain/run.ts'
+import { ResumeRefusal, WRITE_PERMITTED } from '../domain/run.ts'
 import type { ShortlistItem } from '../domain/shortlist.ts'
 import { validateShortlist } from '../domain/shortlist.ts'
 import type { TasteProfile } from '../domain/taste-profile.ts'
@@ -74,7 +81,7 @@ export interface RunOutcome {
 /** A step's record, minus what every step fills in the same way. */
 type StepFields = Omit<
   RecordedStep,
-  'stepId' | 'runId' | 'stepIndex' | 'timestamp' | 'durationMs' | 'cost'
+  'stepId' | 'runId' | 'stepIndex' | 'timestamp' | 'durationMs' | 'cost' | 'candidatesAfter'
 >
 
 const EMPTY_STEP: StepFields = {
@@ -104,7 +111,37 @@ export const runRiffRadar = async ({
   // Resolve first. A window that cannot be resolved is not a run, and must not
   // leave a half-started row behind.
   const startedAt = ports.clock.now()
-  const window = resolveWindow(startedAt, args.lastDays)
+
+  // A resume is asked for explicitly and never inferred (ADR-0047). The parent
+  // is read before anything else because its row is where the window comes
+  // from: `--resume` takes none, and recomputing one from today's date would
+  // quietly move the run being continued.
+  const parent =
+    args.resumeRunId === undefined
+      ? undefined
+      : (store.runOf(args.resumeRunId) ??
+        (() => {
+          throw new ResumeRefusal(`no run ${args.resumeRunId} to resume`)
+        })())
+
+  const window =
+    parent === undefined
+      ? resolveWindow(startedAt, args.lastDays)
+      : { from: parent.resolvedFrom, to: parent.resolvedTo }
+
+  // The whole chain, oldest first, not just the run named on the command line:
+  // a resume of a resume inherits the conversation and the spend of everything
+  // before it, and replaying one link would lose the rest of the story.
+  const ancestry = []
+  for (let at = parent; at !== undefined; at = at.resumedFrom === null ? undefined : store.runOf(at.resumedFrom)) {
+    ancestry.unshift(at)
+  }
+
+  // Replayed before the run row and before a token is spent, for the same
+  // reason the two Notion reads are: a trace that cannot be rebuilt is not a
+  // resume, and saying so costs nothing at this point.
+  const replayed =
+    parent === undefined ? undefined : replay(ancestry.flatMap((each) => store.stepsOf(each.runId)))
 
   // Before the run row, and before a token is spent: a database that is not the
   // one this writes to is a refusal, and the answer is the same whether it is
@@ -128,10 +165,35 @@ export const runRiffRadar = async ({
     profileVersion: profile.version,
     actionSchemaVersion: ACTION_SCHEMA_VERSION,
     modelId: MODEL_ID,
+    ...(parent === undefined ? {} : { resumedFrom: parent.runId }),
   })
 
+  // The parent is closed now rather than later, so that exactly one termination
+  // reason per run still holds and no run row ever changes its mind: its work
+  // has been handed on, and the only honest thing left to say about it is that
+  // it was aborted. Its accounting is what its own steps spent.
+  if (parent !== undefined && replayed !== undefined) {
+    store.finishRun({
+      runId: parent.runId,
+      endedAt: startedAt.toISOString(),
+      terminationReason: 'aborted',
+      ...replayed.usage,
+      estimatedCost: estimateCost(replayed.usage),
+      shortlistSize: 0,
+      notionWritePerformed: false,
+      // Not derivable from the steps, which record tokens rather than whether
+      // the provider broke them down. The child records its own.
+      costIsUpperBound: false,
+    })
+  }
+
   // The stable prefix never moves: everything that varies is appended after it.
-  const messages: ModelMessage[] = [stablePrefix(profile), runBrief(window)]
+  // A resume appends what the parent's trace says was said after it (ADR-0046).
+  const messages: ModelMessage[] = [
+    stablePrefix(profile),
+    runBrief(window),
+    ...(replayed?.messages ?? []),
+  ]
 
   // The run's working memory. Actions read and add to it; the loop only passes
   // it along, because what the run has found is not what the loop is about.
@@ -143,12 +205,16 @@ export const runRiffRadar = async ({
     searchApiKey,
     suppressed,
     profile,
-    candidates: [],
+    // Suppression is re-read on a resume and applied to the replayed list, so a
+    // release the parent proposed and wrote is not proposed twice (ADR-0051).
+    candidates: dropSuppressed(replayed?.candidates ?? [], suppressed),
   }
 
-  let usage: Usage = NO_USAGE
+  // The parent's spend and its unbroken run of refusals both carry over: they
+  // are facts about the question being asked, not about the process asking it.
+  let usage: Usage = replayed?.usage ?? NO_USAGE
   let costIsUpperBound = false
-  let consecutiveInvalid = 0
+  let consecutiveInvalid = replayed?.consecutiveInvalid ?? 0
   let stepIndex = 0
 
   let terminationReason: TerminationReason | undefined
@@ -162,6 +228,10 @@ export const runRiffRadar = async ({
       timestamp: at.toISOString(),
       durationMs,
       ...fields,
+      // Every step, whatever kind: the column exists so a resume never has to
+      // guess what the run held, and a step that skipped it would be a step
+      // nobody could resume from (ADR-0046).
+      candidatesAfter: JSON.stringify(context.candidates),
       cost: estimateCost(fields),
     })
   }
@@ -211,7 +281,7 @@ export const runRiffRadar = async ({
     const step: StepFields = {
       ...EMPTY_STEP,
       ...response.usage,
-      modelResponse: JSON.stringify(response.raw),
+      modelResponse: recordedModelResponse(response),
     }
 
     // Every step records what the model proposed in the same shape — a list,

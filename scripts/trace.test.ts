@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { cell, noteOf } from './trace.ts'
+import { cell, chainSummary, noteOf } from './trace.ts'
 
 test('a cell lines up, whatever it is given', () => {
   assert.equal(cell('finish', 10), 'finish    ')
@@ -48,4 +48,25 @@ test('a retried step says how many attempts it took, so the seconds are explaine
     }),
     '[transient] loudwire.com returned HTTP 503 after 3 attempts; no candidates from this source',
   )
+})
+
+test('a chain reads as one story: every run, and the youngest run for the total', () => {
+  // A resumed run inherits its parent's spend (ADR-0050), so its own row
+  // already holds the chain's accounting. Summing the rows would count the
+  // parent twice; the youngest row is the total.
+  assert.deepEqual(
+    chainSummary([
+      { estimated_cost: 0.04, steps: 12 },
+      { estimated_cost: 0.07, steps: 5 },
+    ]),
+    { runs: 2, steps: 17, cost: 0.07 },
+  )
+})
+
+test('one run is a chain of one, and says the same thing', () => {
+  assert.deepEqual(chainSummary([{ estimated_cost: 0.04, steps: 12 }]), {
+    runs: 1,
+    steps: 12,
+    cost: 0.04,
+  })
 })

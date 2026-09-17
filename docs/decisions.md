@@ -576,3 +576,15 @@ Backoff needs time to pass in a way tests can control, or the suite spends seven
 The cheap move would have made the outside world reachable from two places, which is exactly what ADR-0018 exists to prevent — and the project already has evidence of the cost: the MusicBrainz gate calls `setTimeout` directly, and its tests only avoid waiting a real second because they happen to control `clock.now()` so the computed delay is zero. That is a test passing for a reason unrelated to what it asserts. The gate moves to the same `sleep`.
 
 **Consequences:** `ClockPort` is no longer only a reader of the current instant, so its name is now slightly narrower than its job. Every fake clock in the test suite grows a method. In exchange there is one place where the process waits, and a test that fakes it sees every wait in the system — including the two that currently compose by accident, retry and the rate-limit gate.
+
+## ADR-0055: `model_response` stores the parsed response beside the provider's body
+
+**Status:** ACCEPTED — 17 September 2026, during ticket 03. Implements ADR-0046.
+
+ADR-0046 decided that a resume rebuilds the message history from `model_response` and `tool_result`. Implementing it found that `model_response` could not answer: it held `JSON.stringify(response.raw)`, the provider's body as it arrived. Rebuilding an assistant message from that would mean the loop parsing Fireworks' `choices[0].message.tool_calls` — the adapter's job, moved into the agent, and a resume that breaks the day the provider changes. The other columns cannot stand in either: `proposed_action` records a name and its arguments, and the history needs the tool-call id that ties an assistant message to the tool message answering it, plus whatever prose the model wrote alongside its call.
+
+So `model_response` now holds `{content, toolCalls, raw}`: the two parsed halves the loop actually appended to its history, and the provider's body underneath them unchanged. One function, `recordedModelResponse` in `src/domain/replay.ts`, writes it, and the schema that reads it back sits beside it — the two halves of one format in one file.
+
+The alternative was a second stored column holding the message history, which ADR-0046 rules out for the reason it gives: a second representation of the run is a second thing that can disagree with the first. This is not that. `raw` is still the evidence of what arrived; `content` and `toolCalls` are the same response as the loop understood it, and the loop is what a resume continues.
+
+**Consequences:** The column's shape changed, so a trace written before this reads back as a response the replay refuses — correctly, since it also cannot be resumed. The two committed milestone-1 evidence exports keep the old shape and are historical records rather than resumable runs. Anything that wants the provider's body verbatim now reads `model_response -> '$.raw'` rather than the whole column; nothing currently does, including `npm run trace`.
