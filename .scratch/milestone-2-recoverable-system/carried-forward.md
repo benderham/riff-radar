@@ -48,7 +48,7 @@ Same rule as above: each item was found by a real run, and each has evidence beh
 
 ## 7. The step ceiling now breaks the *recovery*, not just the first run
 
-Item 1 above was about a busy week costing a run. Milestone 2 produced the case that matters more: `d5d6e816`, a re-run over a fourteen-day window with five fewer candidates than the run before it, used all thirty steps — twenty-one of them lookups — and wrote nothing, for $0.0294. A re-run is what recovery looks like, and on a wide window recovery cannot finish.
+Item 1 above was about a busy week costing a run. Milestone 2 produced the case that matters more: `d5d6e816`, a re-run over a fourteen-day window with five fewer candidates than the run before it, used all thirty steps — twenty-six of them lookups — and wrote nothing, for $0.0294. A re-run is what recovery looks like, and on a wide window recovery cannot finish.
 
 The two directions ADR-0044 named are unchanged: one action that looks several releases up, or the code rather than the model choosing which candidates deserve one. Nothing about this is a recovery problem, which is why milestone 2 deliberately left it alone.
 

@@ -68,3 +68,5 @@ quoting a page the *parent* fetched is silently dropped from the ranking. It
 degrades quietly rather than failing, and the fix is a decision about whether
 `sourceTextsOf` should follow `resumed_from`. Belongs with ticket 04's other
 chain semantics, or its own ticket.
+
+**Status, set after the fact:** ticket 07 found this still `ready-for-agent` on 17 September and set it `done`. The acceptance boxes above are left unticked deliberately: the session that did the work is the one that could tick them, and the evidence for each is the implementation notes above plus `src/domain/replay.test.ts` and the resume tests in `src/agents/riff-radar.test.ts`.

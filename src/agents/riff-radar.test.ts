@@ -1077,6 +1077,11 @@ test('a vibe note cited in the stored source text scores; an invented one does n
 
 // ── Suppression: what Notion already holds never reaches the model ───────────
 
+/** What a Notion property says, for the tests that read the pages a write created. */
+const plain = (property: Record<string, unknown> | undefined): string =>
+  ((property?.['title'] ?? property?.['rich_text']) as { text: { content: string } }[])[0]?.text
+    .content ?? ''
+
 test('a release already in Notion is never offered to the model', async () => {
   const model = scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), ...looksUpThenFinishes(3))
   const { stepRows } = await run(model.port, {
@@ -1114,10 +1119,6 @@ test('re-running a week after a write proposes nothing twice', async () => {
   // Read back out of the pages the write actually created, not out of the
   // finish step: what suppression reads next Friday is the cell, and a cell
   // written under a name suppression does not look for would suppress nothing.
-  const plain = (property: Record<string, unknown> | undefined): string =>
-    ((property?.['title'] ?? property?.['rich_text']) as { text: { content: string } }[])[0]?.text
-      .content ?? ''
-
   const proposed = first.written.map((page) => ({
     artist: plain(page.properties['Artist']),
     title: plain(page.properties['Album']),
@@ -1147,7 +1148,7 @@ test('a run killed part way through its write leaves rows the next run suppresse
   // pages still in Notion — and what is asserted is the next run's behaviour,
   // which reads Notion rather than the run row (ADR-0051).
   const store = openStore(':memory:')
-  const killed = killedAfter(store, await prefixOfARealRun(2))
+  killedAfter(store, await prefixOfARealRun(2))
   const wrote = RELEASES.slice(0, 2).map((release) => ({ ...release }))
 
   const left = RELEASES[2] as { artist: string; title: string }
@@ -1160,16 +1161,13 @@ test('a run killed part way through its write leaves rows the next run suppresse
     { store, alreadyInNotion: wrote },
   )
 
-  const killedRow = store.database.prepare('SELECT * FROM runs WHERE run_id = ?').get(killed)
-  assert.equal(killedRow?.['notion_write_performed'], 0, 'the killed run never recorded its write')
-  assert.equal(killedRow?.['termination_reason'], null, 'nor did it record an ending')
+  // The killed run's row is the premise, not a result: `killedAfter` leaves it
+  // with no termination reason and `notion_write_performed = 0`, which is what
+  // a process that died before its own ending leaves behind.
 
   const fetched = JSON.parse(String(second.stepRows[0]?.['tool_result']))
   assert.equal(fetched.alreadyProposed, 2, 'the rows the killed run did write are suppressed')
 
-  const plain = (property: Record<string, unknown> | undefined): string =>
-    ((property?.['title'] ?? property?.['rich_text']) as { text: { content: string } }[])[0]?.text
-      .content ?? ''
   assert.deepEqual(
     second.written.map((page) => plain(page.properties['Artist'])),
     ['Blood Incantation'],

@@ -11,7 +11,7 @@ Two stories. **Evidence run 1** is an interruption and its resume: a run killed 
 | Window | 2026-09-11 to 2026-09-17 | inherited | 2026-09-04 to 2026-09-17 | 2026-09-04 to 2026-09-17 |
 | Termination reason | `aborted` | `completed_short` | none — killed | `max_steps_exceeded` |
 | Steps | 6 | 14 (20 in the chain) | 27 of 30 | 30 of 30 |
-| Wall clock | 2m 34s to the kill | 2m 03s | 9m 35s to the kill | 9m 50s |
+| Wall clock | 2m 34s to the kill | 2m 03s | over 10m to the kill | 9m 50s |
 | Cost | $0.0062 | $0.0062 of its own, $0.0125 in the chain | $0.0437 of steps, $0 on its row | $0.0294 |
 | Cached input, this run's own steps | 65,530 of 68,386 tokens (96%) | 116,546 of 124,207 (94%) | 257,920 of 314,719 (82%) | 317,626 of 333,157 (95%) |
 | Shortlist | — | 1 | 5 written, never recorded | 0 |
@@ -41,7 +41,8 @@ Five real failures across the four runs, every one a MusicBrainz 503 that surviv
 | `c4d95544` 1 | Loudwire `answered after 3 attempts` | 44.6s |
 | `51f702ca` 4 | `Der Weg Einer Freiheit — Innern (Instrumental) returned HTTP 503 after 3 attempts` | 7.6s |
 | `51f702ca` 8 | `Hate Meditation — Degenerator returned HTTP 503 after 3 attempts` | 5.4s |
-| `d2b59538` 9 | `Mother of Millions — T answered after 2 attempts` — the step *after* the one that gave up | 8.5s |
+| `d2b59538` 9 | `Mother of Millions — T answered after 2 attempts` — the step *after* the one that gave up | 14.6s |
+| `d5d6e816` 1 | Loudwire `answered after 3 attempts` — the slowest step in the set | 126.1s |
 
 A failed call explains its attempts inside the error; a call that succeeded on the second or third ask says so in a warning it would not otherwise have written, which is the case the count exists for. Nothing was added to the schema for this: the count rides the note.
 
@@ -63,7 +64,7 @@ resumed from c4d95544-86d1-4192-aa61-d7f8e6488c2d: 6 of 30 steps and $0.0062 of 
 
 The resume repeated none of it. Its step 0 is a lookup of Tygers of Pan Tang, a release the parent never reached; the parent's two source fetches are not repeated, and none of the parent's four looked-up releases is looked up again. The parent's row is closed `aborted` with its own spend, and `npm run trace 51f702ca` prints both rows as one story — `chain   2 runs, 20 steps, $0.0125 in total` — totalled from the steps, because the killed row of a chain never wrote a total.
 
-**7. Repeated runs cannot create duplicate Notion records, including after a kill part way through a write.** `d2b59538` reached `finish` with five releases and was killed with `SIGKILL` during the write. All five pages had been created; the process died before the run row could record anything, so the row still says `termination_reason = NULL`, `shortlist_size = 0`, `notion_write_performed = 0`, `estimated_cost = 0` — while its steps add up to $0.0437 and Notion holds five correct `Proposed` rows carrying its run id.
+**7. Repeated runs cannot create duplicate Notion records, including after a kill part way through a write.** `d2b59538` reached `finish` with five releases and was killed with `SIGKILL` during the write, a little over ten minutes in — its last recorded step began at 9m 35s and ran for 35s, and the write followed that. All five pages had been created; the process died before the run row could record anything, so the row still says `termination_reason = NULL`, `shortlist_size = 0`, `notion_write_performed = 0`, `estimated_cost = 0` — while its steps add up to $0.0437 and Notion holds five correct `Proposed` rows carrying its run id.
 
 Notion before the kill: 281 rows, the newest nine from milestone 1. After: 286 rows — *Just Live Loud!* (Shakra), *Thistle* (Spirit Mother), *The Darkest Side of Humanity* (A Night in Texas), *Airbourne* (Airbourne), *Stories of Destiny* (Mad Max).
 
@@ -96,7 +97,7 @@ That is the same export the four traces here were made with. Until it is run, cr
 
 ## What the runs say about two numbers
 
-**The step ceiling is still a lookup budget, and a fourteen-day window makes it obvious.** `d2b59538` used 27 of 30 and reached `finish` with three to spare. `d5d6e816`, over the same window with five fewer candidates, used all 30 and wrote nothing, having spent $0.0294. Twenty-one of its thirty steps were lookups. ADR-0044 kept the ceiling at 30 on the argument that a bigger number hides the problem; that argument now has a run behind it where the ceiling was reached by a *re-run*, which is the case that matters, because a re-run is what recovery looks like.
+**The step ceiling is still a lookup budget, and a fourteen-day window makes it obvious.** `d2b59538` used 27 of 30 and reached `finish` with three to spare. `d5d6e816`, over the same window with five fewer candidates, used all 30 and wrote nothing, having spent $0.0294. Twenty-six of its thirty steps were lookups. ADR-0044 kept the ceiling at 30 on the argument that a bigger number hides the problem; that argument now has a run behind it where the ceiling was reached by a *re-run*, which is the case that matters, because a re-run is what recovery looks like.
 
 **A killed run's row reads $0.0000 and its steps read $0.0437.** This is not a defect — a run row is written at the end and a step is written when it happens — but it is why `npm run trace` totals a chain from its steps (ADR-0050) and why any later cost report has to do the same. A report that sums `runs.estimated_cost` will silently omit every run that was killed, which is exactly the population a failure report is about.
 
