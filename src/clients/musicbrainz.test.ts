@@ -342,3 +342,47 @@ test('a release group MusicBrainz has not typed comes back without a type, not w
   assert.equal(found.lookup.releaseGroupId, '8c8418df-b881-491e-bbdc-39454b80f78d')
   assert.equal(found.lookup.firstReleaseDate, '2026-09-11')
 })
+
+// ── Failure categories (ticket 01) ───────────────────────────────────────────
+
+test('the busy body is a rate limit, which is what makes it worth asking again', async () => {
+  const busy = JSON.stringify({ error: 'The MusicBrainz web server is currently busy. Please try again later.' })
+  const { ports } = serving([busy])
+  const refused = await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
+
+  assert.equal(refused.failureCategory, 'rate_limited')
+})
+
+test('a service that stayed down is transient, and a 404 is not', async () => {
+  const down = await lookupRelease(serving([{ body: 'service unavailable', status: 503 }]).ports, 'Ulcerate', 'X')
+  assert.equal(down.failureCategory, 'transient')
+
+  const missing = await lookupRelease(serving([{ body: 'not found', status: 404 }]).ports, 'Ulcerate', 'X')
+  assert.equal(missing.failureCategory, 'not_found')
+})
+
+test('a body that is not JSON is malformed, whatever the status said', async () => {
+  const { ports } = serving(['<html>bad gateway</html>'])
+  const broken = await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
+
+  assert.equal(broken.failureCategory, 'malformed')
+})
+
+test('a release nobody has heard of is not a failure and has no category', async () => {
+  const { ports } = serving([JSON.stringify({ 'release-groups': [] })])
+  const unknown = await lookupRelease(ports, 'Nobody', 'Nothing')
+
+  assert.equal(unknown.lookup.found, false)
+  assert.equal(unknown.failureCategory, undefined)
+})
+
+test('an adjacency failure is categorised by the call that produced the warning', async () => {
+  // Not retried, so the sequence below is the sequence the client requests:
+  // the release is missing, the genres and the members are not.
+  const { ports } = serving([GROUP, { body: 'not found', status: 404 }, GENRES, ARTIST_RELS])
+  const found = await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
+
+  assert.ok(found.lookup.found === true, 'the identity survives a failed adjacency')
+  assert.match(String(found.warning), /its release/)
+  assert.equal(found.failureCategory, 'not_found')
+})

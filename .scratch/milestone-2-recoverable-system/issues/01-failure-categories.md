@@ -4,7 +4,7 @@
 
 **Blocked by:** —
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## Why
 
@@ -42,18 +42,44 @@ No migration. `assertSchemaIsCurrent` will refuse the existing database and name
 
 ## Acceptance criteria
 
-- [ ] `src/domain/failure.ts` exports a `FailureCategory` union of exactly those six values and a function mapping `(status, body)` to a category or `undefined` for success
-- [ ] Unit tested across every category, including status 0, 429, 503, 401, 403, 404, and a 2xx
-- [ ] All four columns are added in one schema change, with their constraints
-- [ ] `assertSchemaIsCurrent` refuses the old database and names all four new columns — the existing behaviour, confirmed by test, not changed
-- [ ] Every client that records a warning or an error also records the category: sources, MusicBrainz, search, cover art, Notion
-- [ ] A 2xx whose body fails its schema records `malformed` — the extraction path at `src/clients/sources.ts:133` and the Notion parse paths are the cases that exist today
-- [ ] A model call that fails records `tool_failure` as the run's reason and a category on its step, replacing the shoehorn apologised for in the comment at `src/agents/riff-radar.ts:175`
-- [ ] Where one step makes several external calls, the recorded category is the one that produced the step's warning; a test covers a `fetch_source` whose page fetch succeeded and whose extraction was malformed
-- [ ] `npm run trace` prints the category beside the error
+- [x] `src/domain/failure.ts` exports a `FailureCategory` union of exactly those six values and a function mapping `(status, body)` to a category or `undefined` for success
+- [x] Unit tested across every category, including status 0, 429, 503, 401, 403, 404, and a 2xx
+- [x] All four columns are added in one schema change, with their constraints
+- [x] `assertSchemaIsCurrent` refuses the old database and names all four new columns — the existing behaviour, confirmed by test, not changed
+- [x] Every client that records a warning or an error also records the category: sources, MusicBrainz, search, cover art, Notion
+- [x] A 2xx whose body fails its schema records `malformed` — the extraction path at `src/clients/sources.ts:133` and the Notion parse paths are the cases that exist today
+- [x] A model call that fails records `tool_failure` as the run's reason and a category on its step, replacing the shoehorn apologised for in the comment at `src/agents/riff-radar.ts:175`
+- [x] Where one step makes several external calls, the recorded category is the one that produced the step's warning; a test covers a `fetch_source` whose page fetch succeeded and whose extraction was malformed
+- [x] `npm run trace` prints the category beside the error
 
 ## Notes
 
 Six, not five and not ten. `rate_limited` is split from `transient` only because `Retry-After` changes the backoff, and the set is small deliberately: it is a `CHECK` constraint, so splitting a category later costs a schema change. See ADR-0048.
 
 Reasons and categories answer different questions and `CONTEXT.md` now says so — a Termination Reason is why the *run* stopped, a Failure Category is what broke *outside* it.
+
+## What it turned out to be
+
+Two things the ticket did not anticipate, both small.
+
+Cover art has no warning to categorise. It swallows every outcome and returns
+either an address or nothing, which is the whole of its rule, so there was
+nothing to wire and nothing was invented to give it something.
+
+MusicBrainz's own `isTransient` is gone, replaced by `isRetryable` over the
+shared category. That widens its retry from 503 alone to every 5xx, which is
+the category's definition and was the reason to share the judgement rather than
+keep a second list of statuses next to the first.
+
+Two widenings of the table above, both deliberate and neither in ADR-0048:
+every other 4xx — a 400, a 410 — is `refused` rather than a seventh name, since
+the alternative is a `CHECK` constraint per status a provider might invent. And
+a 3xx that nobody followed is not a failure at all, so a source that warns about
+one records prose and no category; the only client that sees an unfollowed
+redirect is cover art, which records nothing either way.
+
+`assertSchemaIsCurrent` was changed rather than merely tested: it threw on the
+first table that disagreed, so a database written before this milestone named
+only two of the four columns. It now collects every table and names all four in
+one message, which is what the acceptance criterion above asks for and what one
+schema change is supposed to buy.

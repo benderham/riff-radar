@@ -247,3 +247,35 @@ test('a page that listed releases, none of them this week, says so', async () =>
   assert.deepEqual(result.candidates, [])
   assert.match(result.warning ?? '', /none inside 2026-09-08\.\.2026-09-14/)
 })
+
+// ── Failure categories (ticket 01) ───────────────────────────────────────────
+
+test('a page that refused us is refused, and one that was never answered is transient', async () => {
+  const { model } = extracting('')
+
+  const forbidden = await fetchSource(portsFor(servingFixture('go away', 403).http, model), 'loudwire', WINDOW)
+  assert.equal(forbidden.failureCategory, 'refused')
+
+  const dead = await fetchSource(portsFor(servingFixture('fetch failed: ENOTFOUND', 0).http, model), 'loudwire', WINDOW)
+  assert.equal(dead.failureCategory, 'transient')
+})
+
+test('a page that answered and an extraction that did not parse is malformed', async () => {
+  const { http } = servingFixture(PAGE)
+  const { model } = extracting('I could not read that page.')
+
+  const result = await fetchSource(portsFor(http, model), 'loudwire', WINDOW)
+
+  assert.equal(result.status, 200, 'the page itself was fine')
+  assert.equal(result.failureCategory, 'malformed')
+})
+
+test('a page that yielded nothing has a warning and no category: nothing failed', async () => {
+  const { http } = servingFixture(PAGE)
+  const { model } = extracting(extracted([]))
+
+  const result = await fetchSource(portsFor(http, model), 'loudwire', WINDOW)
+
+  assert.match(String(result.warning), /may have changed shape/)
+  assert.equal(result.failureCategory, undefined)
+})

@@ -14,6 +14,7 @@
  */
 
 import { MODEL_ENDPOINT, MODEL_ID } from '../../config.ts'
+import { categoriseFailure, withCategory } from '../domain/failure.ts'
 import type { ModelMessage, ModelPort, ModelResponse, ProposedToolCall } from '../ports.ts'
 
 /** Our message shape as the OpenAI-compatible endpoint wants it. */
@@ -46,9 +47,29 @@ interface WireResponse {
   }
 }
 
+/**
+ * A request that never got an answer, told apart from one that came back badly.
+ *
+ * Named and shaped as the `http` adapter's own `attempted`, and for the same
+ * reason: a dead socket and a wrong key are both `model_error` in the trace,
+ * and only the category says which one stopped the run. The message is left
+ * exactly as it was, because what it says is not this ticket's business.
+ */
+const attempted = async (request: () => Promise<Response>): Promise<Response> => {
+  try {
+    return await request()
+  } catch (error) {
+    throw withCategory(error as Error, 'transient')
+  }
+}
+
 export const fireworksModel = (apiKey: string): ModelPort => ({
   async complete({ messages, tools }) {
-    const response = await fetch(MODEL_ENDPOINT, {
+    // The model is the one provider not reached through the `http` port, so the
+    // contract that an unanswered request is a fact rather than a mystery
+    // (ADR-0043) is kept here by hand: it still throws, because a run cannot
+    // continue without a model, but it throws saying what kind of thing failed.
+    const response = await attempted(() => fetch(MODEL_ENDPOINT, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${apiKey}`,
@@ -74,13 +95,19 @@ export const fireworksModel = (apiKey: string): ModelPort => ({
         parallel_tool_calls: false,
         messages: messages.map(wireMessage),
       }),
-    })
+    }))
 
     if (!response.ok) {
       // The body can carry provider detail worth having, and carries no secret
       // of ours: the key travels in the request, never in the reply.
       const detail = await response.text().catch(() => '')
-      throw new Error(`model request failed: ${response.status} ${response.statusText} ${detail}`.trim())
+      // A model failure ends the run as `tool_failure`, which says only that it
+      // could not continue. The category is what says whether the provider was
+      // busy or the key was wrong, and it is knowable only here (ADR-0048).
+      throw withCategory(
+        new Error(`model request failed: ${response.status} ${response.statusText} ${detail}`.trim()),
+        categoriseFailure(response.status, detail),
+      )
     }
 
     const body = (await response.json()) as WireResponse

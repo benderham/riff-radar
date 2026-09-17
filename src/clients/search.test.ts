@@ -88,3 +88,21 @@ test('a body of the wrong shape is a warning too', async () => {
   assert.deepEqual(search.results, [])
   assert.match(String(search.warning), /wrong shape/)
 })
+
+test('a search that was refused, and one whose body was unreadable, are told apart', async () => {
+  const refused = await searchWeb(respondWith('no', 401).ports, 'ulcerate', 'test-key')
+  assert.equal(refused.failureCategory, 'refused')
+
+  const limited = await searchWeb(respondWith('slow down', 429).ports, 'ulcerate', 'test-key')
+  assert.equal(limited.failureCategory, 'rate_limited')
+
+  const unreadable = await searchWeb(respondWith('<html>').ports, 'ulcerate', 'test-key')
+  assert.equal(unreadable.failureCategory, 'malformed')
+})
+
+test('a search that found nothing has a warning and no category', async () => {
+  const empty = await searchWeb(respondWith(JSON.stringify({ results: [] })).ports, 'ulcerate', 'test-key')
+
+  assert.match(String(empty.warning), /no results/)
+  assert.equal(empty.failureCategory, undefined)
+})

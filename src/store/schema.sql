@@ -35,7 +35,14 @@ CREATE TABLE IF NOT EXISTS runs (
   notion_write_performed INTEGER NOT NULL DEFAULT 0 CHECK (notion_write_performed IN (0, 1)),
   -- 1 when the provider reported no cached-token breakdown, so every input
   -- token was priced as uncached and estimated_cost is a ceiling (ADR-0020).
-  cost_is_upper_bound   INTEGER NOT NULL DEFAULT 0 CHECK (cost_is_upper_bound IN (0, 1))
+  cost_is_upper_bound   INTEGER NOT NULL DEFAULT 0 CHECK (cost_is_upper_bound IN (0, 1)),
+  -- The run this one resumed, when it is a resume (ADR-0047). A resumed run is
+  -- a new row and inherits its parent's ceilings, so the pair is read as a
+  -- chain and this column is the link.
+  resumed_from          TEXT REFERENCES runs(run_id),
+  -- 1 when MusicBrainz stopped being asked partway through (ADR-0052), so a
+  -- run judged on its sources' word is distinguishable from one that was not.
+  musicbrainz_degraded  INTEGER NOT NULL DEFAULT 0 CHECK (musicbrainz_degraded IN (0, 1))
 );
 
 -- The proposed action, the validation result and the dispatched action are
@@ -61,6 +68,16 @@ CREATE TABLE IF NOT EXISTS steps (
   -- reader must be able to tell a broken run from a quiet one without joining.
   error                 TEXT,
   warning               TEXT,
+  -- What kind of thing broke outside the run, beside the prose that says it in
+  -- words (ADR-0048). Constrained the way termination_reason is, because the
+  -- point of the column is that it can be counted rather than parsed.
+  failure_category      TEXT CHECK (failure_category IN (
+                          'transient', 'rate_limited', 'refused',
+                          'not_found', 'malformed', 'unavailable'
+                        )),
+  -- The run's candidate list after this step, as JSON. The one part of a step
+  -- a resume cannot replay from the trace it already holds (ADR-0046).
+  candidates_after      TEXT,
   uncached_input_tokens INTEGER NOT NULL DEFAULT 0,
   cached_input_tokens   INTEGER NOT NULL DEFAULT 0,
   output_tokens         INTEGER NOT NULL DEFAULT 0,

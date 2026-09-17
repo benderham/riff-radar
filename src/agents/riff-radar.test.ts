@@ -10,6 +10,7 @@ import {
   PROMPT_VERSION,
   SOURCES,
 } from '../../config.ts'
+import { withCategory } from '../domain/failure.ts'
 import type { ShortlistItem } from '../domain/shortlist.ts'
 import type { TasteProfile } from '../domain/taste-profile.ts'
 import { tasteProfileSchema } from '../domain/taste-profile.ts'
@@ -218,7 +219,10 @@ const EXTRACTED = JSON.stringify({
  * A model that says exactly what the test tells it to. The last entry repeats,
  * so a loop that should run to a ceiling can be scripted in one line.
  */
-const scriptedModel = (...script: readonly Scripted[]) => {
+const scriptedModel = (...script: readonly Scripted[]) => scriptedModelExtracting(EXTRACTED)(...script)
+
+/** The same model, for the tests that care what an extraction came back as. */
+const scriptedModelExtracting = (extracted: string) => (...script: readonly Scripted[]) => {
   const requests: { messages: readonly ModelMessage[]; tools: readonly ToolDefinition[] }[] = []
   let index = 0
 
@@ -229,7 +233,7 @@ const scriptedModel = (...script: readonly Scripted[]) => {
       // script and the record, so that a test's steps stay countable.
       if (request.tools.length === 0) {
         return {
-          content: EXTRACTED,
+          content: extracted,
           toolCalls: [],
           usage: EXTRACTION_USAGE,
           cacheReported: true,
@@ -434,6 +438,73 @@ test('a model that fails unrecoverably ends the run tool_failure', async () => {
   assert.equal(stepRows[0]?.['kind'], 'model_error')
   assert.match(String(stepRows[0]?.['error']), /502/)
   assert.equal(runRow?.['notion_write_performed'], 0)
+})
+
+// ── Failure categories (ticket 01) ───────────────────────────────────────────
+
+test('a model failure records the category beside the reason, not instead of it', async () => {
+  const provider = withCategory(new Error('model request failed: 503 Service Unavailable'), 'transient')
+  const { outcome, stepRows } = await run(scriptedModel(provider).port)
+
+  assert.equal(outcome.terminationReason, 'tool_failure', 'the reason is about the run')
+  assert.equal(stepRows[0]?.['failure_category'], 'transient', 'the category is about the world')
+})
+
+test('a step where nothing outside the run failed records no category', async () => {
+  const { stepRows } = await run(
+    scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), ...looksUpThenFinishes(2)).port,
+  )
+
+  assert.deepEqual(
+    stepRows.map((row) => row['failure_category']),
+    stepRows.map(() => null),
+  )
+})
+
+test('a source that refuses us records refused, and the run carries on', async () => {
+  const model = scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes([]))
+  const { outcome, stepRows } = await run(model.port, { http: withMusicbrainz(fixtureHttp('nope', 403)) })
+
+  assert.equal(stepRows[0]?.['failure_category'], 'refused')
+  assert.match(String(stepRows[0]?.['warning']), /HTTP 403/)
+  assert.equal(outcome.terminationReason, 'no_candidates', 'a refused source is a warning, not a failure')
+})
+
+// Where one step makes several external calls, the category is the one that
+// produced the step's warning: here the page answered and the extraction of it
+// did not, so the step is `malformed` rather than anything the status said.
+test('a page that fetched and an extraction that did not parse records malformed', async () => {
+  const model = scriptedModelExtracting('Sorry — I could not read that page.')(
+    proposes('fetch_source', '{"source_id": "loudwire"}'),
+    finishes([]),
+  )
+  const { stepRows } = await run(model.port)
+
+  assert.equal(stepRows[0]?.['tool_name'], 'fetch_source')
+  assert.equal(stepRows[0]?.['failure_category'], 'malformed')
+  assert.equal(stepRows[0]?.['error'], null, 'a bad extraction is a warning, not a failed step')
+  assert.match(String(stepRows[0]?.['warning']), /not valid JSON/)
+})
+
+test('a Notion write that is refused records the refusal on its own step', async () => {
+  const model = scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), ...looksUpThenFinishes(2))
+  const { outcome, stepRows } = await run(model.port, { createStatus: [200, 403] })
+
+  const write = stepRows.findLast((row) => row['kind'] === 'notion_write')
+  assert.equal(write?.['failure_category'], 'refused')
+  assert.equal(outcome.notionWritePerformed, false)
+  assert.equal(outcome.terminationReason, 'completed_short', 'the run had already ended well')
+})
+
+test('every category the clients produce is one the schema accepts', async () => {
+  const { stepRows } = await run(
+    scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes([])).port,
+    { http: withMusicbrainz(fixtureHttp('nope', 429)) },
+  )
+
+  // The CHECK constraint would have refused the insert, so reaching this
+  // assertion is most of the test.
+  assert.equal(stepRows[0]?.['failure_category'], 'rate_limited')
 })
 
 test('exactly one termination reason is recorded per run', async () => {

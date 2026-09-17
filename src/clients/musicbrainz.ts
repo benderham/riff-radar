@@ -24,7 +24,9 @@ import {
   MUSICBRAINZ_MIN_INTERVAL_MS,
   MUSICBRAINZ_MIN_SCORE,
 } from '../../config.ts'
-import { NO_ANSWER, describeStatus } from '../domain/http-outcome.ts'
+import type { FailureCategory } from '../domain/failure.ts'
+import { categoriseFailure, categorised, isRetryable, optionalCategory } from '../domain/failure.ts'
+import { describeStatus } from '../domain/http-outcome.ts'
 import type { MusicbrainzLookup } from '../domain/candidates.ts'
 import type { Ports } from '../ports.ts'
 
@@ -37,6 +39,8 @@ export interface LookupFetch {
   readonly lookup: MusicbrainzLookup
   /** Present when MusicBrainz disappointed. Not set merely by finding nothing. */
   readonly warning?: string
+  /** What kind of thing broke, when something did. Finding nothing is not a failure (ADR-0048). */
+  readonly failureCategory?: FailureCategory
 }
 
 /**
@@ -75,18 +79,6 @@ const once = async (ports: Ports, url: string) => {
 }
 
 /**
- * A refusal this service makes when it is busy, and will likely not repeat —
- * and a request that never got an answer at all, which is the same bet: a dead
- * socket is the most transient thing there is, and giving up on the first one
- * cost a run its whole shortlist once (ADR-0043).
- */
-const isTransient = (status: number, body: string): boolean =>
-  status === NO_ANSWER ||
-  status === 503 ||
-  status === 429 ||
-  (status === 200 && body.includes('"error"'))
-
-/**
  * Up to `MUSICBRAINZ_MAX_ATTEMPTS`, spaced by the same one-second gate.
  *
  * Only the transient refusals are retried: a 404 says the same thing however
@@ -97,7 +89,12 @@ const rateLimited = async (ports: Ports, url: string) => {
   let response = await once(ports, url)
 
   for (let attempt = 2; attempt <= MUSICBRAINZ_MAX_ATTEMPTS; attempt += 1) {
-    if (!isTransient(response.status, response.body)) return response
+    // A refusal this service makes when it is busy, and a request that never
+    // got an answer at all, are the two categories worth asking again about —
+    // and they are the same two everywhere, so the judgement is the shared one
+    // rather than a list of statuses kept here (ADR-0048).
+    const category = categoriseFailure(response.status, response.body)
+    if (category === undefined || !isRetryable(category)) return response
 
     // Backing off further each time. A service shedding load is asking to be
     // left alone for longer than one that is merely busy, and retrying at a
@@ -172,20 +169,35 @@ const key = (value: string): string =>
  * MusicBrainz's busy response is the reason this reads the body before
  * trusting the status: it is a 200 whose payload is an apology.
  */
-const bodyOf = (what: string, status: number, body: string): { data: unknown } | { warning: string } => {
+interface UnreadBody {
+  readonly warning: string
+  readonly failureCategory?: FailureCategory
+}
+
+const bodyOf = (what: string, status: number, body: string): { data: unknown } | UnreadBody => {
   if (status < 200 || status >= 300) {
-    return { warning: `${what} returned ${describeStatus(status, body)}` }
+    return {
+      warning: `${what} returned ${describeStatus(status, body)}`,
+      ...categorised(status, body),
+    }
   }
 
   let data: unknown
   try {
     data = JSON.parse(body)
   } catch (error) {
-    return { warning: `${what}: body was not valid JSON: ${(error as Error).message}` }
+    return {
+      warning: `${what}: body was not valid JSON: ${(error as Error).message}`,
+      failureCategory: 'malformed',
+    }
   }
 
+  // The apology is this service's own gate, worn as a 200. It is the same fact
+  // a 429 states out loud, and it is filed under the same name.
   const apology = (data as { error?: unknown }).error
-  if (typeof apology === 'string') return { warning: `${what}: MusicBrainz said "${apology}"` }
+  if (typeof apology === 'string') {
+    return { warning: `${what}: MusicBrainz said "${apology}"`, failureCategory: 'rate_limited' }
+  }
 
   return { data }
 }
@@ -291,7 +303,14 @@ export const lookupRelease = async (
 
   const base = { artist, title, url, status: response.status } as const
   const read = bodyOf(what, response.status, response.body)
-  if ('warning' in read) return { ...base, lookup: { found: false }, warning: read.warning }
+  if ('warning' in read) {
+    return {
+      ...base,
+      lookup: { found: false },
+      warning: read.warning,
+      ...optionalCategory(read.failureCategory),
+    }
+  }
 
   const parsed = searchSchema.safeParse(read.data)
   if (!parsed.success) {
@@ -299,6 +318,7 @@ export const lookupRelease = async (
       ...base,
       lookup: { found: false },
       warning: `${what}: body had the wrong shape: ${z.prettifyError(parsed.error)}`,
+      failureCategory: 'malformed',
     }
   }
 
@@ -329,6 +349,10 @@ export const lookupRelease = async (
   // release that signal and never its identity, because ranking proceeds
   // without a signal where eligibility would refuse (ADR-0010).
   const warnings: string[] = []
+  // The first failure's category, because the warning column reads in the same
+  // order: where one step made several calls, the category is the one that
+  // opened the prose beside it (ADR-0048).
+  let failureCategory: FailureCategory | undefined
   let lastRequest = { url, status: response.status }
 
   const enrich = async (requestUrl: string, describing: string): Promise<unknown> => {
@@ -339,6 +363,7 @@ export const lookupRelease = async (
     if (!('warning' in read)) return read.data
 
     warnings.push(read.warning)
+    failureCategory ??= read.failureCategory
     return undefined
   }
 
@@ -367,5 +392,6 @@ export const lookupRelease = async (
       ...(people.length === 0 ? {} : { members: people }),
     },
     ...(warnings.length === 0 ? {} : { warning: warnings.join('; ') }),
+    ...optionalCategory(failureCategory),
   }
 }

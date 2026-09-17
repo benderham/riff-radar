@@ -28,6 +28,8 @@ import type { Usage } from '../domain/cost.ts'
 import { NO_USAGE } from '../domain/cost.ts'
 import { htmlToText } from '../domain/html-text.ts'
 import type { DateWindow } from '../domain/window.ts'
+import type { FailureCategory } from '../domain/failure.ts'
+import { categorised } from '../domain/failure.ts'
 import { describeStatus } from '../domain/http-outcome.ts'
 import type { Ports } from '../ports.ts'
 
@@ -52,6 +54,12 @@ export interface SourceFetch {
   readonly cacheReported: boolean
   /** Present when the source disappointed: a bad status, nothing listed, or a bad extraction. */
   readonly warning?: string
+  /**
+   * What kind of thing broke, when something outside did (ADR-0048). A page
+   * that answered and listed nothing has a warning and no category: nothing
+   * failed, the week was quiet or the page changed shape.
+   */
+  readonly failureCategory?: FailureCategory
 }
 
 /**
@@ -99,6 +107,10 @@ export const fetchSource = async (
       cleanedText: '',
       truncated: false,
       warning: `${url} returned ${describeStatus(response.status, response.body)}; no candidates from this source`,
+      // A redirect nobody followed is the one non-2xx the status cannot
+      // classify, and it is not a failure of the page — so the warning stands
+      // alone rather than being filed under a category that would be invented.
+      ...categorised(response.status, response.body),
     }
   }
 
@@ -127,12 +139,22 @@ export const fetchSource = async (
   try {
     parsed = JSON.parse(jsonIn(extraction.content))
   } catch (error) {
-    return { ...read, warning: `${url}: extraction was not valid JSON: ${(error as Error).message}` }
+    // The page answered; what failed is the shape of what came back, which is
+    // exactly what `malformed` names and no status could have said.
+    return {
+      ...read,
+      warning: `${url}: extraction was not valid JSON: ${(error as Error).message}`,
+      failureCategory: 'malformed',
+    }
   }
 
   const result = extractionSchema.safeParse(parsed)
   if (!result.success) {
-    return { ...read, warning: `${url}: extraction had the wrong shape: ${z.prettifyError(result.error)}` }
+    return {
+      ...read,
+      warning: `${url}: extraction had the wrong shape: ${z.prettifyError(result.error)}`,
+      failureCategory: 'malformed',
+    }
   }
 
   const usable = result.data.candidates

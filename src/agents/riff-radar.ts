@@ -27,6 +27,7 @@ import {
 import type { CliArgs } from '../domain/cli-args.ts'
 import type { Usage } from '../domain/cost.ts'
 import { NO_USAGE, addUsage, estimateCost } from '../domain/cost.ts'
+import { categoryOf } from '../domain/failure.ts'
 import { preflightSchema, proposeShortlist, suppressedReleases } from '../clients/notion.ts'
 import { citedVibes, rankShortlist } from '../domain/ranking.ts'
 import type { TerminationReason } from '../domain/run.ts'
@@ -87,6 +88,7 @@ const EMPTY_STEP: StepFields = {
   toolResult: null,
   error: null,
   warning: null,
+  failureCategory: null,
   ...NO_USAGE,
 }
 
@@ -187,12 +189,18 @@ export const runRiffRadar = async ({
       response = await ports.model.complete({ messages, tools: toolDefinitions })
     } catch (error) {
       recordStep(
-        { ...EMPTY_STEP, kind: 'model_error', error: (error as Error).message },
+        {
+          ...EMPTY_STEP,
+          kind: 'model_error',
+          error: (error as Error).message,
+          // The reason says the run could not continue; the category says what
+          // kind of thing stopped it, which is the half that used to be an
+          // apology in a comment here (ADR-0048).
+          failureCategory: categoryOf(error) ?? null,
+        },
         at,
         elapsed(),
       )
-      // The spec's table has no reason of its own for a model failure, and this
-      // is the nearest true one: the run could not continue and wrote nothing.
       terminationReason = 'tool_failure'
       break
     }
@@ -288,6 +296,7 @@ export const runRiffRadar = async ({
           toolName: validation.name,
           toolArgs: call.argumentsJson,
           error: (error as Error).message,
+          failureCategory: categoryOf(error) ?? null,
         },
         at,
         elapsed(),
@@ -380,6 +389,7 @@ export const runRiffRadar = async ({
         // the run continues on its other sources, and the trace says what was
         // missed in a column of its own, so nothing reads it as a failed step.
         warning: outcome.warning ?? null,
+        failureCategory: outcome.failureCategory ?? null,
       },
       at,
       elapsed(),
@@ -428,7 +438,7 @@ export const runRiffRadar = async ({
       // message says about the rollback is the part a human needs.
       notionWriteError = (error as Error).message
       recordStep(
-        { ...EMPTY_STEP, kind: 'notion_write', error: notionWriteError },
+        { ...EMPTY_STEP, kind: 'notion_write', error: notionWriteError, failureCategory: categoryOf(error) ?? null },
         writeAt,
         ports.clock.now().getTime() - writeAt.getTime(),
       )
