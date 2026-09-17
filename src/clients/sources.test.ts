@@ -38,7 +38,7 @@ const servingFixture = (body: string, status = 200) => {
     patch: async () => { throw new Error('unexpected patch') },
     get: async (url) => {
       gets.push(url)
-      return { status, headers: { 'content-type': 'text/html' }, body }
+      return { status, attempts: 1, headers: { 'content-type': 'text/html' }, body }
     },
     // A source is a page, read with GET. Nothing here should ever post.
     post: refusePost,
@@ -67,7 +67,7 @@ const WINDOW = { from: '2026-09-08', to: '2026-09-14' }
 const portsFor = (http: HttpPort, model: ModelPort): Ports => ({
   http,
   model,
-  clock: { now: () => new Date(2026, 8, 14) },
+  clock: { now: () => new Date(2026, 8, 14), sleep: async () => {} },
 })
 
 test('the configured URL is fetched, and the cleaned page reaches the extraction call', async () => {

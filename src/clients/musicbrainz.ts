@@ -13,22 +13,24 @@
  * 2xx is not by itself a result and the body has to be read to know.
  *
  * The one-request-per-second limit lives here rather than in the callers, so
- * that no future caller can forget it (ADR-0034).
+ * that no future caller can forget it (ADR-0034). It is the only thing about
+ * requests this file still owns: trying again after a refusal is the adapter's
+ * (ADR-0049), because politeness and recovery are different rules and only one
+ * of them is specific to MusicBrainz.
  */
 
 import { z } from 'zod'
 
 import {
   MUSICBRAINZ_ENDPOINT,
-  MUSICBRAINZ_MAX_ATTEMPTS,
   MUSICBRAINZ_MIN_INTERVAL_MS,
   MUSICBRAINZ_MIN_SCORE,
 } from '../../config.ts'
 import type { FailureCategory } from '../domain/failure.ts'
-import { categoriseFailure, categorised, isRetryable, optionalCategory } from '../domain/failure.ts'
+import { categorised, optionalCategory } from '../domain/failure.ts'
 import { describeStatus } from '../domain/http-outcome.ts'
 import type { MusicbrainzLookup } from '../domain/candidates.ts'
-import type { Ports } from '../ports.ts'
+import type { HttpResponse, Ports } from '../ports.ts'
 
 export interface LookupFetch {
   readonly artist: string
@@ -70,44 +72,23 @@ export const nextRequestDelayMs = (lastRequestAt: number, now: number): number =
  */
 let lastRequestAt = 0
 
+/**
+ * One request, no sooner than a second after the last one.
+ *
+ * The wait goes through the clock rather than a raw timer, so there is exactly
+ * one place in the project where time passes (ADR-0018) and a test that fakes
+ * it pays for neither the gate nor the adapter's backoff.
+ *
+ * The adapter may spend several attempts inside this call, which is correct and
+ * not double-sleeping: this gate spaces *requests this client initiates*, and
+ * the attempts after the first are the adapter's own business.
+ */
 const once = async (ports: Ports, url: string) => {
   const delay = nextRequestDelayMs(lastRequestAt, ports.clock.now().getTime())
-  if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay))
+  if (delay > 0) await ports.clock.sleep(delay)
 
   lastRequestAt = ports.clock.now().getTime()
   return ports.http.get(url, { accept: 'application/json' })
-}
-
-/**
- * Up to `MUSICBRAINZ_MAX_ATTEMPTS`, spaced by the same one-second gate.
- *
- * Only the transient refusals are retried: a 404 says the same thing however
- * many times it is asked, and repeating it spends seconds the run cannot get
- * back for a certainty it already has.
- */
-const rateLimited = async (ports: Ports, url: string) => {
-  let response = await once(ports, url)
-
-  for (let attempt = 2; attempt <= MUSICBRAINZ_MAX_ATTEMPTS; attempt += 1) {
-    // A refusal this service makes when it is busy, and a request that never
-    // got an answer at all, are the two categories worth asking again about —
-    // and they are the same two everywhere, so the judgement is the shared one
-    // rather than a list of statuses kept here (ADR-0048).
-    const category = categoriseFailure(response.status, response.body)
-    if (category === undefined || !isRetryable(category)) return response
-
-    // Backing off further each time. A service shedding load is asking to be
-    // left alone for longer than one that is merely busy, and retrying at a
-    // fixed second is how a client becomes the problem.
-    //
-    // Expressed by owing the gate more time rather than by sleeping again, so
-    // that there is exactly one sleep in this file and it is the one the clock
-    // drives. A test whose clock does not advance pays none of it.
-    lastRequestAt += MUSICBRAINZ_MIN_INTERVAL_MS * (attempt - 1)
-    response = await once(ports, url)
-  }
-
-  return response
 }
 
 /** Every enriched field is optional: MusicBrainz's coverage is uneven by design. */
@@ -174,10 +155,12 @@ interface UnreadBody {
   readonly failureCategory?: FailureCategory
 }
 
-const bodyOf = (what: string, status: number, body: string): { data: unknown } | UnreadBody => {
+const bodyOf = (what: string, response: HttpResponse): { data: unknown } | UnreadBody => {
+  const { status, body } = response
+
   if (status < 200 || status >= 300) {
     return {
-      warning: `${what} returned ${describeStatus(status, body)}`,
+      warning: `${what} returned ${describeStatus(status, body, response.attempts)}`,
       ...categorised(status, body),
     }
   }
@@ -299,10 +282,10 @@ export const lookupRelease = async (
 ): Promise<LookupFetch> => {
   const url = searchUrl(artist, title)
   const what = `lookup of ${artist} — ${title}`
-  const response = await rateLimited(ports, url)
+  const response = await once(ports, url)
 
   const base = { artist, title, url, status: response.status } as const
-  const read = bodyOf(what, response.status, response.body)
+  const read = bodyOf(what, response)
   if ('warning' in read) {
     return {
       ...base,
@@ -356,10 +339,10 @@ export const lookupRelease = async (
   let lastRequest = { url, status: response.status }
 
   const enrich = async (requestUrl: string, describing: string): Promise<unknown> => {
-    const answer = await rateLimited(ports, requestUrl)
+    const answer = await once(ports, requestUrl)
     lastRequest = { url: requestUrl, status: answer.status }
 
-    const read = bodyOf(`${what}: ${describing}`, answer.status, answer.body)
+    const read = bodyOf(`${what}: ${describing}`, answer)
     if (!('warning' in read)) return read.data
 
     warnings.push(read.warning)

@@ -16,6 +16,7 @@
 
 import process from 'node:process'
 
+import { systemClock } from '../src/adapters/clock.ts'
 import { httpAdapter } from '../src/adapters/http.ts'
 import { NOTION_ENDPOINT, NOTION_VERSION } from '../config.ts'
 import { preflightSchema, suppressedReleases } from '../src/clients/notion.ts'
@@ -30,7 +31,7 @@ if (token === '' || databaseId === '') {
   process.exit(1)
 }
 
-const ports = { http: httpAdapter(), clock: { now: () => new Date() } } as Ports
+const ports = { http: httpAdapter(systemClock), clock: systemClock } as Ports
 
 // The raw query first, to report which properties the database actually has.
 // A renamed property is the failure this is most likely to catch, and it would

@@ -106,7 +106,7 @@ export const fetchSource = async (
       ...base,
       cleanedText: '',
       truncated: false,
-      warning: `${url} returned ${describeStatus(response.status, response.body)}; no candidates from this source`,
+      warning: `${url} returned ${describeStatus(response.status, response.body, response.attempts)}; no candidates from this source`,
       // A redirect nobody followed is the one non-2xx the status cannot
       // classify, and it is not a failure of the page — so the warning stands
       // alone rather than being filed under a category that would be invented.

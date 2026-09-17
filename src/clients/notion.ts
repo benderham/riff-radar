@@ -144,7 +144,7 @@ export const suppressedReleases = async (
       // the request carries the database id and could carry the token.
       throw refusal(
         new SuppressionUnavailable(
-          `Notion refused the suppression query with ${describeStatus(response.status, response.body)}`,
+          `Notion refused the suppression query with ${describeStatus(response.status, response.body, response.attempts)}`,
         ),
         response.status,
         response.body,
@@ -197,7 +197,7 @@ export const preflightSchema = async (
   if (response.status < 200 || response.status >= 300) {
     throw refusal(
       new SchemaMismatch(
-        `Notion refused to describe the database with ${describeStatus(response.status, response.body)}`,
+        `Notion refused to describe the database with ${describeStatus(response.status, response.body, response.attempts)}`,
       ),
       response.status,
       response.body,
@@ -236,7 +236,9 @@ const createPage = async (
     // Notion echoes the request in its errors, and the request carries the
     // database id; the status is what says what to do about it.
     throw refusal(
-      new NotionWriteFailed(`Notion refused a page with ${describeStatus(response.status, response.body)}`),
+      new NotionWriteFailed(
+        `Notion refused a page with ${describeStatus(response.status, response.body, response.attempts)}`,
+      ),
       response.status,
       response.body,
     )
@@ -254,7 +256,7 @@ const archivePage = async (ports: Ports, token: string, pageId: string): Promise
   )
   if (response.status < 200 || response.status >= 300) {
     throw refusal(
-      new Error(`${describeStatus(response.status, response.body)} archiving ${pageId}`),
+      new Error(`${describeStatus(response.status, response.body, response.attempts)} archiving ${pageId}`),
       response.status,
       response.body,
     )

@@ -83,7 +83,7 @@ const withMusicbrainz = (http: HttpPort): HttpPort => ({
   ...http,
   get: async (url, headers) =>
     isMusicbrainz(url)
-      ? { status: 200, headers: { 'content-type': 'application/json' }, body: musicbrainzBody(url) }
+      ? { status: 200, attempts: 1, headers: { 'content-type': 'application/json' }, body: musicbrainzBody(url) }
       : http.get(url, headers),
 })
 
@@ -105,9 +105,9 @@ const fixtureHttp = (body = PAGE, status = 200): HttpPort => ({
   patch: notPatched,
   get: async (url) =>
     isMusicbrainz(url)
-      ? { status: 200, headers: { 'content-type': 'application/json' }, body: musicbrainzBody(url) }
-      : { status, headers: { 'content-type': 'text/html' }, body },
-  post: async () => ({ status, headers: { 'content-type': 'text/html' }, body }),
+      ? { status: 200, attempts: 1, headers: { 'content-type': 'application/json' }, body: musicbrainzBody(url) }
+      : { status, attempts: 1, headers: { 'content-type': 'text/html' }, body },
+  post: async () => ({ status, attempts: 1, headers: { 'content-type': 'text/html' }, body }),
 })
 
 /**
@@ -137,19 +137,20 @@ const withNotion = (
     ...http,
     get: async (url, headers) =>
       url.startsWith(NOTION_ENDPOINT)
-        ? { status: 200, headers: json, body: over.schema ?? NOTION_SCHEMA }
+        ? { status: 200, attempts: 1, headers: json, body: over.schema ?? NOTION_SCHEMA }
         : http.get(url, headers),
 
     post: async (url, body, headers) => {
       if (url === `${NOTION_ENDPOINT}/pages`) {
         written.push(JSON.parse(body))
         const status = over.createStatus?.[written.length - 1] ?? 200
-        return { status, headers: json, body: JSON.stringify({ id: `page-${written.length}` }) }
+        return { status, attempts: 1, headers: json, body: JSON.stringify({ id: `page-${written.length}` }) }
       }
 
       return url.startsWith(NOTION_ENDPOINT)
         ? {
             status: 200,
+            attempts: 1,
             headers: json,
             body: JSON.stringify({
               results: rows.map((row) => ({
@@ -168,7 +169,7 @@ const withNotion = (
 
     patch: async (url) => {
       archived.push(url)
-      return { status: 200, headers: json, body: '{}' }
+      return { status: 200, attempts: 1, headers: json, body: '{}' }
     },
   }
 
@@ -178,7 +179,7 @@ const withNotion = (
 /** Every `now()` is a second after the last, so durations are observable. */
 const tickingClock = (from = new Date(2026, 8, 14, 9, 0, 0)): ClockPort => {
   let tick = 0
-  return { now: () => new Date(from.getTime() + tick++ * 1000) }
+  return { now: () => new Date(from.getTime() + tick++ * 1000), sleep: async () => {} }
 }
 
 const profile = tasteProfileSchema.parse({
@@ -840,6 +841,7 @@ test('a release listed by two sources is one candidate carrying both URLs', asyn
     patch: notPatched,
     get: async (url) => ({
       status: 200,
+      attempts: 1,
       headers: {},
       body: url.includes('wikipedia') ? fixture('wikipedia.html') : PAGE,
     }),
@@ -881,8 +883,8 @@ test('a source that yields nothing warns on the step and the run carries on', as
       patch: notPatched,
       get: async (url) =>
         url === SOURCES.loudwire
-          ? { status: 403, headers: {}, body: 'go away' }
-          : { status: 200, headers: {}, body: PAGE },
+          ? { status: 403, attempts: 1, headers: {}, body: 'go away' }
+          : { status: 200, attempts: 1, headers: {}, body: PAGE },
       post: notSearched,
     }),
   })
@@ -933,9 +935,10 @@ const SEARCH_BODY = JSON.stringify({
 /** A page for a source over GET, the search payload for the search endpoint over POST. */
 const searchingHttp = (searchStatus = 200): HttpPort => withMusicbrainz({
   patch: notPatched,
-  get: async () => ({ status: 200, headers: {}, body: PAGE }),
+  get: async () => ({ status: 200, attempts: 1, headers: {}, body: PAGE }),
   post: async () => ({
     status: searchStatus,
+    attempts: 1,
     headers: {},
     body: searchStatus === 200 ? SEARCH_BODY : 'slow down',
   }),
@@ -1126,7 +1129,7 @@ test('a suppression read that fails refuses the run, leaving no row behind', asy
   // The schema is described, so the preflight passes and the query is what fails.
   const refusing: HttpPort = {
     ...withNotion(fixtureHttp(), []).port,
-    post: async () => ({ status: 401, headers: {}, body: '{"message": "unauthorized"}' }),
+    post: async () => ({ status: 401, attempts: 1, headers: {}, body: '{"message": "unauthorized"}' }),
   }
 
   await assert.rejects(

@@ -38,3 +38,14 @@ test('an error is preferred to a warning, as it always was', () => {
     '[refused] Notion refused a page with HTTP 403',
   )
 })
+
+test('a retried step says how many attempts it took, so the seconds are explained', () => {
+  assert.equal(
+    noteOf({
+      error: null,
+      warning: 'loudwire.com returned HTTP 503 after 3 attempts; no candidates from this source',
+      failure_category: 'transient',
+    }),
+    '[transient] loudwire.com returned HTTP 503 after 3 attempts; no candidates from this source',
+  )
+})

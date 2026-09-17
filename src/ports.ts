@@ -18,6 +18,15 @@ import type { Usage } from './domain/cost.ts'
 export interface ClockPort {
   /** The current instant. Local-time components are what resolve the window. */
   now(): Date
+
+  /**
+   * Time passing, in the one place the project lets it (ADR-0018).
+   *
+   * Retry backoff and MusicBrainz's one-second gate both wait here rather than
+   * reaching for a timer, so a test controls both by faking one method — and a
+   * suite that would otherwise spend seven seconds per retry case spends none.
+   */
+  sleep(ms: number): Promise<void>
 }
 
 export interface HttpResponse {
@@ -25,6 +34,12 @@ export interface HttpResponse {
   /** Lowercased names, as `fetch` reports them. */
   readonly headers: Record<string, string>
   readonly body: string
+  /**
+   * How many requests this response cost, counting the one that produced it.
+   * Always at least one (ADR-0049). Above one, a client says so in its warning,
+   * which is what stops a retried call from being silently slow in the trace.
+   */
+  readonly attempts: number
 }
 
 export interface HttpPort {

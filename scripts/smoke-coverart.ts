@@ -14,11 +14,12 @@
 
 import process from 'node:process'
 
+import { systemClock } from '../src/adapters/clock.ts'
 import { httpAdapter } from '../src/adapters/http.ts'
 import { coverArtUrl } from '../src/clients/coverart.ts'
 import type { Ports } from '../src/ports.ts'
 
-const ports = { http: httpAdapter(), clock: { now: () => new Date() } } as Ports
+const ports = { http: httpAdapter(systemClock), clock: systemClock } as Ports
 
 // Ulcerate, *Cutting the Throat of God*, as MusicBrainz identifies it.
 const withArt = 'c302ec77-589f-462f-b6b3-d63508886978'

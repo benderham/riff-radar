@@ -11,7 +11,7 @@ const notPatched = async (): Promise<never> => {
   throw new Error('unexpected patch')
 }
 
-const clock: ClockPort = { now: () => new Date(2026, 8, 14, 9, 0, 0) }
+const clock: ClockPort = { now: () => new Date(2026, 8, 14, 9, 0, 0), sleep: async () => {} }
 
 /** Finishes immediately with nothing: the CLI's job is wiring, not choosing. */
 const model: ModelPort = {
@@ -42,7 +42,7 @@ const notionSchema = JSON.stringify({
 
 const describing = async (url: string) =>
   url.startsWith(NOTION_ENDPOINT)
-    ? { status: 200, headers: { 'content-type': 'application/json' }, body: notionSchema }
+    ? { status: 200, attempts: 1, headers: { 'content-type': 'application/json' }, body: notionSchema }
     : refuse(url)
 
 const http: HttpPort = {
@@ -52,6 +52,7 @@ const http: HttpPort = {
     url.startsWith(NOTION_ENDPOINT)
       ? {
           status: 200,
+          attempts: 1,
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ results: [], has_more: false, next_cursor: null }),
         }
@@ -171,7 +172,7 @@ test('a Notion database that cannot be read is a refusal, not a crash', async ()
   const refusing: HttpPort = {
     patch: notPatched,
     get: describing,
-    post: async () => ({ status: 401, headers: {}, body: '{"message": "unauthorized"}' }),
+    post: async () => ({ status: 401, attempts: 1, headers: {}, body: '{"message": "unauthorized"}' }),
   }
 
   const code = await runCli({

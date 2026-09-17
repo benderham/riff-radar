@@ -77,7 +77,7 @@ export const searchWeb = async (
   if (response.status < 200 || response.status >= 300) {
     return {
       ...base,
-      warning: `search for "${query}" returned ${describeStatus(response.status, response.body)}`,
+      warning: `search for "${query}" returned ${describeStatus(response.status, response.body, response.attempts)}`,
       ...categorised(response.status, response.body),
     }
   }

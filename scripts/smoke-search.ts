@@ -11,6 +11,7 @@
 
 import process from 'node:process'
 
+import { systemClock } from '../src/adapters/clock.ts'
 import { httpAdapter } from '../src/adapters/http.ts'
 import { searchWeb } from '../src/clients/search.ts'
 import type { Ports } from '../src/ports.ts'
@@ -21,7 +22,7 @@ if (!apiKey) {
   process.exit(2)
 }
 
-const ports = { http: httpAdapter() } as Ports
+const ports = { http: httpAdapter(systemClock) } as Ports
 const query = process.argv[2] ?? 'ulcerate cutting the throat of god metal album'
 
 const search = await searchWeb(ports, query, apiKey)

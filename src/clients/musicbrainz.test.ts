@@ -2,8 +2,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-import { MUSICBRAINZ_MAX_ATTEMPTS, MUSICBRAINZ_MIN_INTERVAL_MS, USER_AGENT } from '../../config.ts'
+import { MUSICBRAINZ_MIN_INTERVAL_MS, USER_AGENT } from '../../config.ts'
 import { NO_ANSWER } from '../domain/http-outcome.ts'
+import { httpAdapter } from '../adapters/http.ts'
 import type { ClockPort, HttpPort, Ports } from '../ports.ts'
 import { lookupRelease, nextRequestDelayMs } from './musicbrainz.ts'
 
@@ -21,18 +22,17 @@ const UNTYPED = fixture('musicbrainz-untyped-group.json')
 
 /**
  * A clock that leaps an hour between readings, so the gate is never owed
- * anything and no test spends real seconds waiting one out — including the
- * retry tests, which deliberately make the client owe two more.
+ * anything and no test spends real seconds waiting one out.
  *
- * Nothing is lost by this: the gate's arithmetic, backoff included, is proved
- * directly by the `nextRequestDelayMs` assertions above.
+ * Nothing is lost by this: the gate's arithmetic is proved directly by the
+ * `nextRequestDelayMs` assertions above.
  */
 const tickingClock = (): ClockPort => {
   let at = new Date('2026-09-15T00:00:00Z').getTime()
-  return { now: () => new Date((at += 60 * 60_000)) }
+  return { now: () => new Date((at += 60 * 60_000)), sleep: async () => {} }
 }
 
-const serving = (bodies: readonly (string | { body: string; status: number })[]) => {
+const serving = (bodies: readonly (string | { body: string; status: number; attempts?: number })[]) => {
   const gets: { url: string; headers?: Record<string, string> }[] = []
   let call = 0
   const http: HttpPort = {
@@ -40,8 +40,13 @@ const serving = (bodies: readonly (string | { body: string; status: number })[])
     get: async (url, headers) => {
       gets.push({ url, ...(headers === undefined ? {} : { headers }) })
       const next = bodies[Math.min(call++, bodies.length - 1)]!
-      const { body, status } = typeof next === 'string' ? { body: next, status: 200 } : next
-      return { status, headers: { 'content-type': 'application/json' }, body }
+      const answer = typeof next === 'string' ? { body: next, status: 200 } : next
+      return {
+        status: answer.status,
+        attempts: answer.attempts ?? 1,
+        headers: { 'content-type': 'application/json' },
+        body: answer.body,
+      }
     },
     post: async (url) => {
       throw new Error(`unexpected post to ${url}`)
@@ -186,67 +191,72 @@ test('MusicBrainz answering 200 with an error body is a warning, not a result', 
   assert.match(String(refused.warning), /busy/)
 })
 
-test('a 503 is retried, because MusicBrainz sheds load rather than queueing', async () => {
-  const { gets, ports } = serving([
-    { body: 'service unavailable', status: 503 },
-    { body: 'service unavailable', status: 503 },
-    GROUP,
-  ])
-  const found = await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
-
-  assert.equal(gets.length, 3 + 3, 'two refusals, the answer, then the three enrichments')
-  assert.ok(found.lookup.found === true)
-  assert.equal(found.warning, undefined, 'a retry that succeeded is not a disappointment')
-})
-
-test('the busy body is retried too: it is a refusal wearing a 200', async () => {
-  const busy = JSON.stringify({ error: 'The MusicBrainz web server is currently busy. Please try again later.' })
-  const { gets, ports } = serving([busy, GROUP])
-  const found = await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
-
-  assert.equal(gets.length, 2 + 3, 'the refusal, the answer, then the three enrichments')
-  assert.ok(found.lookup.found === true)
-})
-
-test('retries are bounded, and a service that stays down is a warning', async () => {
+test('a 503 is asked once here: trying again is the adapter\'s job now (ADR-0049)', async () => {
+  // This file used to prove three attempts. Retry moved to the one place that
+  // performs a request, so what this client owes is the opposite assertion —
+  // it asks once and reports what came back. The three attempts are proved in
+  // the adapter's own tests, where every client inherits them.
   const { gets, ports } = serving([{ body: 'service unavailable', status: 503 }])
   const refused = await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
 
-  assert.equal(gets.length, MUSICBRAINZ_MAX_ATTEMPTS)
+  assert.equal(gets.length, 1)
   assert.match(String(refused.warning), /503/)
 })
 
-test('a dead socket is retried, and then warned about by name (ADR-0043)', async () => {
+test('the busy body is a refusal wearing a 200, and is reported as one', async () => {
+  const busy = JSON.stringify({ error: 'The MusicBrainz web server is currently busy. Please try again later.' })
+  const { gets, ports } = serving([busy])
+  const refused = await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
+
+  assert.equal(gets.length, 1)
+  assert.match(String(refused.warning), /busy/)
+})
+
+test('a dead socket is warned about by name rather than as HTTP 0 (ADR-0043)', async () => {
   // What the adapter hands a client when the request never got an answer: not a
   // throw, and not a status. A run lost its whole shortlist to one of these.
   const dead = { body: 'fetch failed: getaddrinfo ENOTFOUND musicbrainz.org', status: NO_ANSWER }
   const { gets, ports } = serving([dead])
   const refused = await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
 
-  assert.equal(gets.length, MUSICBRAINZ_MAX_ATTEMPTS)
+  assert.equal(gets.length, 1)
   assert.match(String(refused.warning), /no answer: fetch failed: getaddrinfo ENOTFOUND/)
   assert.equal(refused.lookup.found, false, 'unverified, which is missing evidence, not invalidity')
 })
 
-test('a socket that comes back is the run carrying on, not a failed lookup', async () => {
-  const { ports } = serving([
-    { body: 'fetch failed: ECONNRESET', status: NO_ANSWER },
-    GROUP,
-    RELEASE_LABELS,
-    GENRES,
-    ARTIST_RELS,
-  ])
-  const found = await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
+test('a retried call says so in its warning, so the trace explains the seconds', async () => {
+  const { ports } = serving([{ body: 'service unavailable', status: 503, attempts: 3 }])
+  const refused = await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
 
-  assert.equal(found.warning, undefined)
-  assert.ok(found.lookup.found === true)
+  assert.match(String(refused.warning), /HTTP 503 after 3 attempts/)
 })
 
-test('a 404 is not retried: it will say the same thing three times', async () => {
-  const { gets, ports } = serving([{ body: 'not found', status: 404 }])
-  await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
+test('the gate and the adapter\'s retry compose without sleeping twice for one request', async () => {
+  // The real adapter, so the backoff is the real backoff, over a clock that
+  // records what it was asked to wait and leaps an hour between readings — so
+  // the gate is never owed anything and every recorded wait is the backoff's.
+  const waits: number[] = []
+  let at = new Date('2026-09-15T00:00:00Z').getTime()
+  const clock: ClockPort = {
+    now: () => new Date((at += 60 * 60_000)),
+    sleep: async (ms) => {
+      waits.push(ms)
+    },
+  }
 
-  assert.equal(gets.length, 1)
+  const bodies = ['down', GROUP, RELEASE_LABELS, GENRES, ARTIST_RELS]
+  let call = 0
+  const fetchImpl = async () => {
+    const body = bodies[Math.min(call++, bodies.length - 1)]!
+    return new Response(body, { status: body === 'down' ? 503 : 200 })
+  }
+
+  const ports = { http: httpAdapter(clock, fetchImpl as typeof fetch), clock } as Ports
+  const found = await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
+
+  assert.ok(found.lookup.found === true, 'the retry recovered the lookup')
+  assert.equal(waits.length, 1, 'one refusal, one backoff — the gate charged nothing on top')
+  assert.ok(waits[0]! > 0 && waits[0]! < 2_000, 'and it was the first backoff, not a second second')
 })
 
 test('a refused request is a warning, not a failure', async () => {
