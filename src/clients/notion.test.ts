@@ -3,9 +3,6 @@ import assert from 'node:assert/strict'
 
 import { NOTION_VERSION } from '../../config.ts'
 import type { ClockPort, HttpPort, Ports } from '../ports.ts'
-
-/** Notion's client never waits; the adapter's backoff is the adapter's test. */
-const clock: ClockPort = { now: () => new Date(), sleep: async () => {} }
 import type { ShortlistItem } from '../domain/shortlist.ts'
 import {
   NotionWriteFailed,
@@ -15,6 +12,9 @@ import {
   proposeShortlist,
   suppressedReleases,
 } from './notion.ts'
+
+/** Notion's client never waits; the adapter's backoff is the adapter's test. */
+const clock: ClockPort = { now: () => new Date(), sleep: async () => {} }
 
 /**
  * Notion's bodies are declared inline rather than captured, deliberately.

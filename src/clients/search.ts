@@ -18,7 +18,7 @@ import { z } from 'zod'
 import { SEARCH_ENDPOINT, SEARCH_RESULT_COUNT } from '../../config.ts'
 import type { FailureCategory } from '../domain/failure.ts'
 import { categorised } from '../domain/failure.ts'
-import { describeStatus } from '../domain/http-outcome.ts'
+import { describeStatus, retriedNote, warned } from '../domain/http-outcome.ts'
 import type { Ports } from '../ports.ts'
 
 export interface SearchResult {
@@ -73,11 +73,12 @@ export const searchWeb = async (
   )
 
   const base = { query, url: SEARCH_ENDPOINT, status: response.status, results: [] } as const
+  const retried = retriedNote(`search for "${query}"`, response.attempts)
 
   if (response.status < 200 || response.status >= 300) {
     return {
       ...base,
-      warning: `search for "${query}" returned ${describeStatus(response.status, response.body, response.attempts)}`,
+      warning: `search for "${query}" returned ${describeStatus(response)}`,
       ...categorised(response.status, response.body),
     }
   }
@@ -88,7 +89,7 @@ export const searchWeb = async (
   } catch (error) {
     return {
       ...base,
-      warning: `search for "${query}": body was not valid JSON: ${(error as Error).message}`,
+      ...warned(retried, `search for "${query}": body was not valid JSON: ${(error as Error).message}`),
       failureCategory: 'malformed',
     }
   }
@@ -97,7 +98,7 @@ export const searchWeb = async (
   if (!result.success) {
     return {
       ...base,
-      warning: `search for "${query}": body had the wrong shape: ${z.prettifyError(result.error)}`,
+      ...warned(retried, `search for "${query}": body had the wrong shape: ${z.prettifyError(result.error)}`),
       failureCategory: 'malformed',
     }
   }
@@ -111,6 +112,6 @@ export const searchWeb = async (
   return {
     ...base,
     results,
-    ...(results.length === 0 ? { warning: `search for "${query}" returned no results` } : {}),
+    ...warned(retried, results.length === 0 ? `search for "${query}" returned no results` : undefined),
   }
 }

@@ -48,11 +48,11 @@ const read = async (response: Response) => ({
  * quarter either way so that several calls failing at the same moment do not
  * all come back at the same moment.
  *
- * Pure, and exported, so the shape is asserted without a suite spending seven
- * seconds a case. The randomness is a parameter for the same reason.
+ * Private, because the delay is observable where it matters: the tests fake
+ * `sleep`, record what it was asked to wait, and assert the sequence's shape.
  */
-export const backoffMs = (attempt: number, jitter: number = Math.random()): number =>
-  Math.round(HTTP_BACKOFF_BASE_MS * 2 ** (attempt - 1) * (0.75 + jitter * 0.5))
+const backoffMs = (attempt: number): number =>
+  Math.round(HTTP_BACKOFF_BASE_MS * 2 ** (attempt - 1) * (0.75 + Math.random() * 0.5))
 
 /**
  * What a provider asked us to wait, when it said — in seconds or as a date —
@@ -63,7 +63,7 @@ export const backoffMs = (attempt: number, jitter: number = Math.random()): numb
  * response becomes an hour of nothing happening. A non-positive delay is not a
  * request to wait and falls back to the backoff, which at least increases.
  */
-export const retryAfterMs = (header: string | undefined, now: number): number | undefined => {
+const retryAfterMs = (header: string | undefined, now: number): number | undefined => {
   if (header === undefined) return undefined
 
   const seconds = Number(header.trim())
@@ -109,7 +109,7 @@ const because = (error: unknown): string => {
   return [self, inner].filter(Boolean).join(': ')
 }
 
-const once = async (request: () => Promise<Omit<HttpResponse, 'attempts'>>) => {
+const tried = async (request: () => Promise<Omit<HttpResponse, 'attempts'>>) => {
   try {
     return await request()
   } catch (error) {
@@ -131,7 +131,7 @@ const attempted = async (
   request: () => Promise<Omit<HttpResponse, 'attempts'>>,
 ): Promise<HttpResponse> => {
   for (let attempt = 1; ; attempt += 1) {
-    const response = { ...(await once(request)), attempts: attempt }
+    const response = { ...(await tried(request)), attempts: attempt }
     const category = categoriseFailure(response.status, response.body)
 
     if (attempt >= HTTP_MAX_ATTEMPTS || category === undefined || !isRetryable(category)) {

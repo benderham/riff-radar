@@ -73,6 +73,10 @@ _Avoid_: exit code, outcome, result
 What went wrong outside the process, in one of six words. Distinct from Termination Reason: a category describes a failed external call, a reason describes a stopped run.
 _Avoid_: error type, error code, failure mode
 
+**Attempt**:
+One request sent to a provider. A single external call is up to three of them: the adapter asks again when the Failure Category says asking again could help, and the count reaches the trace so a slow step is explained rather than wondered about. This is the only sense in which the project retries anything — Resume is not a retry, and neither is a Re-run.
+_Avoid_: try, request count, redelivery
+
 **Checkpoint**:
 The recorded step a run can be restarted from. The trace is the checkpoint; there is no separate saved state.
 _Avoid_: snapshot, savepoint, recovery point

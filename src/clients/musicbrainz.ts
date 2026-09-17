@@ -28,7 +28,7 @@ import {
 } from '../../config.ts'
 import type { FailureCategory } from '../domain/failure.ts'
 import { categorised, optionalCategory } from '../domain/failure.ts'
-import { describeStatus } from '../domain/http-outcome.ts'
+import { describeStatus, retriedNote, warned } from '../domain/http-outcome.ts'
 import type { MusicbrainzLookup } from '../domain/candidates.ts'
 import type { HttpResponse, Ports } from '../ports.ts'
 
@@ -160,7 +160,7 @@ const bodyOf = (what: string, response: HttpResponse): { data: unknown } | Unrea
 
   if (status < 200 || status >= 300) {
     return {
-      warning: `${what} returned ${describeStatus(status, body, response.attempts)}`,
+      warning: `${what} returned ${describeStatus(response)}`,
       ...categorised(status, body),
     }
   }
@@ -285,6 +285,9 @@ export const lookupRelease = async (
   const response = await once(ports, url)
 
   const base = { artist, title, url, status: response.status } as const
+  // A lookup that only answered on the second ask says so even when it answered
+  // well: a failure explains its own attempts, a success would otherwise not.
+  const retried = retriedNote(what, response.attempts)
   const read = bodyOf(what, response)
   if ('warning' in read) {
     return {
@@ -300,7 +303,7 @@ export const lookupRelease = async (
     return {
       ...base,
       lookup: { found: false },
-      warning: `${what}: body had the wrong shape: ${z.prettifyError(parsed.error)}`,
+      ...warned(retried, `${what}: body had the wrong shape: ${z.prettifyError(parsed.error)}`),
       failureCategory: 'malformed',
     }
   }
@@ -314,7 +317,7 @@ export const lookupRelease = async (
 
   // Nothing matched is a legitimate answer, not a disappointment: the release is
   // Unverified and the run keeps it.
-  if (match === undefined) return { ...base, lookup: { found: false } }
+  if (match === undefined) return { ...base, lookup: { found: false }, ...warned(retried) }
 
   const found = {
     found: true as const,
@@ -331,7 +334,7 @@ export const lookupRelease = async (
   // requests, three seconds, and each one optional — a failure costs the
   // release that signal and never its identity, because ranking proceeds
   // without a signal where eligibility would refuse (ADR-0010).
-  const warnings: string[] = []
+  const warnings: string[] = retried === undefined ? [] : [retried]
   // The first failure's category, because the warning column reads in the same
   // order: where one step made several calls, the category is the one that
   // opened the prose beside it (ADR-0048).
@@ -343,7 +346,11 @@ export const lookupRelease = async (
     lastRequest = { url: requestUrl, status: answer.status }
 
     const read = bodyOf(`${what}: ${describing}`, answer)
-    if (!('warning' in read)) return read.data
+    if (!('warning' in read)) {
+      const note = retriedNote(`${what}: ${describing}`, answer.attempts)
+      if (note !== undefined) warnings.push(note)
+      return read.data
+    }
 
     warnings.push(read.warning)
     failureCategory ??= read.failureCategory

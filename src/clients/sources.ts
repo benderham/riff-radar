@@ -30,7 +30,7 @@ import { htmlToText } from '../domain/html-text.ts'
 import type { DateWindow } from '../domain/window.ts'
 import type { FailureCategory } from '../domain/failure.ts'
 import { categorised } from '../domain/failure.ts'
-import { describeStatus } from '../domain/http-outcome.ts'
+import { describeStatus, retriedNote, warned } from '../domain/http-outcome.ts'
 import type { Ports } from '../ports.ts'
 
 const EXTRACT_PROMPT = readFileSync(fileURLToPath(new URL('../prompt/extract.md', import.meta.url)), 'utf8')
@@ -99,6 +99,10 @@ export const fetchSource = async (
     cacheReported: true,
   } as const
 
+  // A page that only answered on the second ask is a step whose seconds need
+  // accounting for, and it writes no warning of its own (ADR-0049).
+  const retried = retriedNote(url, response.attempts)
+
   if (response.status < 200 || response.status >= 300) {
     // Not handed to the model: an error page extracts into nothing at best, and
     // into an invention at worst, and either way it costs a call to find out.
@@ -106,7 +110,7 @@ export const fetchSource = async (
       ...base,
       cleanedText: '',
       truncated: false,
-      warning: `${url} returned ${describeStatus(response.status, response.body, response.attempts)}; no candidates from this source`,
+      warning: `${url} returned ${describeStatus(response)}; no candidates from this source`,
       // A redirect nobody followed is the one non-2xx the status cannot
       // classify, and it is not a failure of the page — so the warning stands
       // alone rather than being filed under a category that would be invented.
@@ -143,7 +147,7 @@ export const fetchSource = async (
     // exactly what `malformed` names and no status could have said.
     return {
       ...read,
-      warning: `${url}: extraction was not valid JSON: ${(error as Error).message}`,
+      ...warned(retried, `${url}: extraction was not valid JSON: ${(error as Error).message}`),
       failureCategory: 'malformed',
     }
   }
@@ -152,7 +156,7 @@ export const fetchSource = async (
   if (!result.success) {
     return {
       ...read,
-      warning: `${url}: extraction had the wrong shape: ${z.prettifyError(result.error)}`,
+      ...warned(retried, `${url}: extraction had the wrong shape: ${z.prettifyError(result.error)}`),
       failureCategory: 'malformed',
     }
   }
@@ -173,13 +177,13 @@ export const fetchSource = async (
     outsideWindow: usable.length - candidates.length,
     // A source that normally yields candidates and yields none is the only
     // detector of a silent redesign (ADR-0003), so it is never left implicit.
-    ...(candidates.length === 0
-      ? {
-          warning:
-            usable.length === 0
-              ? `${url} yielded no candidates; the page may have changed shape`
-              : `${url} listed ${usable.length} releases, none inside ${window.from}..${window.to}`,
-        }
-      : {}),
+    ...warned(
+      retried,
+      candidates.length === 0
+        ? usable.length === 0
+          ? `${url} yielded no candidates; the page may have changed shape`
+          : `${url} listed ${usable.length} releases, none inside ${window.from}..${window.to}`
+        : undefined,
+    ),
   }
 }

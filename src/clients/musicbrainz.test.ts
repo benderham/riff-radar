@@ -231,6 +231,21 @@ test('a retried call says so in its warning, so the trace explains the seconds',
   assert.match(String(refused.warning), /HTTP 503 after 3 attempts/)
 })
 
+test('a lookup that succeeded only on the third ask accounts for its seconds too', async () => {
+  // The case `attempts` exists for: nothing failed, so nothing would otherwise
+  // be written down, and the step is inexplicably slow in the trace.
+  const { ports } = serving([
+    { body: GROUP, status: 200, attempts: 3 },
+    { body: RELEASE_LABELS, status: 200 },
+    { body: GENRES, status: 200 },
+    { body: ARTIST_RELS, status: 200 },
+  ])
+  const found = await lookupRelease(ports, 'Ulcerate', 'Cutting the Throat of God')
+
+  assert.ok(found.lookup.found === true, 'a retry that worked is still a result')
+  assert.match(String(found.warning), /answered after 3 attempts/)
+})
+
 test('the gate and the adapter\'s retry compose without sleeping twice for one request', async () => {
   // The real adapter, so the backoff is the real backoff, over a clock that
   // records what it was asked to wait and leaps an hour between readings — so
