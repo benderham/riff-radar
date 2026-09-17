@@ -99,6 +99,9 @@ export const runCli = async ({
       ports,
       store,
       profile: profile.data,
+      // A resume says what it inherited before it starts, not after it ends
+      // (ADR-0050): the run it describes may be over in two steps.
+      log,
       // Present: `missingCredentials` refused the run above if it were not.
       searchApiKey: env['TAVILY_API_KEY'] ?? '',
       notionToken: env['NOTION_TOKEN'] ?? '',

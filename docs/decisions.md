@@ -487,6 +487,8 @@ A resume creates a new run row carrying `resumed_from`, rather than appending to
 
 A resume is refused when the run id does not exist, when the run already has a termination reason, when it has no recorded steps, or when its `prompt_version`, `profile_version` or `action_schema_version` differs from the current configuration. The last is the one worth stating: a run half-built under an old prompt and finished under a new one produces a trace nobody can reason about, and milestone 3 would have to exclude it from every measurement.
 
+**Amended 17 September 2026, implementing ticket 04.** "No recorded steps" counts the chain's steps, not the named run's own. A resume is itself a run row, so one killed before it took its first step has none of its own while its ancestors hold everything worth continuing; refusing it would strand the chain, because the parent it inherited from has already been closed `aborted` and is refused too. For a run that resumed nothing the two counts are the same number, which is the case the sentence was written about.
+
 **Consequences:** Editing the prompt or the taste profile invalidates every unfinished run, which is correct and will still be annoying. Two run rows describe one piece of work, so every query that counts runs has to decide whether a resumed pair is one or two; `resumed_from` makes that answerable rather than guessable.
 
 ## ADR-0048: Six failure categories, recorded on the step, with no new termination reasons

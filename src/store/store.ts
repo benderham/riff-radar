@@ -12,19 +12,16 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import type { FailureCategory } from '../domain/failure.ts'
-import type { TerminationReason } from '../domain/run.ts'
+import type { RunVersions, TerminationReason } from '../domain/run.ts'
 
 const SCHEMA = readFileSync(fileURLToPath(new URL('./schema.sql', import.meta.url)), 'utf8')
 
-export interface StartedRun {
+export interface StartedRun extends RunVersions {
   readonly runId: string
   readonly startedAt: string
   readonly cliArgs: string
   readonly resolvedFrom: string
   readonly resolvedTo: string
-  readonly promptVersion: number
-  readonly profileVersion: number
-  readonly actionSchemaVersion: number
   readonly modelId: string
   /**
    * The run this one continues, when it is a resume (ADR-0047). A resume is a
@@ -81,11 +78,13 @@ export interface RecordedStep {
 }
 
 /** A run as a resume needs to see it: the window it covered, and what it continued. */
-export interface StoredRun {
+export interface StoredRun extends RunVersions {
   readonly runId: string
   readonly resolvedFrom: string
   readonly resolvedTo: string
   readonly resumedFrom: string | null
+  /** Set means the run is over, and a resume of it is a re-run (ADR-0047). */
+  readonly terminationReason: TerminationReason | null
 }
 
 /**
@@ -323,7 +322,8 @@ export const openStore = (path: string): Store => {
     runsMatching(prefix) {
       return database
         .prepare(
-          `SELECT run_id, resolved_from, resolved_to, resumed_from
+          `SELECT run_id, resolved_from, resolved_to, resumed_from, termination_reason,
+                  prompt_version, profile_version, action_schema_version
              FROM runs WHERE run_id LIKE ? ORDER BY started_at`,
         )
         .all(`${prefix}%`)
@@ -332,6 +332,10 @@ export const openStore = (path: string): Store => {
           resolvedFrom: row['resolved_from'] as string,
           resolvedTo: row['resolved_to'] as string,
           resumedFrom: row['resumed_from'] as string | null,
+          terminationReason: row['termination_reason'] as TerminationReason | null,
+          promptVersion: row['prompt_version'] as number,
+          profileVersion: row['profile_version'] as number,
+          actionSchemaVersion: row['action_schema_version'] as number,
         }))
     },
 

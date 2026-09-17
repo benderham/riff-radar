@@ -1,7 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 
-import { NOTION_ENDPOINT, NOTION_PROPERTIES } from '../config.ts'
+import {
+  ACTION_SCHEMA_VERSION,
+  NOTION_ENDPOINT,
+  NOTION_PROPERTIES,
+  PROMPT_VERSION,
+  TASTE_PROFILE_PATH,
+} from '../config.ts'
 import { EXIT_REFUSED, runCli, shortlistLines } from './cli.ts'
 import type { ClockPort, HttpPort, ModelPort } from './ports.ts'
 import { openStore } from './store/store.ts'
@@ -234,10 +241,37 @@ test('a resumed run says which run it is continuing', async () => {
     cliArgs: 'run',
     resolvedFrom: '2026-09-08',
     resolvedTo: '2026-09-14',
-    promptVersion: 1,
-    profileVersion: 1,
-    actionSchemaVersion: 1,
+    // The versions the CLI is about to run under: a parent that disagrees with
+    // any of them is refused rather than resumed (ADR-0047).
+    promptVersion: PROMPT_VERSION,
+    // The CLI reads the real profile, so the parent has to name its version.
+    profileVersion: (JSON.parse(readFileSync(TASTE_PROFILE_PATH, 'utf8')) as { version: number }).version,
+    actionSchemaVersion: ACTION_SCHEMA_VERSION,
     modelId: 'test-model',
+  })
+  // One step, because a run that recorded none is a re-run rather than a resume.
+  store.recordStep({
+    stepId: 'killed-1-0',
+    runId: 'killed-1',
+    stepIndex: 0,
+    timestamp: '2026-09-14T09:00:01.000Z',
+    durationMs: 10,
+    kind: 'action',
+    modelResponse: null,
+    proposedAction: null,
+    validationResult: null,
+    dispatchedAction: null,
+    toolName: null,
+    toolArgs: null,
+    toolResult: null,
+    error: null,
+    warning: null,
+    failureCategory: null,
+    candidatesAfter: '[]',
+    uncachedInputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+    cost: 0,
   })
 
   const code = await runCli({
@@ -248,7 +282,15 @@ test('a resumed run says which run it is continuing', async () => {
   })
 
   assert.equal(code, 0)
-  assert.match(h.lines.join('\n'), /resumed from killed-1/)
+  // The startup line specifically, not the end-of-run summary that also names
+  // the parent: what it inherited is only useful before the run spends it.
+  const said = h.lines.join('\n')
+  assert.match(said, /resumed from killed-1: 1 of 30 steps and \$0\.0000 of \$0\.2500 already used/)
+  assert.ok(
+    h.lines.findIndex((line) => line.includes('already used')) <
+      h.lines.findIndex((line) => line.startsWith('stopped:')),
+    'said at the start, not at the end',
+  )
   assert.equal(
     store.database.prepare('SELECT resumed_from FROM runs WHERE run_id != ?').get('killed-1')?.[
       'resumed_from'

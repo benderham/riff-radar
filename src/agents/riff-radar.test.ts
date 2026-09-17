@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs'
 import {
   ACTION_SCHEMA_VERSION,
   MAX_RUN_COST_USD,
+  MAX_STEPS,
   MODEL_ID,
   MUSICBRAINZ_ENDPOINT,
   NOTION_ENDPOINT,
@@ -24,6 +25,7 @@ import type {
   ModelResponse,
   ToolDefinition,
 } from '../ports.ts'
+import type { RunVersions } from '../domain/run.ts'
 import type { RecordedStep, Store, TracedStep } from '../store/store.ts'
 import { openStore } from '../store/store.ts'
 import { runRiffRadar } from './riff-radar.ts'
@@ -301,6 +303,7 @@ const run = async (
     resumeRunId: string
   }> = {},
 ) => {
+  const lines: string[] = []
   const store = args.store ?? openStore(':memory:')
   const notion = withNotion(args.http ?? fixtureHttp(), args.alreadyInNotion ?? [], {
     ...(args.notionSchema === undefined ? {} : { schema: args.notionSchema }),
@@ -324,6 +327,7 @@ const run = async (
     searchApiKey: 'test-key',
     notionToken: 'test-notion-token',
     notionDatabaseId: 'test-database',
+    log: (line) => lines.push(line),
   })
 
   const runRow = store.database.prepare('SELECT * FROM runs WHERE run_id = ?').get(outcome.runId)
@@ -331,7 +335,7 @@ const run = async (
     .prepare('SELECT * FROM steps WHERE run_id = ? ORDER BY step_index')
     .all(outcome.runId)
 
-  return { outcome, store, runRow, stepRows, written: notion.written, archived: notion.archived }
+  return { outcome, store, runRow, stepRows, lines, written: notion.written, archived: notion.archived }
 }
 
 /**
@@ -1180,7 +1184,12 @@ test('a dry run still reads Notion, because it still costs model tokens to run u
  * steps are real ones, taken from a run that happened, so the parent is a
  * genuine prefix of a genuine run rather than a plausible-looking fiction.
  */
-const killedAfter = (store: Store, steps: readonly TracedStep[]): string => {
+const killedAfter = (
+  store: Store,
+  steps: readonly TracedStep[],
+  /** The versions it ran under, when the point of the test is that one moved. */
+  versions: Partial<RunVersions> = {},
+): string => {
   const runId = 'killed-parent'
   store.startRun({
     runId,
@@ -1192,6 +1201,7 @@ const killedAfter = (store: Store, steps: readonly TracedStep[]): string => {
     profileVersion: profile.version,
     actionSchemaVersion: ACTION_SCHEMA_VERSION,
     modelId: MODEL_ID,
+    ...versions,
   })
 
   const empty: Omit<RecordedStep, 'stepId' | 'runId' | 'stepIndex' | 'kind'> = {
@@ -1557,9 +1567,13 @@ test('a prefix matching two runs is refused, naming both, and starts nothing', a
   assert.equal(store.database.prepare('SELECT count(*) AS n FROM runs').get()?.['n'], 2)
 })
 
-// A resume hands the parent's work on exactly once. Ticket 04 turns this into a
-// refusal with a message; what matters here is that it leaves nothing behind.
-test('resuming a run whose work was already handed on starts no second child', async () => {
+// ── What a resume refuses ────────────────────────────────────────────────────
+// Four cases, each with its own message. The fourth — an id matching no run, or
+// two — is above, with the lookup that raises it.
+
+// A run whose work has been handed on has ended, and a run that ended is a
+// re-run. The old assertion here was that it left nothing behind; it still must.
+test('resuming a run that already ended is refused, and starts no second child', async () => {
   const store = openStore(':memory:')
   const parent = killedAfter(store, await prefixOfARealRun(2))
 
@@ -1569,7 +1583,181 @@ test('resuming a run whose work was already handed on starts no second child', a
 
   await assert.rejects(
     () => run(scriptedModel(finishes([])).port, { store, resumeRunId: parent, dryRun: true }),
-    /already ended/,
+    (error: Error) => {
+      assert.equal(error.name, 'ResumeRefusal')
+      assert.match(error.message, /already ended: aborted/)
+      assert.match(error.message, /re-run/)
+      return true
+    },
   )
   assert.equal(after(), before, 'a refused resume leaves no half-started run')
+})
+
+test('resuming a run that recorded no steps is refused: there is nothing to continue', async () => {
+  const store = openStore(':memory:')
+  const parent = killedAfter(store, [])
+
+  await assert.rejects(
+    () => run(scriptedModel(finishes([])).port, { store, resumeRunId: parent, dryRun: true }),
+    /recorded no steps/,
+  )
+  assert.equal(store.database.prepare('SELECT count(*) AS n FROM runs').get()?.['n'], 1)
+})
+
+// ADR-0047: a trace half-built under one version and half under another is one
+// nobody can reason about, and the cost of refusing it is accepted.
+// ADR-0047, as amended: the count is the chain's, so a resume killed before its
+// own first step is continued rather than stranded — its parent has been closed
+// `aborted` and cannot be resumed instead.
+test('a resume killed before its first step is still resumable: the chain has the steps', async () => {
+  const store = openStore(':memory:')
+  const grandparent = killedAfter(store, await prefixOfARealRun(2))
+
+  // A child that took no step of its own: killed the instant it started.
+  const child = await run(scriptedModel(new Error('the provider hung up')).port, {
+    store,
+    resumeRunId: grandparent,
+    dryRun: true,
+  })
+  store.database
+    .prepare('UPDATE runs SET termination_reason = NULL, ended_at = NULL WHERE run_id = ?')
+    .run(child.outcome.runId)
+  store.database.prepare('DELETE FROM steps WHERE run_id = ?').run(child.outcome.runId)
+
+  const grandchild = await run(scriptedModel(finishes(items(1))).port, {
+    store,
+    resumeRunId: child.outcome.runId,
+    dryRun: true,
+  })
+  assert.equal(grandchild.outcome.terminationReason, 'completed_short')
+})
+
+test('resuming a run whose prompt, profile or schema has moved is refused, naming what moved', async () => {
+  const cases = [
+    ['promptVersion', /prompt version/],
+    ['profileVersion', /profile version/],
+    ['actionSchemaVersion', /action-schema version/],
+  ] as const
+
+  for (const [moved, expected] of cases) {
+    const store = openStore(':memory:')
+    const parent = killedAfter(store, await prefixOfARealRun(2), { [moved]: 99 })
+
+    await assert.rejects(
+      () => run(scriptedModel(finishes([])).port, { store, resumeRunId: parent, dryRun: true }),
+      expected,
+      moved,
+    )
+    // Refused before the parent was closed, so it stays resumable under the
+    // versions it ran under.
+    assert.equal(
+      store.database.prepare('SELECT termination_reason FROM runs WHERE run_id = ?').get(parent)?.[
+        'termination_reason'
+      ],
+      null,
+      moved,
+    )
+  }
+})
+
+// ── What a resume inherits ───────────────────────────────────────────────────
+
+/** Steps that took nothing and said nothing: a parent's step count, and no more. */
+const idleSteps = (count: number): TracedStep[] =>
+  Array.from({ length: count }, () => ({
+    kind: 'action' as const,
+    modelResponse: null,
+    toolResult: null,
+    error: null,
+    // Never null on a step the system wrote (ticket 03), so never null here.
+    candidatesAfter: '[]',
+    uncachedInputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+  }))
+
+// ADR-0050: the ceilings bound what one question costs, not what one process
+// costs, so an interruption cannot be used to buy a bigger budget.
+test('a resume inherits the step count, and a parent that used 28 of 30 leaves two', async () => {
+  const store = openStore(':memory:')
+  const parent = killedAfter(store, idleSteps(MAX_STEPS - 2))
+
+  const { outcome, stepRows } = await run(
+    scriptedModel(
+      proposes('fetch_source', '{"source_id": "loudwire"}'),
+      proposes('fetch_source', '{"source_id": "metal-injection"}'),
+      proposes('fetch_source', '{"source_id": "the-quietus"}'),
+    ).port,
+    { store, resumeRunId: parent, dryRun: true },
+  )
+
+  assert.equal(outcome.terminationReason, 'max_steps_exceeded')
+  assert.equal(stepRows.length, 2, 'two steps left, and step indices still start at zero')
+  assert.equal(stepRows[0]?.['step_index'], 0)
+})
+
+test('a resume of a run at the cost ceiling ends before it spends a token', async () => {
+  const store = openStore(':memory:')
+  const expensive = idleSteps(1).map((step) => ({ ...step, outputTokens: 10_000_000 }))
+  const parent = killedAfter(store, expensive)
+
+  const { outcome, stepRows } = await run(
+    { complete: async () => assert.fail('a run out of budget must not call the model') },
+    { store, resumeRunId: parent, dryRun: true },
+  )
+
+  assert.equal(outcome.terminationReason, 'budget_exceeded')
+  assert.equal(stepRows.length, 0)
+  assert.ok(outcome.estimatedCost >= MAX_RUN_COST_USD, 'the parent spend carried over')
+})
+
+test('a chain accumulates: a grandchild inherits the whole chain, not just its parent', async () => {
+  const store = openStore(':memory:')
+  const grandparent = killedAfter(store, idleSteps(MAX_STEPS - 3))
+
+  // The middle of a chain, killed the way the run it resumed was: one step, and
+  // its row reopened, because a run killed outright records no reason at all.
+  const child = await run(scriptedModel(new Error('the provider hung up')).port, {
+    store,
+    resumeRunId: grandparent,
+    dryRun: true,
+  })
+  assert.equal(child.stepRows.length, 1, 'the child took the third-to-last step of the chain')
+  store.database
+    .prepare('UPDATE runs SET termination_reason = NULL, ended_at = NULL WHERE run_id = ?')
+    .run(child.outcome.runId)
+
+  const grandchild = await run(
+    scriptedModel(
+      proposes('fetch_source', '{"source_id": "metal-injection"}'),
+      proposes('fetch_source', '{"source_id": "the-quietus"}'),
+    ).port,
+    { store, resumeRunId: child.outcome.runId, dryRun: true },
+  )
+
+  assert.equal(grandchild.stepRows.length, 2, 'two steps left in the chain, not two per run')
+  assert.equal(grandchild.outcome.terminationReason, 'max_steps_exceeded')
+})
+
+// A run resuming with two steps left will end at the ceiling. Said at the start,
+// that is understood; said nowhere, it is filed as a bug.
+test('a resume states what it inherited before it starts', async () => {
+  const store = openStore(':memory:')
+  const parent = killedAfter(store, idleSteps(MAX_STEPS - 2))
+
+  const { lines } = await run(scriptedModel(finishes([])).port, {
+    store,
+    resumeRunId: parent,
+    dryRun: true,
+  })
+
+  const said = lines.join('\n')
+  assert.match(said, new RegExp(`resumed from ${parent}`))
+  assert.match(said, new RegExp(`${MAX_STEPS - 2} of ${MAX_STEPS} steps`))
+  assert.match(said, /2 steps and \$0\.\d+ left/)
+})
+
+test('a fresh run says nothing about inheriting anything', async () => {
+  const { lines } = await run(scriptedModel(finishes([])).port, { dryRun: true })
+  assert.deepEqual(lines, [])
 })

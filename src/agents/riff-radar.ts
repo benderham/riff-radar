@@ -38,7 +38,7 @@ import { recordedModelResponse, refusalMessage, replay } from '../domain/replay.
 import { preflightSchema, proposeShortlist, suppressedReleases } from '../clients/notion.ts'
 import { citedVibes, rankShortlist } from '../domain/ranking.ts'
 import type { TerminationReason } from '../domain/run.ts'
-import { ResumeRefusal, WRITE_PERMITTED } from '../domain/run.ts'
+import { ResumeRefusal, WRITE_PERMITTED, resumeRefusal } from '../domain/run.ts'
 import type { ShortlistItem } from '../domain/shortlist.ts'
 import { validateShortlist } from '../domain/shortlist.ts'
 import type { TasteProfile } from '../domain/taste-profile.ts'
@@ -60,6 +60,12 @@ export interface RunRequest {
   /** Notion's integration token and database. Read from the environment, never stored. */
   readonly notionToken: string
   readonly notionDatabaseId: string
+  /**
+   * Said while the run is happening rather than after it. Only a resume has
+   * anything to say here — what it inherited is what makes a run with two steps
+   * left understandable instead of a bug report (ADR-0050).
+   */
+  readonly log?: (line: string) => void
 }
 
 export interface RunOutcome {
@@ -107,6 +113,7 @@ export const runRiffRadar = async ({
   searchApiKey,
   notionToken,
   notionDatabaseId,
+  log = () => {},
 }: RunRequest): Promise<RunOutcome> => {
   // Resolve first. A window that cannot be resolved is not a run, and must not
   // leave a half-started row behind.
@@ -139,11 +146,29 @@ export const runRiffRadar = async ({
     ancestry.unshift(at)
   }
 
+  // The chain's steps, read once: they are the replay's input, the count the
+  // step ceiling continues from, and the evidence that there is anything to
+  // continue at all.
+  const chainSteps = ancestry.flatMap((each) => store.stepsOf(each.runId))
+
+  // What the row itself refuses — over, empty, or run under versions that have
+  // since moved — before the two Notion reads and before the parent is closed,
+  // so a refused resume spends nothing and leaves nothing (ADR-0047). The count
+  // is the chain's rather than the named run's: a resume killed before its first
+  // step still has its ancestors' work behind it to continue.
+  if (parent !== undefined) {
+    const refusal = resumeRefusal(parent, chainSteps.length, {
+      promptVersion: PROMPT_VERSION,
+      profileVersion: profile.version,
+      actionSchemaVersion: ACTION_SCHEMA_VERSION,
+    })
+    if (refusal !== undefined) throw new ResumeRefusal(refusal)
+  }
+
   // Replayed before the run row and before a token is spent, for the same
   // reason the two Notion reads are: a trace that cannot be rebuilt is not a
   // resume, and saying so costs nothing at this point.
-  const replayed =
-    parent === undefined ? undefined : replay(ancestry.flatMap((each) => store.stepsOf(each.runId)))
+  const replayed = parent === undefined ? undefined : replay(chainSteps)
 
   // Before the run row, and before a token is spent: a database that is not the
   // one this writes to is a refusal, and the answer is the same whether it is
@@ -209,12 +234,28 @@ export const runRiffRadar = async ({
     candidates: dropSuppressed(replayed?.candidates ?? [], suppressed),
   }
 
-  // The parent's spend and its unbroken run of refusals both carry over: they
-  // are facts about the question being asked, not about the process asking it.
+  // The parent's spend, its step count and its unbroken run of refusals all
+  // carry over: they are facts about the question being asked, not about the
+  // process asking it. Both ceilings therefore bound the chain rather than the
+  // run, so an interruption cannot be used to buy a bigger budget (ADR-0050).
   let usage: Usage = replayed?.usage ?? NO_USAGE
   let costIsUpperBound = false
   let consecutiveInvalid = replayed?.consecutiveInvalid ?? 0
   let stepIndex = 0
+
+  // Said now rather than at the end, because a run that resumes with two steps
+  // left will end at the ceiling, and that is only understandable if it was
+  // announced first. The cost is clamped and the steps are not: the last step
+  // of a run can carry it past the budget, but the loop stops at the step
+  // ceiling exactly.
+  if (parent !== undefined) {
+    const spent = estimateCost(usage)
+    log(
+      `resumed from ${parent.runId}: ${chainSteps.length} of ${MAX_STEPS} steps and $${spent.toFixed(4)} of ` +
+        `$${MAX_RUN_COST_USD.toFixed(4)} already used — ${MAX_STEPS - chainSteps.length} steps and ` +
+        `$${Math.max(MAX_RUN_COST_USD - spent, 0).toFixed(4)} left`,
+    )
+  }
 
   let terminationReason: TerminationReason | undefined
   let shortlist: readonly ShortlistItem[] = []
@@ -239,8 +280,10 @@ export const runRiffRadar = async ({
   while (terminationReason === undefined) {
     // Both ceilings are tested before the call and in a fixed order, because
     // exactly one reason is recorded: a run that hits both records the step
-    // ceiling, and which one it records must not depend on timing.
-    if (stepIndex >= MAX_STEPS) {
+    // ceiling, and which one it records must not depend on timing. The chain's
+    // steps count towards the step ceiling as its spend does towards the cost
+    // one, counted from the trace rather than stored beside it (ADR-0050).
+    if (chainSteps.length + stepIndex >= MAX_STEPS) {
       terminationReason = 'max_steps_exceeded'
       break
     }

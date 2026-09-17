@@ -377,6 +377,12 @@ test('the run a resume needs is readable by id', () => {
     resolvedFrom: '2026-09-08',
     resolvedTo: '2026-09-14',
     resumedFrom: null,
+    // What a resume refuses on: a run that has ended, and the three versions it
+    // has to still agree with (ADR-0047).
+    terminationReason: null,
+    promptVersion: started.promptVersion,
+    profileVersion: started.profileVersion,
+    actionSchemaVersion: started.actionSchemaVersion,
   })
   assert.equal(store.runOf('no-such-run'), undefined)
 })
