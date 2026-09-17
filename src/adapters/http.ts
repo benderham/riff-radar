@@ -141,52 +141,43 @@ const attempted = async (
   }
 }
 
-export const httpAdapter = (clock: ClockPort, fetchImpl: typeof fetch = globalThis.fetch): HttpPort => ({
-  async get(url, headers = {}, options = {}) {
-    return attempted(clock, async () => {
-      // The project's own identification leads, and a caller's headers follow,
-      // because a search API's key is an addition to who we are and not a
-      // disguise: nothing here ever claims to be a browser (ADR-0031).
-      const response = await fetchImpl(url, {
-        headers: { 'user-agent': USER_AGENT, accept: 'text/html,application/xhtml+xml', ...headers },
-        ...(options.followRedirects === false ? { redirect: 'manual' as const } : {}),
-        signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
-      })
-
-      return read(response)
-    })
-  },
-
-  async post(url, body, headers = {}) {
-    return withBody(clock, fetchImpl, 'POST', url, body, headers)
-  },
-
-  async patch(url, body, headers = {}) {
-    return withBody(clock, fetchImpl, 'PATCH', url, body, headers)
-  },
-})
-
-/** POST and PATCH differ in one word, so they are one function. */
-const withBody = async (
+/**
+ * One request, however it is made.
+ *
+ * GET, POST and PATCH differ in a method, a body and which `accept` they lead
+ * with, so they are one function and three ways of calling it. The project's
+ * own identification leads and a caller's headers follow, because a search
+ * API's key is an addition to who we are and not a disguise: nothing here ever
+ * claims to be a browser (ADR-0031).
+ */
+const request = (
   clock: ClockPort,
   fetchImpl: typeof fetch,
-  method: 'POST' | 'PATCH',
   url: string,
-  body: string,
-  headers: Record<string, string>,
+  init: RequestInit & { headers: Record<string, string> },
 ): Promise<HttpResponse> =>
-  attempted(clock, async () => {
-    const response = await fetchImpl(url, {
-      method,
-      headers: {
-        'user-agent': USER_AGENT,
-        accept: 'application/json',
-        'content-type': 'application/json',
-        ...headers,
-      },
-      body,
-      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
-    })
+  attempted(clock, async () =>
+    read(
+      await fetchImpl(url, {
+        ...init,
+        headers: { 'user-agent': USER_AGENT, ...init.headers },
+        signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+      }),
+    ),
+  )
 
-    return read(response)
-  })
+const JSON_HEADERS = { accept: 'application/json', 'content-type': 'application/json' }
+
+export const httpAdapter = (clock: ClockPort, fetchImpl: typeof fetch = globalThis.fetch): HttpPort => ({
+  get: (url, headers = {}, options = {}) =>
+    request(clock, fetchImpl, url, {
+      headers: { accept: 'text/html,application/xhtml+xml', ...headers },
+      ...(options.followRedirects === false ? { redirect: 'manual' as const } : {}),
+    }),
+
+  post: (url, body, headers = {}) =>
+    request(clock, fetchImpl, url, { method: 'POST', body, headers: { ...JSON_HEADERS, ...headers } }),
+
+  patch: (url, body, headers = {}) =>
+    request(clock, fetchImpl, url, { method: 'PATCH', body, headers: { ...JSON_HEADERS, ...headers } }),
+})

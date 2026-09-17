@@ -16,9 +16,13 @@ test('--last-days overrides the default window', () => {
   assert.equal(parseCliArgs(['run', '--last-days', '14']).lastDays, 14)
 })
 
-test('only the documented grammar is accepted', () => {
-  // `run [--last-days N] [--dry-run]`; an equals form is not in it.
-  assert.throws(() => parseCliArgs(['run', '--last-days=14']), UsageError)
+// Behaviour change: the hand-written parser rejected the equals form because it
+// only ever looked at the next token. `node:util`'s parseArgs accepts it, as
+// every other command-line tool does, and it cannot produce a different run
+// from the spaced form. The rejection was an artefact of the parser, not a rule.
+test('the equals form means the same as the spaced form', () => {
+  assert.equal(parseCliArgs(['run', '--last-days=14']).lastDays, 14)
+  assert.equal(parseCliArgs(['run', '--last-days=14']).lastDays, parseCliArgs(['run', '--last-days', '14']).lastDays)
 })
 
 test('--dry-run is recorded', () => {
