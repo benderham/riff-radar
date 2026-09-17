@@ -500,6 +500,7 @@ test('a degraded run answers a lookup without asking MusicBrainz', async () => {
   assert.ok(!dispatched.done && dispatched.failureCategory === 'unavailable')
   const answer = JSON.parse(!dispatched.done ? dispatched.result : '{}')
   assert.equal(answer.musicbrainzUnavailable, true)
+  assert.match(String(answer.next), /Do not call lookup_release again/)
   // Judged on the source's word, and told so, which is the whole point of
   // carrying on rather than ending the run.
   assert.equal(answer.eligible, true)

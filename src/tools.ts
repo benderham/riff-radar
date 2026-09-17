@@ -116,6 +116,14 @@ const DEGRADED_NOTE =
 
 const DEGRADED_WARNING = `MusicBrainz is unavailable for the rest of this run; releases are judged on ${DEGRADED_NOTE}`
 
+/**
+ * Said outright because saying it obliquely did not work: run `3e657aa3` spent
+ * ten of its seventeen steps on lookups that could only repeat this answer. The
+ * action is still offered — what the model may call does not change mid-run —
+ * so the only thing left is to ask it plainly.
+ */
+const DEGRADED_ADVICE = 'Do not call lookup_release again during this run; it cannot tell you anything further.'
+
 export const tools = {
   fetch_source: defineTool({
     description:
@@ -230,7 +238,7 @@ export const tools = {
       // `found: true` beside it are two more ways of saying one thing.
       let facts: Record<string, unknown> = { unverified: true }
       if (found === undefined) {
-        facts = { musicbrainzUnavailable: true, judgedOn: DEGRADED_NOTE }
+        facts = { musicbrainzUnavailable: true, judgedOn: DEGRADED_NOTE, next: DEGRADED_ADVICE }
       } else if (found.lookup.found) {
         const { found: _matched, releaseGroupId, ...rest } = found.lookup
         facts = { musicbrainzId: releaseGroupId, ...rest }
