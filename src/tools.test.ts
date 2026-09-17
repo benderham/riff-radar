@@ -97,6 +97,7 @@ const context = (over: { http?: HttpPort; model?: ModelPort } = {}) => {
     searchApiKey: 'test-key',
     profile,
     suppressed: new Set<string>(),
+    degraded: false,
     candidates: [],
   }
   return { toolContext, store }
@@ -469,5 +470,70 @@ test('a release the validator will refuse says so at lookup, not at finish', asy
   const answer = JSON.parse(dispatched.result)
   assert.equal(answer.eligible, false)
   assert.match(answer.ineligibleBecause, /states no release type/)
+  assert.equal(answer.doNotShortlist, true)
+})
+
+// ── A run that has given up on MusicBrainz (ticket 05) ───────────────────────
+
+const lookupOf = (artist: string, title: string) => {
+  const result = validateAction(call('lookup_release', JSON.stringify({ artist, title })))
+  assert.ok(result.ok)
+  return result
+}
+
+/** Anything at all reaching the network here is the failure under test. */
+const unreachable: HttpPort = {
+  patch: notPatched,
+  get: async () => assert.fail('a degraded run must not ask MusicBrainz again'),
+  post: notSearched,
+}
+
+test('a degraded run answers a lookup without asking MusicBrainz', async () => {
+  const { toolContext } = context({ http: unreachable })
+  toolContext.degraded = true
+  toolContext.candidates = [discovered({ format: 'full-length' })]
+
+  const result = lookupOf('Ulcerate', 'Cutting the Throat of God')
+  const dispatched = await dispatch(result.name, result.input, toolContext)
+
+  assert.equal(dispatched.done, false)
+  assert.ok(!dispatched.done && dispatched.failureCategory === 'unavailable')
+  const answer = JSON.parse(!dispatched.done ? dispatched.result : '{}')
+  assert.equal(answer.musicbrainzUnavailable, true)
+  // Judged on the source's word, and told so, which is the whole point of
+  // carrying on rather than ending the run.
+  assert.equal(answer.eligible, true)
+})
+
+test('a degraded lookup names what can no longer be checked', async () => {
+  const { toolContext } = context({ http: unreachable })
+  toolContext.degraded = true
+  toolContext.candidates = [discovered({ format: 'full-length' })]
+
+  const result = lookupOf('Ulcerate', 'Cutting the Throat of God')
+  const dispatched = await dispatch(result.name, result.input, toolContext)
+  const answer = JSON.parse(!dispatched.done ? dispatched.result : '{}')
+  const said = JSON.stringify(answer)
+
+  // All three losses stated rather than left to be inferred (ADR-0052).
+  assert.match(said, /reissue/i)
+  assert.match(said, /remaster/i)
+  assert.match(said, /EP/)
+  assert.match(said, /label/i)
+  assert.match(said, /genre/i)
+  assert.match(said, /personnel/i)
+})
+
+test('a degraded lookup enriches nothing and refuses what the source mislabelled', async () => {
+  const { toolContext } = context({ http: unreachable })
+  toolContext.degraded = true
+  toolContext.candidates = [discovered({ format: 'live album' })]
+
+  const result = lookupOf('Ulcerate', 'Cutting the Throat of God')
+  const dispatched = await dispatch(result.name, result.input, toolContext)
+  const answer = JSON.parse(!dispatched.done ? dispatched.result : '{}')
+
+  assert.equal(toolContext.candidates[0]?.lookup, undefined, 'nothing was learned, so nothing is claimed')
+  assert.equal(answer.eligible, false)
   assert.equal(answer.doNotShortlist, true)
 })

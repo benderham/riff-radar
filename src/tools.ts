@@ -6,10 +6,6 @@
  * alongside it — two copies of a contract drift, and the copy that drifts is
  * always the one the model reads.
  *
- * `fetch_source`, `web_search` and `finish` are real. `lookup_release` is still
- * a fake returning canned data, so that the loop and its trace stay exercisable
- * end to end; ticket 04 replaces that body and nothing else.
- *
  * An action receives a `ToolContext`: the ports it needs, the store it records
  * evidence in, and the run's candidates so far. The candidate list is the run's
  * working memory — the one thing an action may add to — and it lives here
@@ -79,6 +75,12 @@ export interface ToolContext {
   readonly suppressed: ReadonlySet<string>
   /** What Ben wants, so a lookup can tell the model whether what it found qualifies. */
   readonly profile: TasteProfile
+  /**
+   * Whether this run has given up on MusicBrainz (ADR-0052). Set by the loop
+   * after two consecutive silent lookups, and never unset: a provider that has
+   * gone quiet twice is not asked again this run.
+   */
+  degraded: boolean
   /** The run's candidates, deduplicated on release identity. Actions may add. */
   candidates: readonly Candidate[]
 }
@@ -90,6 +92,20 @@ interface Tool<Schema extends z.ZodType> {
 }
 
 const defineTool = <Schema extends z.ZodType>(tool: Tool<Schema>): Tool<Schema> => tool
+
+/**
+ * What a degraded run can no longer check, named rather than left to be
+ * inferred (ADR-0052). Three things go: MusicBrainz's release-group date, which
+ * is what tells a reissue or a remaster from new work; its track count and
+ * duration, which is what an EP has to clear; and its label, genres and
+ * personnel, which are three of the profile's ranking terms.
+ */
+const DEGRADED_NOTE =
+  "the source's stated format, as an untyped release group already is. No reissue or remaster " +
+  'detection, no EP track-count or duration thresholds, and the label, genre and personnel terms ' +
+  'drop out of the ranking.'
+
+const DEGRADED_WARNING = `MusicBrainz is unavailable for the rest of this run; releases are judged on ${DEGRADED_NOTE}`
 
 export const tools = {
   fetch_source: defineTool({
@@ -170,7 +186,11 @@ export const tools = {
       title: z.string().min(1),
     }),
     run: async ({ artist, title }, context) => {
-      const found = await lookupRelease(context.ports, artist, title)
+      // A run that has given up asks nothing and says so. The request is not
+      // made rather than made and ignored: three attempts against a provider
+      // that is down cost seven seconds to learn what the last two lookups
+      // already established (ADR-0052).
+      const found = context.degraded ? undefined : await lookupRelease(context.ports, artist, title)
 
       // A lookup enriches a candidate a source already listed; it never adds
       // one. Asked about a release no source produced, it answers the model and
@@ -181,8 +201,8 @@ export const tools = {
       // service that was briefly down would mark the release Unverified, and an
       // Unverified release is judged on the source's own word about its format
       // — so a stumble at MusicBrainz could let a live album through (ADR-0034).
-      const failed = found.lookup.found === false && found.warning !== undefined
-      if (!failed) {
+      const failed = found === undefined || (found.lookup.found === false && found.warning !== undefined)
+      if (found !== undefined && !failed) {
         // Collapsing after enriching, because the proof that two candidates are
         // one release is exactly what this lookup just produced.
         context.candidates = dropSuppressed(
@@ -200,7 +220,9 @@ export const tools = {
       // The model reads `musicbrainzId`; the same id under a second name and a
       // `found: true` beside it are two more ways of saying one thing.
       let facts: Record<string, unknown> = { unverified: true }
-      if (found.lookup.found) {
+      if (found === undefined) {
+        facts = { musicbrainzUnavailable: true, judgedOn: DEGRADED_NOTE }
+      } else if (found.lookup.found) {
         const { found: _matched, releaseGroupId, ...rest } = found.lookup
         facts = { musicbrainzId: releaseGroupId, ...rest }
       }
@@ -216,16 +238,26 @@ export const tools = {
       const judged = context.candidates.find(
         (candidate) => candidateIdentity(candidate) === identity || releaseIdentityOf(candidate) === identity,
       )
-      const verdict = judged === undefined ? undefined : isEligible(judged, context.window, context.profile)
+      const verdict =
+        judged === undefined
+          ? undefined
+          : isEligible(judged, context.window, context.profile, context.degraded)
+
+      // A degraded lookup is a failure of the same kind as the ones that caused
+      // it — `unavailable` is the category for a provider this run has stopped
+      // knocking at (ADR-0048) — so the trailing run of silent lookups keeps
+      // growing and a resume recomputes the same verdict from the trace.
+      const warning = found === undefined ? DEGRADED_WARNING : found.warning
+      const category = found === undefined ? 'unavailable' as const : found.failureCategory
 
       return {
         done: false,
-        ...(found.warning === undefined ? {} : { warning: found.warning }),
-        ...optionalCategory(found.failureCategory),
+        ...(warning === undefined ? {} : { warning }),
+        ...optionalCategory(category),
         result: JSON.stringify({
           artist,
           title,
-          ...(found.warning === undefined ? {} : { warning: found.warning }),
+          ...(warning === undefined ? {} : { warning }),
           ...facts,
           ...(verdict === undefined
             ? {}

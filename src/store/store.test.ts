@@ -79,6 +79,7 @@ test('finishing a run records its reason, its end and its accounting', () => {
     shortlistSize: 0,
     notionWritePerformed: false,
     costIsUpperBound: false,
+    musicbrainzDegraded: false,
   })
 
   const row = store.database.prepare('SELECT * FROM runs WHERE run_id = ?').get('run-1')
@@ -102,6 +103,7 @@ test('a run cannot be given a second termination reason', () => {
     shortlistSize: 0,
     notionWritePerformed: false,
     costIsUpperBound: false,
+    musicbrainzDegraded: false,
   }
   store.finishRun(ending)
 
@@ -139,6 +141,7 @@ test('every documented termination reason is accepted by the schema', () => {
       shortlistSize: 0,
       notionWritePerformed: false,
       costIsUpperBound: false,
+      musicbrainzDegraded: false,
     })
   }
   assert.equal(store.database.prepare('SELECT count(*) AS n FROM runs').get()?.['n'], TERMINATION_REASONS.length)
@@ -444,6 +447,7 @@ test('an aborted run records what it spent and claims nothing else', () => {
     cachedInputTokens: 40,
     outputTokens: 20,
     estimatedCost: 0.0002,
+    musicbrainzDegraded: false,
   })
 
   const row = store.database.prepare('SELECT * FROM runs WHERE run_id = ?').get('run-1')
@@ -465,6 +469,7 @@ test('aborting keeps the one-reason-per-run guarantee, in both directions', () =
     cachedInputTokens: 0,
     outputTokens: 0,
     estimatedCost: 0,
+    musicbrainzDegraded: false,
   }
   store.abortRun(aborting)
 
@@ -477,6 +482,7 @@ test('aborting keeps the one-reason-per-run guarantee, in both directions', () =
         shortlistSize: 5,
         notionWritePerformed: true,
         costIsUpperBound: false,
+        musicbrainzDegraded: false,
       }),
     /already ended/,
   )

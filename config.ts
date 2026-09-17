@@ -182,6 +182,13 @@ export const MUSICBRAINZ_MIN_INTERVAL_MS = 1_000
 export const MUSICBRAINZ_MIN_SCORE = 90
 
 /**
+ * How many consecutive silent lookups end the asking (ADR-0052). Two is a low
+ * bar and a flaky minute will trip it; the alternative is a run that spends its
+ * ceiling discovering the same fact one seven-second retry at a time.
+ */
+export const MUSICBRAINZ_DEGRADE_AFTER = 2
+
+/**
  * The ceiling on cleaned source text handed to the extraction call.
  *
  * Sized from the real pages, not guessed: the Loudwire calendar cleans to about

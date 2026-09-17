@@ -12,6 +12,8 @@ const traced = (over: Partial<TracedStep> = {}): TracedStep => ({
   kind: 'action',
   modelResponse: null,
   toolResult: null,
+  toolName: null,
+  failureCategory: null,
   error: null,
   candidatesAfter: null,
   uncachedInputTokens: 0,
@@ -35,6 +37,7 @@ test('an empty trace replays to nothing', () => {
     candidates: [],
     usage: { uncachedInputTokens: 0, cachedInputTokens: 0, outputTokens: 0 },
     consecutiveInvalid: 0,
+    consecutiveLookupFailures: 0,
   })
 })
 
@@ -157,4 +160,41 @@ test('a trace that cannot be read is refused rather than half replayed', () => {
 test('an unreadable trace is refused the way a resume is refused', () => {
   assert.throws(() => replay([traced({ modelResponse: '{ truncated' })]), ResumeRefusal)
   assert.throws(() => replay([traced({ candidatesAfter: '[{"artist":42}]' })]), ResumeRefusal)
+})
+
+// ── What a resume works out about MusicBrainz (ticket 05) ────────────────────
+
+/** A lookup step as the trace holds it: the tool it called, and how it failed. */
+const lookup = (failureCategory: TracedStep['failureCategory'] = null) =>
+  traced({ toolName: 'lookup_release', failureCategory })
+
+test('the lookup-failure count is the trailing run of silent lookups', () => {
+  // Derived rather than stored, because it can be: ADR-0046 stores only what
+  // cannot. Two of these is what a resumed run needs to stay degraded.
+  assert.equal(replay([lookup('transient'), lookup('transient')]).consecutiveLookupFailures, 2)
+  assert.equal(replay([lookup('unavailable'), lookup('unavailable')]).consecutiveLookupFailures, 2)
+})
+
+test('a lookup that answered resets the count, wherever it sits', () => {
+  assert.equal(replay([lookup('transient'), lookup()]).consecutiveLookupFailures, 0)
+  assert.equal(replay([lookup('transient'), lookup(), lookup('transient')]).consecutiveLookupFailures, 1)
+})
+
+test('a lookup the loop refused before dispatch is not an answer', () => {
+  // `invalid_action` records the tool the model named, and nothing was asked of
+  // MusicBrainz: reading it as an answer would set a degraded run knocking again.
+  const refused = traced({ kind: 'invalid_action', toolName: 'lookup_release' })
+  assert.equal(replay([lookup('transient'), lookup('transient'), refused]).consecutiveLookupFailures, 2)
+})
+
+test('only a lookup counts, and only the two categories that mean silence', () => {
+  // A source that failed says nothing about MusicBrainz, and neither does a
+  // 404 from it: `not_found` is an answer (ADR-0048).
+  assert.equal(
+    replay([lookup('transient'), traced({ toolName: 'fetch_source', failureCategory: 'refused' }), lookup('transient')])
+      .consecutiveLookupFailures,
+    2,
+    'a step that was not a lookup neither counts nor resets',
+  )
+  assert.equal(replay([lookup('not_found'), lookup('not_found')]).consecutiveLookupFailures, 0)
 })

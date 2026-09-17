@@ -97,6 +97,14 @@ export interface TracedStep {
   readonly kind: RecordedStep['kind']
   readonly modelResponse: string | null
   readonly toolResult: string | null
+  /**
+   * Which action this step dispatched, and how it failed if it did. Working
+   * memory rather than prose: a resume counts its trailing silent lookups from
+   * these two columns to know whether MusicBrainz is still worth asking
+   * (ADR-0052).
+   */
+  readonly toolName: string | null
+  readonly failureCategory: FailureCategory | null
   /** The refusal an invalid action was told, which is part of the history it replays. */
   readonly error: string | null
   readonly candidatesAfter: string | null
@@ -116,6 +124,8 @@ export interface FinishedRun {
   readonly shortlistSize: number
   readonly notionWritePerformed: boolean
   readonly costIsUpperBound: boolean
+  /** Whether the run gave up on MusicBrainz partway through (ADR-0052). */
+  readonly musicbrainzDegraded: boolean
 }
 
 /**
@@ -134,6 +144,13 @@ export interface AbortedRun {
   readonly cachedInputTokens: number
   readonly outputTokens: number
   readonly estimatedCost: number
+  /**
+   * Whether it had given up on MusicBrainz by the time it was handed on
+   * (ADR-0052). Unlike the two columns this deliberately leaves unset, an
+   * aborted run's own steps say this outright, and milestone 3 counts degraded
+   * runs by this column rather than by re-deriving them from every trace.
+   */
+  readonly musicbrainzDegraded: boolean
 }
 
 export interface RecordedSourceText {
@@ -342,7 +359,8 @@ export const openStore = (path: string): Store => {
     stepsOf(runId) {
       return database
         .prepare(
-          `SELECT kind, model_response, tool_result, error, candidates_after,
+          `SELECT kind, model_response, tool_result, tool_name, failure_category,
+                  error, candidates_after,
                   uncached_input_tokens, cached_input_tokens, output_tokens
              FROM steps WHERE run_id = ? ORDER BY step_index`,
         )
@@ -351,6 +369,8 @@ export const openStore = (path: string): Store => {
           kind: row['kind'] as RecordedStep['kind'],
           modelResponse: row['model_response'] as string | null,
           toolResult: row['tool_result'] as string | null,
+          toolName: row['tool_name'] as string | null,
+          failureCategory: row['failure_category'] as FailureCategory | null,
           error: row['error'] as string | null,
           candidatesAfter: row['candidates_after'] as string | null,
           uncachedInputTokens: row['uncached_input_tokens'] as number,
@@ -367,7 +387,7 @@ export const openStore = (path: string): Store => {
           `UPDATE runs SET
              ended_at = ?, termination_reason = 'aborted',
              uncached_input_tokens = ?, cached_input_tokens = ?, output_tokens = ?,
-             estimated_cost = ?
+             estimated_cost = ?, musicbrainz_degraded = ?
            WHERE run_id = ? AND termination_reason IS NULL`,
         )
         .run(
@@ -376,6 +396,7 @@ export const openStore = (path: string): Store => {
           run.cachedInputTokens,
           run.outputTokens,
           run.estimatedCost,
+          run.musicbrainzDegraded ? 1 : 0,
           run.runId,
         )
 
@@ -393,7 +414,7 @@ export const openStore = (path: string): Store => {
              ended_at = ?, termination_reason = ?,
              uncached_input_tokens = ?, cached_input_tokens = ?, output_tokens = ?,
              estimated_cost = ?, shortlist_size = ?, notion_write_performed = ?,
-             cost_is_upper_bound = ?
+             cost_is_upper_bound = ?, musicbrainz_degraded = ?
            WHERE run_id = ? AND termination_reason IS NULL`,
         )
         .run(
@@ -406,6 +427,7 @@ export const openStore = (path: string): Store => {
           run.shortlistSize,
           run.notionWritePerformed ? 1 : 0,
           run.costIsUpperBound ? 1 : 0,
+          run.musicbrainzDegraded ? 1 : 0,
           run.runId,
         )
 

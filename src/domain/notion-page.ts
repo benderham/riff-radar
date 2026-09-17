@@ -24,12 +24,27 @@ const text = (value: string) => [{ text: { content: value.slice(0, MAX_TEXT) } }
 export const appleMusicSearchUrl = (artist: string, title: string): string =>
   `${APPLE_MUSIC_SEARCH}${encodeURIComponent(`${artist} ${title}`)}`
 
+/**
+ * What a degraded run's proposal rests on, said in the record itself: MusicBrainz
+ * could not be reached, so nothing checked the source's word (ADR-0052).
+ */
+const WITHOUT_MUSICBRAINZ =
+  'Judged without MusicBrainz: it was unavailable during this run, so the format is the source\'s ' +
+  'own word — no reissue, remaster or EP check ran.'
+
 /** A page as Notion's create endpoint takes it. */
 export interface NotionPage {
   readonly parent: { database_id: string }
   /** The album cover, where there is one: the page's own image, not a property. */
   readonly cover?: { external: { url: string } }
   readonly properties: Record<string, Record<string, unknown>>
+}
+
+const rationale = (item: ShortlistItem): string => {
+  const said = item.rationale ?? ''
+  if (item.judgedWithoutMusicbrainz !== true) return said
+
+  return `${said.slice(0, MAX_TEXT - WITHOUT_MUSICBRAINZ.length - 2)}\n\n${WITHOUT_MUSICBRAINZ}`
 }
 
 export const notionPage = (
@@ -57,7 +72,12 @@ export const notionPage = (
       // every record Ben entered by hand.
       'MusicBrainz ID': { rich_text: musicbrainzId === '' ? [] : text(musicbrainzId) },
       ...(sourceUrl === undefined ? {} : { 'Source URL': { url: sourceUrl } }),
-      Rationale: { rich_text: text(item.rationale ?? '') },
+      // A proposal resting on weaker evidence says so where Ben reads it, in
+      // the property that is already prose, rather than in a new column his
+      // database would have to grow for it (ADR-0052). The rationale gives up
+      // the room rather than the note: a cut that dropped the caveat would
+      // leave the record looking better evidenced than it is.
+      Rationale: { rich_text: text(rationale(item)) },
       'Run ID': { rich_text: text(runId) },
     },
   }

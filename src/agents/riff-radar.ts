@@ -26,6 +26,7 @@ import {
   MAX_RUN_COST_USD,
   MAX_STEPS,
   MODEL_ID,
+  MUSICBRAINZ_DEGRADE_AFTER,
   PROMPT_VERSION,
   SHORTLIST_SIZE,
 } from '../../config.ts'
@@ -34,7 +35,7 @@ import type { CliArgs } from '../domain/cli-args.ts'
 import type { Usage } from '../domain/cost.ts'
 import { NO_USAGE, addUsage, estimateCost } from '../domain/cost.ts'
 import { categoryOf } from '../domain/failure.ts'
-import { recordedModelResponse, refusalMessage, replay } from '../domain/replay.ts'
+import { recordedModelResponse, refusalMessage, replay, wentSilent } from '../domain/replay.ts'
 import { preflightSchema, proposeShortlist, suppressedReleases } from '../clients/notion.ts'
 import { citedVibes, rankShortlist } from '../domain/ranking.ts'
 import type { TerminationReason } from '../domain/run.ts'
@@ -181,6 +182,13 @@ export const runRiffRadar = async ({
   // construction (ADR-0039). It throws, and nothing has been spent.
   const suppressed = await suppressedReleases(ports, notionToken, notionDatabaseId)
 
+  // Two silent lookups and MusicBrainz stops being asked (ADR-0052). The count
+  // is the chain's, worked out from its trailing lookups rather than stored,
+  // because it is derivable and ADR-0046 stores only what is not. A degraded
+  // lookup records `unavailable` like the failures that caused it, so the run
+  // only ever grows and a resume reaches the same verdict.
+  let lookupFailures = replayed?.consecutiveLookupFailures ?? 0
+
   // The parent is closed before the child is started, so that exactly one
   // termination reason per run still holds and no run row ever changes its mind:
   // its work has been handed on, and the only honest thing left to say about it
@@ -194,6 +202,7 @@ export const runRiffRadar = async ({
       endedAt: startedAt.toISOString(),
       ...replayed.usage,
       estimatedCost: estimateCost(replayed.usage),
+      musicbrainzDegraded: lookupFailures >= MUSICBRAINZ_DEGRADE_AFTER,
     })
   }
 
@@ -232,6 +241,7 @@ export const runRiffRadar = async ({
     // Suppression is re-read on a resume and applied to the replayed list, so a
     // release the parent proposed and wrote is not proposed twice (ADR-0051).
     candidates: dropSuppressed(replayed?.candidates ?? [], suppressed),
+    degraded: lookupFailures >= MUSICBRAINZ_DEGRADE_AFTER,
   }
 
   // The parent's spend, its step count and its unbroken run of refusals all
@@ -424,7 +434,15 @@ export const runRiffRadar = async ({
         profile,
         citedVibes(outcome.shortlist, store.sourceTextsOf(runId)),
       )
-      shortlist = ranked.map((each) => each.item)
+
+      // Stamped by the run rather than claimed by the model, and only on the
+      // items it is true of: a release looked up before the outage carries an
+      // id and was judged on MusicBrainz's word like any other.
+      shortlist = ranked.map(({ item }) =>
+        context.degraded && (item.musicbrainzId ?? '').trim() === ''
+          ? { ...item, judgedWithoutMusicbrainz: true }
+          : item,
+      )
 
       // An empty shortlist is the model reporting a quiet week, not a broken
       // one (ADR-0025): nothing eligible was found, and that is a real answer,
@@ -434,7 +452,7 @@ export const runRiffRadar = async ({
       const result =
         shortlist.length === 0
           ? undefined
-          : validateShortlist(shortlist, window, context.candidates, profile)
+          : validateShortlist(shortlist, window, context.candidates, profile, context.degraded)
 
       terminationReason =
         result === undefined
@@ -481,6 +499,14 @@ export const runRiffRadar = async ({
     if (outcome.usage !== undefined) {
       usage = addUsage(usage, outcome.usage)
       costIsUpperBound ||= outcome.cacheReported === false
+    }
+
+    // Counted as it happens, by the same rule a resume counts back out of the
+    // trace. A step that was not a lookup neither counts nor clears: what is
+    // being counted is whether MusicBrainz is answering.
+    if (validation.name === 'lookup_release') {
+      lookupFailures = wentSilent(outcome.failureCategory) ? lookupFailures + 1 : 0
+      context.degraded ||= lookupFailures >= MUSICBRAINZ_DEGRADE_AFTER
     }
 
     recordStep(
@@ -566,6 +592,7 @@ export const runRiffRadar = async ({
     shortlistSize,
     notionWritePerformed,
     costIsUpperBound,
+    musicbrainzDegraded: context.degraded,
   })
 
   return {

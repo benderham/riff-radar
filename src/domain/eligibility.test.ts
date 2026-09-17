@@ -235,3 +235,35 @@ test('every other MusicBrainz verdict still decides on its own word', () => {
     /calls it a Live release/,
   )
 })
+
+// ── When MusicBrainz could not be asked at all (ticket 05) ───────────────────
+
+test('a degraded run judges an unlooked-up release on the source\'s word', () => {
+  // The same rule an untyped release group already gets (ADR-0045), reached by
+  // an outage instead of by a missing field: there is no lookup to be had, and
+  // the source's stated format is the only evidence there is.
+  const { lookup: _unused, ...neverLookedUp } = candidate()
+  assert.equal(
+    isEligible({ ...neverLookedUp, format: 'full-length' }, WINDOW, NO_OPINIONS, true).eligible,
+    true,
+  )
+})
+
+test('degraded does not make the source\'s word mean more than it says', () => {
+  const { lookup: _unused, ...neverLookedUp } = candidate()
+  const reason = (over: Partial<Candidate>): string => {
+    const verdict = isEligible({ ...neverLookedUp, ...over }, WINDOW, NO_OPINIONS, true)
+    return verdict.eligible ? '' : verdict.reason
+  }
+
+  assert.match(reason({ format: 'live album' }), /MusicBrainz was unavailable, and the source called it a live album/)
+  assert.match(reason({ format: 'EP' }), /the source called it a EP/)
+  assert.match(reason({}), /MusicBrainz was unavailable, and no source stated a format/)
+})
+
+test('a release looked up before the outage keeps the verdict its lookup earned', () => {
+  // Degradation is a property of the run, not of a candidate: a release that
+  // was looked up is still judged on what MusicBrainz said about it.
+  assert.match(why({ lookup: found({ primaryType: 'Single' }), format: 'full-length' }), /calls it a Single/)
+  assert.equal(isEligible(candidate(), WINDOW, NO_OPINIONS, true).eligible, true)
+})
