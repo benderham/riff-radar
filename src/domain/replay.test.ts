@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import type { TracedStep } from '../store/store.ts'
-import { recordedModelResponse, replay } from './replay.ts'
+import { recordedModelResponse, replay, shortlistRefusalMessage } from './replay.ts'
 import { ResumeRefusal } from './run.ts'
 
 const said = (content: string, ...calls: readonly { id: string; name: string; argumentsJson: string }[]) =>
@@ -38,6 +38,7 @@ test('an empty trace replays to nothing', () => {
     usage: { uncachedInputTokens: 0, cachedInputTokens: 0, outputTokens: 0 },
     consecutiveInvalid: 0,
     consecutiveLookupFailures: 0,
+    repairSpent: false,
   })
 })
 
@@ -197,4 +198,54 @@ test('only a lookup counts, and only the two categories that mean silence', () =
     'a step that was not a lookup neither counts nor resets',
   )
   assert.equal(replay([lookup('not_found'), lookup('not_found')]).consecutiveLookupFailures, 0)
+})
+
+// ── The one repair at finish (ADR-0053) ──────────────────────────────────────
+
+test('a refused finish replays as the errors the model was handed back', () => {
+  const refused = traced({
+    kind: 'finish',
+    modelResponse: said('Here are five.', { id: 'call-9', name: 'finish', argumentsJson: '{"shortlist":[]}' }),
+    toolResult: '{"shortlist":[]}',
+    error: 'item 1 has no source URL',
+  })
+
+  assert.deepEqual(replay([refused]).messages, [
+    {
+      role: 'assistant',
+      content: 'Here are five.',
+      toolCalls: [{ id: 'call-9', name: 'finish', argumentsJson: '{"shortlist":[]}' }],
+    },
+    shortlistRefusalMessage('item 1 has no source URL', 'call-9'),
+  ])
+})
+
+test('a refused finish is the repair, spent', () => {
+  const refused = traced({
+    kind: 'finish',
+    modelResponse: said('', { id: 'call-9', name: 'finish', argumentsJson: '{}' }),
+    error: 'item 1 has no source URL',
+  })
+  const accepted = traced({
+    kind: 'finish',
+    modelResponse: said('', { id: 'call-9', name: 'finish', argumentsJson: '{}' }),
+  })
+
+  assert.equal(replay([fetched]).repairSpent, false)
+  assert.equal(replay([fetched, refused]).repairSpent, true)
+  // An accepted finish is not a repair spent, and neither is a failure of some
+  // other kind: only the validator refusing a shortlist consumes the one chance.
+  assert.equal(replay([accepted, traced({ kind: 'tool_error', error: 'boom' })]).repairSpent, false)
+})
+
+// A refused finish is answered, so it is not one of these — the sibling test
+// above covers a `finish` that ended its run, which told the model nothing.
+test('a repair does not count towards the consecutive-invalid limit', () => {
+  const refused = traced({
+    kind: 'finish',
+    modelResponse: said('', { id: 'call-9', name: 'finish', argumentsJson: '{}' }),
+    error: 'item 1 has no source URL',
+  })
+
+  assert.equal(replay([traced({ kind: 'invalid_action', error: 'no' }), refused]).consecutiveInvalid, 0)
 })
