@@ -12,6 +12,11 @@
  * or model failure. The Notion write is post-loop code, never an action
  * (ADR-0005), and happens only when the reason permits it.
  *
+ * The last step is the one that can fail softly: a shortlist the validator
+ * refuses is handed back once, and the model may correct it (ADR-0053). The
+ * guardrail is unchanged by that — the validator still decides, still runs
+ * before any write, and a second refusal still ends the run.
+ *
  * A resume enters the same loop with its working memory replayed from the
  * parent's trace instead of empty (ADR-0046). Everything else about the start of
  * a run is identical, deliberately: the schema preflight and the suppression
@@ -35,7 +40,13 @@ import type { CliArgs } from '../domain/cli-args.ts'
 import type { Usage } from '../domain/cost.ts'
 import { NO_USAGE, addUsage, estimateCost } from '../domain/cost.ts'
 import { categoryOf } from '../domain/failure.ts'
-import { recordedModelResponse, refusalMessage, replay, wentSilent } from '../domain/replay.ts'
+import {
+  recordedModelResponse,
+  refusalMessage,
+  replay,
+  shortlistRefusalMessage,
+  wentSilent,
+} from '../domain/replay.ts'
 import { preflightSchema, proposeShortlist, suppressedReleases } from '../clients/notion.ts'
 import { citedVibes, rankShortlist } from '../domain/ranking.ts'
 import type { TerminationReason } from '../domain/run.ts'
@@ -251,6 +262,11 @@ export const runRiffRadar = async ({
   let usage: Usage = replayed?.usage ?? NO_USAGE
   let costIsUpperBound = false
   let consecutiveInvalid = replayed?.consecutiveInvalid ?? 0
+  // A separate counter on purpose (ADR-0053): a repair is not an invalid action
+  // and does not count towards that limit, and an invalid action between the
+  // two `finish` calls does not consume the repair. It is the chain's, and
+  // derived from the refused finishes in the trace rather than stored.
+  let repairsSpent = replayed?.shortlistRefusals ?? 0
   let stepIndex = 0
 
   // Said now rather than at the end, because a run that resumes with two steps
@@ -454,6 +470,50 @@ export const runRiffRadar = async ({
           ? undefined
           : validateShortlist(shortlist, window, context.candidates, profile, context.degraded)
 
+      const errors = result === undefined || result.ok ? null : result.errors.join('; ')
+
+      // The step this finish records either way. The score breakdown is what
+      // makes the ranking arguable: every contribution, with the profile term
+      // that caused it, beside the order it produced.
+      const finishStep = (reason?: TerminationReason): StepFields => ({
+        ...step,
+        kind: 'finish',
+        proposedAction: proposed,
+        validationResult: 'valid',
+        dispatchedAction,
+        toolName: validation.name,
+        toolArgs: call.argumentsJson,
+        toolResult: JSON.stringify({
+          terminationReason: reason,
+          shortlist,
+          ranking: ranked.map(({ item, score }) => ({
+            artist: item.artist,
+            title: item.title,
+            rank: item.rank,
+            ...score,
+          })),
+        }),
+        error: errors,
+      })
+
+      // A refused shortlist gets one chance to fix itself (ADR-0053). The run
+      // does not end: the refusal is recorded as a step like any other, the
+      // errors go back as a tool message — the mechanism an invalid action
+      // already uses — and the model may call `finish` once more. One repair,
+      // not three: by the second the model has been told twice, and further
+      // attempts buy tokens rather than a shortlist. The step and cost ceilings
+      // still decide whether there is a call left to make with it, because the
+      // loop tests them at the top before anything else.
+      if (errors !== null && repairsSpent === 0) {
+        repairsSpent += 1
+        recordStep(finishStep(), at, elapsed())
+        messages.push(
+          { role: 'assistant', content: response.content, toolCalls: [call] },
+          shortlistRefusalMessage(errors, call.id),
+        )
+        continue
+      }
+
       terminationReason =
         result === undefined
           ? 'no_candidates'
@@ -463,33 +523,7 @@ export const runRiffRadar = async ({
               ? 'completed'
               : 'completed_short'
 
-      recordStep(
-        {
-          ...step,
-          kind: 'finish',
-          proposedAction: proposed,
-          validationResult: 'valid',
-          dispatchedAction,
-          toolName: validation.name,
-          toolArgs: call.argumentsJson,
-          // The score breakdown is what makes the ranking arguable: every
-          // contribution, with the profile term that caused it, beside the
-          // order it produced.
-          toolResult: JSON.stringify({
-            terminationReason,
-            shortlist,
-            ranking: ranked.map(({ item, score }) => ({
-              artist: item.artist,
-              title: item.title,
-              rank: item.rank,
-              ...score,
-            })),
-          }),
-          error: result === undefined || result.ok ? null : result.errors.join('; '),
-        },
-        at,
-        elapsed(),
-      )
+      recordStep(finishStep(terminationReason), at, elapsed())
       break
     }
 

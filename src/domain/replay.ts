@@ -6,10 +6,11 @@
  * replays those columns rather than reading a second copy of the run that could
  * disagree with the first.
  *
- * Five things come back out: the message history, the candidate list, the
- * accumulated usage, the consecutive-invalid count and the run of silent
- * MusicBrainz lookups. Only the candidate list is stored; the rest are derived
- * here, which is what this file exists to make provable.
+ * Six things come back out: the message history, the candidate list, the
+ * accumulated usage, the consecutive-invalid count, the run of silent
+ * MusicBrainz lookups and the repairs already spent at finish. Only the
+ * candidate list is stored; the rest are derived here, which is what this file
+ * exists to make provable.
  *
  * Pure. A trace it cannot read is refused whole rather than replayed in part,
  * because a run that cannot be reconstructed is also a run that cannot be
@@ -78,6 +79,25 @@ export const refusalMessage = (error: string, callId?: string): ModelMessage =>
     : { role: 'tool', toolCallId: callId, content: `Invalid action, not dispatched: ${error}` }
 
 /**
+ * What the model is told when its shortlist was refused (ADR-0053).
+ *
+ * Deliberately not `refusalMessage`: that one says the action was not
+ * dispatched, and a refused `finish` was. What the validator rejected is the
+ * shortlist, not the call, and the difference is the whole instruction — the
+ * model is being asked to send a corrected list, not a different action.
+ *
+ * Exported for the same reason as its sibling: the loop says it and the replay
+ * says it again.
+ */
+export const shortlistRefusalMessage = (errors: string, callId: string): ModelMessage => ({
+  role: 'tool',
+  toolCallId: callId,
+  content:
+    `The shortlist was refused and nothing was written: ${errors}. ` +
+    'Call finish once more with the items corrected or dropped. There is no third attempt.',
+})
+
+/**
  * Whether a lookup got no answer, and so counts towards giving up on
  * MusicBrainz (ADR-0052).
  *
@@ -102,6 +122,14 @@ export interface Replayed {
    * caused it, so the run only grows.
    */
   readonly consecutiveLookupFailures: number
+  /**
+   * How many shortlists the validator has refused in this chain, which is how
+   * many repairs have been spent (ADR-0053). One is the limit, and it is
+   * counted rather than stored for the same reason the rest of this is: a
+   * refused `finish` is already a recorded step carrying the errors it was
+   * told.
+   */
+  readonly shortlistRefusals: number
 }
 
 const parseJson = <T>(schema: z.ZodType<T>, json: string, what: string): T => {
@@ -120,17 +148,27 @@ const parseJson = <T>(schema: z.ZodType<T>, json: string, what: string): T => {
 }
 
 /**
+ * A finish the validator refused, as against one that ended its run. The error
+ * column is the difference and no new kind is needed: a finish that completed,
+ * or reported a quiet week, has nothing to say there.
+ */
+const wasRefused = (step: TracedStep): boolean => step.kind === 'finish' && step.error !== null
+
+/**
  * The two messages one step added to the history, or none.
  *
  * A step that answered the model contributes what the model said and what it
  * was told back. A step the loop broke on — a failed tool, a failed model call,
- * the finish, the Notion write — told the model nothing, so it contributes
- * nothing and the resumed run simply takes it again. Replaying half of it would
- * leave a proposed call with no answer, which is a conversation no provider
- * accepts.
+ * a finish that ended its run, the Notion write — told the model nothing, so it
+ * contributes nothing and the resumed run simply takes it again. Replaying half
+ * of it would leave a proposed call with no answer, which is a conversation no
+ * provider accepts.
+ *
+ * The exception is the refused finish, which did answer: it handed the
+ * validator's errors back and the run carried on (ADR-0053).
  */
 const messagesOf = (step: TracedStep): ModelMessage[] => {
-  if (step.kind !== 'action' && step.kind !== 'invalid_action') return []
+  if (step.kind !== 'action' && step.kind !== 'invalid_action' && !wasRefused(step)) return []
   if (step.modelResponse === null) return []
 
   const { content, toolCalls } = parseJson(modelResponseSchema, step.modelResponse, 'a model response')
@@ -144,6 +182,10 @@ const messagesOf = (step: TracedStep): ModelMessage[] => {
     role: 'assistant',
     content,
     ...(call === undefined ? {} : { toolCalls: [call] }),
+  }
+
+  if (step.kind === 'finish') {
+    return call === undefined ? [] : [said, shortlistRefusalMessage(step.error ?? '', call.id)]
   }
 
   if (step.kind === 'action') {
@@ -179,5 +221,6 @@ export const replay = (steps: readonly TracedStep[]): Replayed => {
     usage: steps.reduce<Usage>(addUsage, NO_USAGE),
     consecutiveInvalid: trailing,
     consecutiveLookupFailures: lookups.length - 1 - answered,
+    shortlistRefusals: steps.filter(wasRefused).length,
   }
 }

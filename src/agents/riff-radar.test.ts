@@ -603,7 +603,7 @@ test('a dispatched action returns its result to the model', async () => {
 })
 
 test('every step records its duration', async () => {
-  const model = scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes(items(1)))
+  const model = scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes([]))
   const { stepRows } = await run(model.port)
 
   assert.equal(stepRows.length, 2)
@@ -620,7 +620,7 @@ test('the stable prefix leads every request and never moves', async () => {
   const model = scriptedModel(
     proposes('fetch_source', '{"source_id": "loudwire"}'),
     proposes('web_search', '{"query": "ulcerate"}'),
-    finishes(items(1)),
+    finishes([]),
   )
   await run(model.port)
 
@@ -642,7 +642,7 @@ test('the stable prefix leads every request and never moves', async () => {
 })
 
 test('tokens are counted three ways per step and summed onto the run', async () => {
-  const model = scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes(items(1)))
+  const model = scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes([]))
   const { outcome, runRow, stepRows } = await run(model.port)
 
   for (const step of stepRows) {
@@ -828,7 +828,7 @@ test('two runs in one database are distinct rows with distinct steps', async () 
   const args = { command: 'run', lastDays: 7, dryRun: false, raw: 'run' } as const
   const ports = {
     clock: tickingClock(),
-    model: scriptedModel(finishes(items(1))).port,
+    model: scriptedModel(finishes([])).port,
     http: withNotion(fixtureHttp(), []).port,
   }
 
@@ -1964,4 +1964,118 @@ test('a resume works out for itself that MusicBrainz is still unavailable', asyn
   // exactly the runs this feature exists for.
   const parentRow = store.database.prepare('SELECT * FROM runs WHERE run_id = ?').get(parent)
   assert.equal(parentRow?.['musicbrainz_degraded'], 1)
+})
+
+// ── One repair at finish (ticket 06) ─────────────────────────────────────────
+
+/** A shortlist the validator refuses, for a reason that names the item. */
+const unsourced = [item(1, { sourceUrls: [] })]
+
+/** The fetch and the lookup that make a shortlist of one repairable into a real one. */
+const found = [
+  proposes('fetch_source', '{"source_id": "loudwire"}'),
+  proposes('lookup_release', JSON.stringify(RELEASES[0])),
+]
+
+test('a refused shortlist is handed back with its errors rather than ending the run', async () => {
+  const model = scriptedModel(...found, finishes(unsourced), finishes(items(1)))
+  const { outcome, written } = await run(model.port)
+
+  assert.equal(outcome.terminationReason, 'completed_short')
+  assert.equal(outcome.shortlistSize, 1)
+  assert.equal(written.length, 1, 'the repaired shortlist is the one that is written')
+
+  // The request after the refused finish carries what the validator said, as a
+  // tool message answering the call it refused.
+  const afterRefusal = model.requests[3]?.messages ?? []
+  assert.match(afterRefusal.map((message) => message.content).join('\n'), /no source URL/)
+})
+
+test('a second refusal ends the run at validation_failed, and nothing is written', async () => {
+  const model = scriptedModel(...found, finishes(unsourced))
+  const { outcome, runRow, stepRows, written } = await run(model.port)
+
+  assert.equal(outcome.terminationReason, 'validation_failed')
+  assert.equal(outcome.shortlistSize, 0)
+  assert.equal(written.length, 0, 'the guardrail still writes nothing')
+  assert.equal(runRow?.['notion_write_performed'], 0)
+  assert.equal(
+    stepRows.filter((row) => row['kind'] === 'finish').length,
+    2,
+    'two finishes and no third: one repair, not three',
+  )
+})
+
+test('the repair is a recorded step like any other: the refusal, and then the shortlist', async () => {
+  const model = scriptedModel(...found, finishes(unsourced), finishes(items(1)))
+  const { stepRows } = await run(model.port)
+
+  const [refused, repaired] = stepRows.filter((row) => row['kind'] === 'finish')
+  assert.match(String(refused?.['error']), /no source URL/)
+  assert.match(String(refused?.['tool_result']), /Cutting the Throat of God/)
+  assert.equal(repaired?.['error'], null)
+  assert.match(String(repaired?.['tool_result']), /"terminationReason":"completed_short"/)
+})
+
+test('an invalid action between the two finishes does not consume the repair', async () => {
+  const model = scriptedModel(
+    ...found,
+    finishes(unsourced),
+    proposes('web_search', 'not json'),
+    finishes(items(1)),
+  )
+  const { outcome } = await run(model.port)
+
+  assert.equal(outcome.terminationReason, 'completed_short')
+})
+
+test('a repair does not count towards the invalid-action limit', async () => {
+  const model = scriptedModel(
+    proposes('web_search', 'not json'),
+    proposes('web_search', 'still not json'),
+    ...found,
+    finishes(unsourced),
+    finishes(items(1)),
+  )
+  const { outcome } = await run(model.port)
+
+  assert.equal(outcome.terminationReason, 'completed_short')
+})
+
+// ADR-0025: a quiet week is a real answer, not something to repair.
+test('an empty shortlist is still no_candidates and is never handed back', async () => {
+  const model = scriptedModel(finishes([]))
+  const { outcome, stepRows } = await run(model.port)
+
+  assert.equal(outcome.terminationReason, 'no_candidates')
+  assert.equal(stepRows.filter((row) => row['kind'] === 'finish').length, 1)
+})
+
+test('a run at its step ceiling gets no extra call to repair with', async () => {
+  const store = openStore(':memory:')
+  const parent = killedAfter(store, idleSteps(MAX_STEPS - 1))
+
+  const { outcome } = await run(scriptedModel(finishes(unsourced)).port, {
+    store,
+    resumeRunId: parent,
+    dryRun: true,
+  })
+
+  assert.equal(outcome.terminationReason, 'max_steps_exceeded')
+})
+
+test('a resume works out that the repair has already been spent', async () => {
+  const killed = scriptedModel(...found, finishes(unsourced))
+  const first = await run(killed.port, { dryRun: true })
+  assert.equal(first.outcome.terminationReason, 'validation_failed', 'the run to take a prefix of')
+
+  // Its work and its first, refused finish: a parent that used its repair.
+  const store = openStore(':memory:')
+  const parent = killedAfter(store, first.store.stepsOf(first.outcome.runId).slice(0, 3))
+
+  const resumed = scriptedModel(finishes(unsourced))
+  const { outcome, stepRows } = await run(resumed.port, { store, resumeRunId: parent, dryRun: true })
+
+  assert.equal(outcome.terminationReason, 'validation_failed')
+  assert.equal(stepRows.length, 1, 'the child gets no second chance the parent already took')
 })
