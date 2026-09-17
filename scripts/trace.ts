@@ -56,8 +56,7 @@ export const noteOf = (step: Record<string, unknown>): string => {
  */
 export const chainSummary = (
   runs: readonly { readonly cost: number; readonly steps: number }[],
-): { runs: number; steps: number; cost: number } => ({
-  runs: runs.length,
+): { steps: number; cost: number } => ({
   steps: runs.reduce((total, run) => total + run.steps, 0),
   cost: runs.reduce((total, run) => total + run.cost, 0),
 })
@@ -100,17 +99,15 @@ if (process.argv[1]?.endsWith('trace.ts')) {
     process.exit(1)
   }
 
-  const rowOf = (runId: unknown) =>
-    database.prepare(`SELECT * FROM runs WHERE run_id = ?`).get(String(runId))
-
   // Up to the root by `resumed_from`, then down again by whoever resumed this
   // one: whichever link of a chain is named, the whole chain is printed.
   const chain = [matched]
-  for (let at = matched; at['resumed_from'] != null; ) {
-    const older = rowOf(at['resumed_from'])
+  while (chain[0]?.['resumed_from'] != null) {
+    const older = database
+      .prepare(`SELECT * FROM runs WHERE run_id = ?`)
+      .get(String(chain[0]['resumed_from']))
     if (older === undefined) break
     chain.unshift(older)
-    at = older
   }
   for (;;) {
     const younger = database
@@ -166,7 +163,7 @@ if (process.argv[1]?.endsWith('trace.ts')) {
 
   if (chain.length > 1) {
     const total = chainSummary(counted)
-    console.log(`chain   ${total.runs} runs, ${total.steps} steps, $${total.cost.toFixed(4)} in total\n`)
+    console.log(`chain   ${chain.length} runs, ${total.steps} steps, $${total.cost.toFixed(4)} in total\n`)
   }
 
   // Every page the chain stored, whichever of its runs fetched it: a resume

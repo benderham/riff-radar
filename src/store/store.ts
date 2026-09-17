@@ -80,12 +80,11 @@ export interface RecordedStep {
   readonly cost: number
 }
 
-/** A run as a resume needs to see it: which window it covered, and whether it is over. */
+/** A run as a resume needs to see it: the window it covered, and what it continued. */
 export interface StoredRun {
   readonly runId: string
   readonly resolvedFrom: string
   readonly resolvedTo: string
-  readonly terminationReason: TerminationReason | null
   readonly resumedFrom: string | null
 }
 
@@ -324,7 +323,7 @@ export const openStore = (path: string): Store => {
     runsMatching(prefix) {
       return database
         .prepare(
-          `SELECT run_id, resolved_from, resolved_to, termination_reason, resumed_from
+          `SELECT run_id, resolved_from, resolved_to, resumed_from
              FROM runs WHERE run_id LIKE ? ORDER BY started_at`,
         )
         .all(`${prefix}%`)
@@ -332,7 +331,6 @@ export const openStore = (path: string): Store => {
           runId: row['run_id'] as string,
           resolvedFrom: row['resolved_from'] as string,
           resolvedTo: row['resolved_to'] as string,
-          terminationReason: row['termination_reason'] as TerminationReason | null,
           resumedFrom: row['resumed_from'] as string | null,
         }))
     },

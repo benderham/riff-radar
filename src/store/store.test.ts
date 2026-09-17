@@ -376,7 +376,6 @@ test('the run a resume needs is readable by id', () => {
     runId: 'run-1',
     resolvedFrom: '2026-09-08',
     resolvedTo: '2026-09-14',
-    terminationReason: null,
     resumedFrom: null,
   })
   assert.equal(store.runOf('no-such-run'), undefined)

@@ -121,9 +121,7 @@ export const runRiffRadar = async ({
     throw new ResumeRefusal(
       asked.length === 0
         ? `no run ${args.resumeRunId} to resume`
-        : `${args.resumeRunId} matches ${asked.length} runs: ${asked
-            .map((each) => each.runId)
-            .join(', ')}`,
+        : `${args.resumeRunId} matches ${asked.length} runs: ${asked.map((each) => each.runId).join(', ')}`,
     )
   }
   const parent = args.resumeRunId === undefined ? undefined : asked[0]
