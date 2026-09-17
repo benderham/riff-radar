@@ -1873,6 +1873,44 @@ test('a lookup that answers clears what the silence before it counted', async ()
   assert.equal(asked.length, 3, 'every lookup reached MusicBrainz')
 })
 
+test('a degraded run over a calendar that states no formats still proposes', async () => {
+  // Run `e480b9c1` on Ben's own machine, in miniature: MusicBrainz blocked, and
+  // thirteen of fourteen candidates with no stated format. Before his decision
+  // of 17 September this ended `no_candidates` with an empty shortlist, which
+  // is the dead run ADR-0052 exists to prevent.
+  const { http } = musicbrainzAnswering(0)
+  const model = scriptedModel(
+    proposes('fetch_source', '{"source_id": "loudwire"}'),
+    proposes('lookup_release', JSON.stringify(RELEASES[0])),
+    proposes('lookup_release', JSON.stringify(RELEASES[1])),
+    finishes([unverifiedItem(1), unverifiedItem(2)]),
+  )
+  const { outcome, runRow } = await run(model.port, { http, dryRun: true })
+
+  assert.equal(outcome.terminationReason, 'completed_short')
+  assert.equal(outcome.shortlistSize, 2, 'silence is the calendar\'s word, not a refusal')
+  assert.equal(runRow?.['musicbrainz_degraded'], 1)
+})
+
+test('a degraded run still refuses what a source described as something else', async () => {
+  // The other half of the decision: silence is trusted, a statement is not
+  // overruled. A source calling it a live album still ends the proposal.
+  const { http } = musicbrainzAnswering(0)
+  const live = JSON.stringify({
+    candidates: RELEASES.map((release) => ({ ...release, releaseDate: '2026-09-12', format: 'live album' })),
+  })
+  const model = scriptedModelExtracting(live)(
+    proposes('fetch_source', '{"source_id": "loudwire"}'),
+    proposes('lookup_release', JSON.stringify(RELEASES[0])),
+    proposes('lookup_release', JSON.stringify(RELEASES[1])),
+    finishes([unverifiedItem(1)]),
+  )
+  const { outcome, stepRows } = await run(model.port, { http, dryRun: true })
+
+  assert.equal(outcome.terminationReason, 'validation_failed')
+  assert.match(String(finishRow(stepRows)['error']), /the source called it a live album/)
+})
+
 test('a degraded run says so on every proposal that rests on it', async () => {
   const { http } = musicbrainzAnswering(0)
   const model = statingFormats(

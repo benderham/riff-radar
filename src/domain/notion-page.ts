@@ -29,8 +29,9 @@ export const appleMusicSearchUrl = (artist: string, title: string): string =>
  * could not be reached, so nothing checked the source's word (ADR-0052).
  */
 const WITHOUT_MUSICBRAINZ =
-  'Judged without MusicBrainz: it was unavailable during this run, so the format is the source\'s ' +
-  'own word — no reissue, remaster or EP check ran.'
+  'Judged without MusicBrainz: it was unavailable during this run, so this rests on the source\'s ' +
+  'own word, or on the calendar that listed it where the source said nothing — no reissue, ' +
+  'remaster or EP check ran.'
 
 /** A page as Notion's create endpoint takes it. */
 export interface NotionPage {

@@ -120,13 +120,22 @@ const formatVerdict = (candidate: Candidate, degraded: boolean): Eligibility => 
   const looked = candidate.lookup
 
   // A release nobody looked up is unconfirmed — unless nobody *could*, in which
-  // case it falls to the rule the two other evidenceless cases already use
-  // (ADR-0052). Degradation is a property of the run, so a release looked up
-  // before the outage is still judged on what MusicBrainz said about it.
+  // case the source's word decides (ADR-0052). Degradation is a property of the
+  // run, so a release looked up before the outage is still judged on what
+  // MusicBrainz said about it.
   if (looked === undefined) {
-    return degraded
-      ? statedFormatVerdict(candidate, 'MusicBrainz was unavailable')
-      : no('not looked up in MusicBrainz, so its format is unconfirmed')
+    if (!degraded) return no('not looked up in MusicBrainz, so its format is unconfirmed')
+
+    // Silence is the calendar's word rather than missing data, and only while
+    // degraded. Thirteen of fourteen candidates in run `e480b9c1` stated no
+    // format at all, so refusing silence refused the whole shortlist — the
+    // dead run ADR-0052 exists to prevent. A release listed in a new-release
+    // calendar inside the window is a claim that it is new work, and the date
+    // rule still has to agree. A source that *does* describe it is still
+    // believed, in both directions.
+    return (candidate.format ?? '').trim() === ''
+      ? YES
+      : statedFormatVerdict(candidate, 'MusicBrainz was unavailable')
   }
 
   if (looked.found === false) return statedFormatVerdict(candidate, 'unverified')

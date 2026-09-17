@@ -90,6 +90,24 @@ and a 503 returns no body this code reads. `fixtures/` holds captures, and
 inventing an empty one to satisfy the wording would be evidence of nothing. The
 criterion's substance — both failures tested, no network — is met.
 
+**What the first real run found.** Run `e480b9c1`, from Ben's own machine where
+MusicBrainz blocks his IP: degradation fired exactly as specified — two silent
+lookups, then ten that made no request — and the run proposed **nothing**,
+ending `no_candidates` with an empty shortlist. Thirteen of its fourteen
+candidates stated no format at all, and the fourteenth said `EP`, so the
+stated-format fallback refused all of them. The acceptance criteria were met and
+the decision's purpose was not: "a degraded shortlist Ben reviews is worth more
+than a dead run" had produced a dead run by a different route.
+
+Ben's decision, 17 September 2026: while degraded, silence is the calendar's
+word. A release no source described is eligible — it was listed in a
+new-release calendar inside the window, and the date rule still has to agree —
+while a source that describes it is still believed in both directions. ADR-0052
+is amended; ADR-0045's rule for an untyped release group is untouched, because
+there MusicBrainz answered. The degraded lookup now tells the model to read the
+title, since an anniversary edition or a re-release says so in its name and
+nothing else is left to catch it.
+
 **Left for milestone 3:** degraded runs must be excluded from, or labelled in,
 the evaluation, or they will read as a ranking regression. `musicbrainz_degraded`
 is the column to filter on. Milestone 2's evidence file (ticket 07) is where

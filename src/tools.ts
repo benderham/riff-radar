@@ -101,9 +101,11 @@ const defineTool = <Schema extends z.ZodType>(tool: Tool<Schema>): Tool<Schema> 
  * personnel, which are three of the profile's ranking terms.
  */
 const DEGRADED_NOTE =
-  "the source's stated format, as an untyped release group already is. No reissue or remaster " +
-  'detection, no EP track-count or duration thresholds, and the label, genre and personnel terms ' +
-  'drop out of the ranking.'
+  "the source's own word: a stated album passes, a stated live album, EP, single, compilation or " +
+  'reissue does not, and a release no source described is taken on the calendar that listed it. No ' +
+  'reissue or remaster detection, no EP track-count or duration thresholds, and the label, genre ' +
+  'and personnel terms drop out of the ranking. Judge the title yourself — an anniversary edition ' +
+  'or a re-release says so in its name, and nothing else is left to catch it.'
 
 const DEGRADED_WARNING = `MusicBrainz is unavailable for the rest of this run; releases are judged on ${DEGRADED_NOTE}`
 
