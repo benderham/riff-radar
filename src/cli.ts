@@ -14,6 +14,7 @@ import { z } from 'zod'
 
 import { DATABASE_PATH, TASTE_PROFILE_PATH, missingCredentials } from '../config.ts'
 import { fireworksModel } from './adapters/fireworks.ts'
+import { systemClock } from './adapters/clock.ts'
 import { httpAdapter } from './adapters/http.ts'
 import { runRiffRadar } from './agents/riff-radar.ts'
 import { NotionRefusal } from './clients/notion.ts'
@@ -140,11 +141,11 @@ if (process.argv[1]?.endsWith('cli.ts')) {
     argv: process.argv.slice(2),
     env: process.env,
     ports: {
-      clock: { now: () => new Date() },
+      clock: systemClock,
       // Empty rather than asserted: `runCli` refuses a missing credential
       // before it starts a run, so the port is never reached without one.
       model: fireworksModel(process.env['FIREWORKS_API_KEY'] ?? ''),
-      http: httpAdapter(),
+      http: httpAdapter(systemClock),
     },
     openStore: () => openStore(DATABASE_PATH),
     log: (line) => console.log(line),

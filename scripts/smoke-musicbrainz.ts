@@ -17,11 +17,12 @@
 
 import process from 'node:process'
 
+import { systemClock } from '../src/adapters/clock.ts'
 import { httpAdapter } from '../src/adapters/http.ts'
 import { lookupRelease } from '../src/clients/musicbrainz.ts'
 import type { Ports } from '../src/ports.ts'
 
-const ports = { http: httpAdapter(), clock: { now: () => new Date() } } as Ports
+const ports = { http: httpAdapter(systemClock), clock: systemClock } as Ports
 
 const CASES = [
   { artist: 'Ulcerate', title: 'Cutting the Throat of God', expect: 'an album' },

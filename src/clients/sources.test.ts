@@ -32,13 +32,13 @@ const refusePost = async (url: string): Promise<never> => {
 }
 
 /** Serves one body for any URL, and records what was asked for. */
-const servingFixture = (body: string, status = 200) => {
+const servingFixture = (body: string, status = 200, attempts = 1) => {
   const gets: string[] = []
   const http: HttpPort = {
     patch: async () => { throw new Error('unexpected patch') },
     get: async (url) => {
       gets.push(url)
-      return { status, headers: { 'content-type': 'text/html' }, body }
+      return { status, attempts, headers: { 'content-type': 'text/html' }, body }
     },
     // A source is a page, read with GET. Nothing here should ever post.
     post: refusePost,
@@ -67,7 +67,7 @@ const WINDOW = { from: '2026-09-08', to: '2026-09-14' }
 const portsFor = (http: HttpPort, model: ModelPort): Ports => ({
   http,
   model,
-  clock: { now: () => new Date(2026, 8, 14) },
+  clock: { now: () => new Date(2026, 8, 14), sleep: async () => {} },
 })
 
 test('the configured URL is fetched, and the cleaned page reaches the extraction call', async () => {
@@ -278,4 +278,26 @@ test('a page that yielded nothing has a warning and no category: nothing failed'
 
   assert.match(String(result.warning), /may have changed shape/)
   assert.equal(result.failureCategory, undefined)
+})
+
+test('a page that only answered on the second ask says so, though nothing failed', async () => {
+  // The case `attempts` exists for: the page answered, the candidates are real,
+  // and the only thing odd about the step is the seconds it took.
+  const { http } = servingFixture(PAGE, 200, 2)
+  const { model } = extracting(
+    extracted([
+      {
+        artist: 'Ulcerate',
+        title: 'Cutting the Throat of God',
+        releaseDate: '2026-09-12',
+        format: 'LP',
+      },
+    ]),
+  )
+
+  const read = await fetchSource(portsFor(http, model), 'wikipedia', WINDOW)
+
+  assert.equal(read.candidates.length, 1, 'a retry that worked is still a result')
+  assert.match(String(read.warning), /answered after 2 attempts/)
+  assert.equal(read.failureCategory, undefined, 'a slow success is not a failure')
 })

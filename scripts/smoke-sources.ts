@@ -14,6 +14,7 @@ import process from 'node:process'
 import { SOURCES } from '../config.ts'
 import type { SourceId } from '../config.ts'
 import { fireworksModel } from '../src/adapters/fireworks.ts'
+import { systemClock } from '../src/adapters/clock.ts'
 import { httpAdapter } from '../src/adapters/http.ts'
 import { fetchSource } from '../src/clients/sources.ts'
 import { estimateCost } from '../src/domain/cost.ts'
@@ -27,8 +28,8 @@ if (!apiKey) {
 }
 
 const ports: Ports = {
-  clock: { now: () => new Date() },
-  http: httpAdapter(),
+  clock: systemClock,
+  http: httpAdapter(systemClock),
   model: fireworksModel(apiKey),
 }
 

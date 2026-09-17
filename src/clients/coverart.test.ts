@@ -10,7 +10,7 @@ const serving = (answer: Partial<{ status: number; body: string }>) => {
   const http: HttpPort = {
     get: async (url, _headers, options) => {
       calls.push({ url, followed: options?.followRedirects })
-      return { status: 200, body: '', headers: {}, ...answer }
+      return { status: 200, body: '', headers: {}, attempts: 1, ...answer }
     },
     post: async () => {
       throw new Error('cover art never posts')

@@ -71,8 +71,8 @@ const context = (over: { http?: HttpPort; model?: ModelPort } = {}) => {
   })
 
   const ports = {
-    clock: { now: () => new Date(2026, 8, 14, 9, 0, 1) },
-    http: over.http ?? { get: async () => ({ status: 200, headers: {}, body: PAGE }) },
+    clock: { now: () => new Date(2026, 8, 14, 9, 0, 1), sleep: async () => {} },
+    http: over.http ?? { get: async () => ({ status: 200, attempts: 1, headers: {}, body: PAGE }) },
     model: over.model ?? {
       complete: async () => ({
         content: JSON.stringify({
@@ -196,7 +196,7 @@ test('a source that yields nothing is recorded, warned about, and does not throw
   assert.ok(result.ok)
 
   const { toolContext, store } = context({
-    http: { get: async () => ({ status: 500, headers: {}, body: 'server error' }), post: notSearched, patch: notPatched },
+    http: { get: async () => ({ status: 500, attempts: 1, headers: {}, body: 'server error' }), post: notSearched, patch: notPatched },
   })
   const dispatched = await dispatch(result.name, result.input, toolContext)
 
@@ -247,7 +247,7 @@ const discovered = (over: Partial<Candidate> = {}): Candidate => ({
 
 const lookingUp = (body: string, status = 200): HttpPort => ({
   patch: notPatched,
-  get: async () => ({ status, headers: {}, body }),
+  get: async () => ({ status, attempts: 1, headers: {}, body }),
   post: notSearched,
 })
 
@@ -355,7 +355,7 @@ test('a search returns what it found, and adds nothing to the run', async () => 
   assert.ok(result.ok)
 
   const { toolContext } = context({
-    http: { get: notFetched, post: async () => ({ status: 200, headers: {}, body: SEARCH_BODY }), patch: notPatched },
+    http: { get: notFetched, post: async () => ({ status: 200, attempts: 1, headers: {}, body: SEARCH_BODY }), patch: notPatched },
   })
   // A run mid-flight: the search must leave these exactly as it found them.
   toolContext.candidates = [
@@ -384,7 +384,7 @@ test('a search sends the key in a header and the query in the body', async () =>
       get: notFetched,
       post: async (url, body, headers) => {
         seen.push({ url, body, ...(headers === undefined ? {} : { headers }) })
-        return { status: 200, headers: {}, body: SEARCH_BODY }
+        return { status: 200, attempts: 1, headers: {}, body: SEARCH_BODY }
       },
     },
   })
@@ -400,7 +400,7 @@ test('a search that fails is an ordinary step result with a warning', async () =
   assert.ok(result.ok)
 
   const { toolContext } = context({
-    http: { get: notFetched, post: async () => ({ status: 429, headers: {}, body: 'slow down' }), patch: notPatched },
+    http: { get: notFetched, post: async () => ({ status: 429, attempts: 1, headers: {}, body: 'slow down' }), patch: notPatched },
   })
   const dispatched = await dispatch(result.name, result.input, toolContext)
 

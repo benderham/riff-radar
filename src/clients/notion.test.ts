@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { NOTION_VERSION } from '../../config.ts'
-import type { HttpPort, Ports } from '../ports.ts'
+import type { ClockPort, HttpPort, Ports } from '../ports.ts'
 import type { ShortlistItem } from '../domain/shortlist.ts'
 import {
   NotionWriteFailed,
@@ -12,6 +12,9 @@ import {
   proposeShortlist,
   suppressedReleases,
 } from './notion.ts'
+
+/** Notion's client never waits; the adapter's backoff is the adapter's test. */
+const clock: ClockPort = { now: () => new Date(), sleep: async () => {} }
 
 /**
  * Notion's bodies are declared inline rather than captured, deliberately.
@@ -42,11 +45,11 @@ const serving = (...bodies: readonly (string | { body: string; status: number })
       posts.push({ url, body, ...(headers === undefined ? {} : { headers }) })
       const next = bodies[Math.min(call++, bodies.length - 1)]!
       const answer = typeof next === 'string' ? { body: next, status: 200 } : next
-      return { ...answer, headers: { 'content-type': 'application/json' } }
+      return { ...answer, attempts: 1, headers: { 'content-type': 'application/json' } }
     },
   }
 
-  return { posts, ports: { http, clock: { now: () => new Date() } } as Ports }
+  return { posts, ports: { http, clock } as Ports }
 }
 
 const query = (results: unknown[], over: Record<string, unknown> = {}) =>
@@ -172,23 +175,23 @@ const writing = (
       // The archive answers "there is art" with a redirect and "there is none"
       // with a 404; neither carries an image.
       if (url.includes('coverartarchive')) {
-        return { status: over.hasCover === true ? 307 : 404, headers: {}, body: '' }
+        return { status: over.hasCover === true ? 307 : 404, attempts: 1, headers: {}, body: '' }
       }
-      return { status: over.schemaStatus ?? 200, headers: {}, body: over.schema ?? SCHEMA }
+      return { status: over.schemaStatus ?? 200, attempts: 1, headers: {}, body: over.schema ?? SCHEMA }
     },
     post: async (url, body) => {
       calls.push({ method: 'post', url, body })
       const status = over.createStatus?.[created] ?? 200
       created += 1
-      return { status, headers: {}, body: JSON.stringify({ id: `page-${created}` }) }
+      return { status, attempts: 1, headers: {}, body: JSON.stringify({ id: `page-${created}` }) }
     },
     patch: async (url, body) => {
       calls.push({ method: 'patch', url, body })
-      return { status: over.archiveStatus ?? 200, headers: {}, body: '{}' }
+      return { status: over.archiveStatus ?? 200, attempts: 1, headers: {}, body: '{}' }
     },
   }
 
-  return { calls, ports: { http, clock: { now: () => new Date() } } as Ports }
+  return { calls, ports: { http, clock } as Ports }
 }
 
 const item = (over: Partial<ShortlistItem> = {}): ShortlistItem => ({

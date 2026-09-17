@@ -148,6 +148,21 @@ export const USER_AGENT = 'riff-radar/0.1 (+https://github.com/benderham/riff-ra
 export const HTTP_TIMEOUT_MS = 20_000
 
 /**
+ * Trying again, bounded (ADR-0049).
+ *
+ * Three attempts total — two waits — for the two categories worth asking again
+ * about. Roughly a second, then two, jittered so that several calls failing at
+ * once do not come back in step.
+ *
+ * `Retry-After` is honoured when a provider states it, and clamped: a header
+ * saying an hour is a provider asking for the whole run, and ten seconds is
+ * already longer than the backoff would have chosen on its own.
+ */
+export const HTTP_MAX_ATTEMPTS = 3
+export const HTTP_BACKOFF_BASE_MS = 1_000
+export const HTTP_RETRY_AFTER_CAP_MS = 10_000
+
+/**
  * MusicBrainz (ADR-0034). Identity and enrichment only: it never introduces a
  * release, and a release it has never heard of is Unverified rather than
  * invalid (CONTEXT.md).
@@ -165,18 +180,6 @@ export const HTTP_TIMEOUT_MS = 20_000
 export const MUSICBRAINZ_ENDPOINT = 'https://musicbrainz.org/ws/2'
 export const MUSICBRAINZ_MIN_INTERVAL_MS = 1_000
 export const MUSICBRAINZ_MIN_SCORE = 90
-
-/**
- * MusicBrainz sheds load rather than queueing: under pressure it answers 503,
- * or 200 with an apology in the body. Both are transient and both are common —
- * capturing this project's fixtures took three or four attempts more than once
- * — so a lookup that gives up on the first refusal would leave candidates
- * unverified for no better reason than the hour of the day.
- *
- * Three attempts, spaced by the same one-second gate as any other request. The
- * bound is what keeps a struggling service from becoming a stalled run.
- */
-export const MUSICBRAINZ_MAX_ATTEMPTS = 3
 
 /**
  * The ceiling on cleaned source text handed to the extraction call.

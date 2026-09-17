@@ -24,7 +24,7 @@ const respondWith = (body: string, status = 200) => {
     },
     post: async (url, requestBody, headers) => {
       calls.push({ url, body: requestBody, ...(headers === undefined ? {} : { headers }) })
-      return { status, headers: { 'content-type': 'application/json' }, body }
+      return { status, attempts: 1, headers: { 'content-type': 'application/json' }, body }
     },
   }
   return { calls, ports: { http } as Ports }
