@@ -99,13 +99,20 @@ const defineTool = <Schema extends z.ZodType>(tool: Tool<Schema>): Tool<Schema> 
  * is what tells a reissue or a remaster from new work; its track count and
  * duration, which is what an EP has to clear; and its label, genres and
  * personnel, which are three of the profile's ranking terms.
+ *
+ * The label is the half-loss. `scoreRelease` falls back to the label a source
+ * printed, so the term can still match — but a source that abbreviates it
+ * ("Reigning Phoenix" for "Reigning Phoenix Music") scores nothing, silently,
+ * and under degradation there is no full name to fall back to. Run
+ * `3e657aa3` shortlisted five releases and scored every one of them zero.
  */
 const DEGRADED_NOTE =
   "the source's own word: a stated album passes, a stated live album, EP, single, compilation or " +
   'reissue does not, and a release no source described is taken on the calendar that listed it. No ' +
-  'reissue or remaster detection, no EP track-count or duration thresholds, and the label, genre ' +
-  'and personnel terms drop out of the ranking. Judge the title yourself — an anniversary edition ' +
-  'or a re-release says so in its name, and nothing else is left to catch it.'
+  "reissue or remaster detection, no EP track-count or duration thresholds, and MusicBrainz's " +
+  'genres, personnel and label drop out of the ranking — a label a source printed still counts, ' +
+  'where it is printed in full. Judge the title yourself — an anniversary edition or a re-release ' +
+  'says so in its name, and nothing else is left to catch it.'
 
 const DEGRADED_WARNING = `MusicBrainz is unavailable for the rest of this run; releases are judged on ${DEGRADED_NOTE}`
 
