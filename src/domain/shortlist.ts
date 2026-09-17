@@ -40,7 +40,15 @@ export const shortlistItemSchema = z.object({
   vibe: z.object({ claim: z.string(), quote: z.string() }).optional(),
 })
 
-export type ShortlistItem = z.infer<typeof shortlistItemSchema>
+/**
+ * The schema is what the model may send; the one extra field is what the run
+ * stamps on afterwards, and it is deliberately outside the schema so that
+ * neither the model nor the action-schema version has anything to do with it.
+ */
+export type ShortlistItem = z.infer<typeof shortlistItemSchema> & {
+  /** MusicBrainz was unavailable, so this release was judged on its source's word (ADR-0052). */
+  readonly judgedWithoutMusicbrainz?: boolean
+}
 
 /**
  * What makes two records the same release: the MusicBrainz release-group id
@@ -57,6 +65,7 @@ const itemErrors = (
   window: DateWindow,
   discovered: ReadonlyMap<string, Candidate>,
   profile: TasteProfile,
+  degraded: boolean,
 ): string[] => {
   const at = `item ${position}`
   const errors: string[] = []
@@ -92,7 +101,7 @@ const itemErrors = (
   // rather than a rule. The model still does the choosing; this refuses the
   // choices the rules do not allow (ADR-0035).
   if (candidate !== undefined) {
-    const verdict = isEligible(candidate, window, profile)
+    const verdict = isEligible(candidate, window, profile, degraded)
     if (!verdict.eligible) {
       errors.push(`${at}: ${item.artist} — ${item.title} is not eligible: ${verdict.reason}`)
     }
@@ -128,6 +137,7 @@ const missingGuarantees = (
   window: DateWindow,
   candidates: readonly Candidate[],
   profile: TasteProfile,
+  degraded: boolean,
 ): string[] => {
   if (profile.artists.always.length === 0) return []
 
@@ -138,7 +148,7 @@ const missingGuarantees = (
   const guaranteed = candidates.filter(
     (candidate) =>
       isAlways(creditedArtists(candidate), profile) &&
-      isEligible(candidate, window, profile).eligible,
+      isEligible(candidate, window, profile, degraded).eligible,
   )
 
   const present = guaranteed.filter((candidate) => shortlisted.has(candidateIdentity(candidate)))
@@ -157,6 +167,8 @@ export const validateShortlist = (
   window: DateWindow,
   candidates: readonly Candidate[],
   profile: TasteProfile,
+  /** Whether the run gave up on MusicBrainz, which changes what evidence exists (ADR-0052). */
+  degraded = false,
 ): ShortlistValidation => {
   const errors: string[] = []
   const discovered = new Map(candidates.map((candidate) => [candidateIdentity(candidate), candidate]))
@@ -166,11 +178,11 @@ export const validateShortlist = (
     errors.push(`shortlist has ${items.length} items; the maximum is ${SHORTLIST_SIZE}`)
   }
 
-  errors.push(...missingGuarantees(items, window, candidates, profile))
+  errors.push(...missingGuarantees(items, window, candidates, profile, degraded))
 
   const seen = new Set<string>()
   for (const [index, item] of items.entries()) {
-    errors.push(...itemErrors(item, index + 1, window, discovered, profile))
+    errors.push(...itemErrors(item, index + 1, window, discovered, profile, degraded))
 
     const identity = releaseIdentity(item)
     if (seen.has(identity)) errors.push(`item ${index + 1}: duplicate release ${identity}`)

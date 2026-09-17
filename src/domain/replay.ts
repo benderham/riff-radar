@@ -6,10 +6,10 @@
  * replays those columns rather than reading a second copy of the run that could
  * disagree with the first.
  *
- * Four things come back out: the message history, the candidate list, the
- * accumulated usage, and the consecutive-invalid count. Only the candidate list
- * is stored; the other three are derived here, which is what this file exists
- * to make provable.
+ * Five things come back out: the message history, the candidate list, the
+ * accumulated usage, the consecutive-invalid count and the run of silent
+ * MusicBrainz lookups. Only the candidate list is stored; the rest are derived
+ * here, which is what this file exists to make provable.
  *
  * Pure. A trace it cannot read is refused whole rather than replayed in part,
  * because a run that cannot be reconstructed is also a run that cannot be
@@ -21,6 +21,7 @@ import { z } from 'zod'
 
 import type { Candidate } from './candidates.ts'
 import type { Usage } from './cost.ts'
+import type { FailureCategory } from './failure.ts'
 import { NO_USAGE, addUsage } from './cost.ts'
 import { ResumeRefusal } from './run.ts'
 import type { ModelMessage, ProposedToolCall } from '../ports.ts'
@@ -76,12 +77,31 @@ export const refusalMessage = (error: string, callId?: string): ModelMessage =>
     ? { role: 'user', content: `Invalid action: ${error}` }
     : { role: 'tool', toolCallId: callId, content: `Invalid action, not dispatched: ${error}` }
 
+/**
+ * Whether a lookup got no answer, and so counts towards giving up on
+ * MusicBrainz (ADR-0052).
+ *
+ * Exported because the loop counts these as they happen and a resume counts the
+ * same steps back out of the trace, and two spellings of one rule would let a
+ * resumed run disagree with the run it continues. `not_found` is absent on
+ * purpose: a 404 is an answer, and the provider that gave it is up.
+ */
+export const wentSilent = (category: FailureCategory | null | undefined): boolean =>
+  category === 'transient' || category === 'unavailable'
+
 export interface Replayed {
   /** Appended after the stable prefix and the run brief, in the order they happened. */
   readonly messages: readonly ModelMessage[]
   readonly candidates: readonly Candidate[]
   readonly usage: Usage
   readonly consecutiveInvalid: number
+  /**
+   * The unbroken run of silent lookups at the end of the trace. Two is enough
+   * to keep a resumed run degraded, which is why it is counted rather than
+   * stored: a degraded lookup records `unavailable` like the failures that
+   * caused it, so the run only grows.
+   */
+  readonly consecutiveLookupFailures: number
 }
 
 const parseJson = <T>(schema: z.ZodType<T>, json: string, what: string): T => {
@@ -142,6 +162,14 @@ export const replay = (steps: readonly TracedStep[]): Replayed => {
   // action, so what a resume inherits is the unbroken run at the end.
   const trailing = steps.length - 1 - steps.findLastIndex((step) => step.kind !== 'invalid_action')
 
+  // Only dispatched lookups are consulted. A fetch or a search between two
+  // silent lookups neither counts nor clears, and neither does a lookup the
+  // loop refused before dispatch: `invalid_action` records the tool the model
+  // named, but nothing was asked of MusicBrainz, so reading it as an answer
+  // would start a degraded run knocking again.
+  const lookups = steps.filter((step) => step.kind === 'action' && step.toolName === 'lookup_release')
+  const answered = lookups.findLastIndex((step) => !wentSilent(step.failureCategory))
+
   return {
     messages: steps.flatMap(messagesOf),
     candidates:
@@ -150,5 +178,6 @@ export const replay = (steps: readonly TracedStep[]): Replayed => {
         : (parseJson(candidatesSchema, latest, 'a candidate list') as readonly Candidate[]),
     usage: steps.reduce<Usage>(addUsage, NO_USAGE),
     consecutiveInvalid: trailing,
+    consecutiveLookupFailures: lookups.length - 1 - answered,
   }
 }

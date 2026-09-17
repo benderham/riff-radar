@@ -103,10 +103,10 @@ const dateVerdict = (candidate: Candidate, window: DateWindow): Eligibility => {
 }
 
 /**
- * The source's own word about the format, for the two cases where MusicBrainz
- * has none: a release it has never heard of, and a release group nobody has
- * typed (ADR-0045). Both are missing a type; neither is evidence of what the
- * record is not.
+ * The source's own word about the format, for the three cases where MusicBrainz
+ * has none: a release it has never heard of, a release group nobody has typed
+ * (ADR-0045), and a run that could not reach it at all (ADR-0052). All three are
+ * missing a type; none is evidence of what the record is not.
  */
 const statedFormatVerdict = (candidate: Candidate, why: string): Eligibility => {
   const stated = candidate.format ?? ''
@@ -116,10 +116,27 @@ const statedFormatVerdict = (candidate: Candidate, why: string): Eligibility => 
   return YES
 }
 
-const formatVerdict = (candidate: Candidate): Eligibility => {
+const formatVerdict = (candidate: Candidate, degraded: boolean): Eligibility => {
   const looked = candidate.lookup
 
-  if (looked === undefined) return no('not looked up in MusicBrainz, so its format is unconfirmed')
+  // A release nobody looked up is unconfirmed — unless nobody *could*, in which
+  // case the source's word decides (ADR-0052). Degradation is a property of the
+  // run, so a release looked up before the outage is still judged on what
+  // MusicBrainz said about it.
+  if (looked === undefined) {
+    if (!degraded) return no('not looked up in MusicBrainz, so its format is unconfirmed')
+
+    // Silence is the calendar's word rather than missing data, and only while
+    // degraded. Thirteen of fourteen candidates in run `e480b9c1` stated no
+    // format at all, so refusing silence refused the whole shortlist — the
+    // dead run ADR-0052 exists to prevent. A release listed in a new-release
+    // calendar inside the window is a claim that it is new work, and the date
+    // rule still has to agree. A source that *does* describe it is still
+    // believed, in both directions.
+    return (candidate.format ?? '').trim() === ''
+      ? YES
+      : statedFormatVerdict(candidate, 'MusicBrainz was unavailable')
+  }
 
   if (looked.found === false) return statedFormatVerdict(candidate, 'unverified')
 
@@ -173,10 +190,12 @@ export const isEligible = (
   candidate: Candidate,
   window: DateWindow,
   profile: TasteProfile,
+  /** Whether this run gave up on MusicBrainz partway through (ADR-0052). */
+  degraded = false,
 ): Eligibility => {
   const artist = artistVerdict(candidate, profile)
   if (!artist.eligible) return artist
 
-  const format = formatVerdict(candidate)
+  const format = formatVerdict(candidate, degraded)
   return format.eligible ? dateVerdict(candidate, window) : format
 }

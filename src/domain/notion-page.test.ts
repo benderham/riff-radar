@@ -69,3 +69,11 @@ test('a rationale longer than Notion accepts is cut rather than rejected by Noti
   const content = (page.properties['Rationale']!['rich_text'] as { text: { content: string } }[])[0]!
   assert.equal(content.text.content.length, 2_000)
 })
+
+test('a degraded run\'s caveat survives a rationale that fills the property', () => {
+  const page = built({ rationale: 'x'.repeat(3_000), judgedWithoutMusicbrainz: true })
+  const content = (page.properties['Rationale']!['rich_text'] as { text: { content: string } }[])[0]!
+
+  assert.equal(content.text.content.length, 2_000)
+  assert.match(content.text.content, /without MusicBrainz/i)
+})

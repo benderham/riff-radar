@@ -1668,6 +1668,8 @@ const idleSteps = (count: number): TracedStep[] =>
     kind: 'action' as const,
     modelResponse: null,
     toolResult: null,
+    toolName: null,
+    failureCategory: null,
     error: null,
     // Never null on a step the system wrote (ticket 03), so never null here.
     candidatesAfter: '[]',
@@ -1760,4 +1762,206 @@ test('a resume states what it inherited before it starts', async () => {
 test('a fresh run says nothing about inheriting anything', async () => {
   const { lines } = await run(scriptedModel(finishes([])).port, { dryRun: true })
   assert.deepEqual(lines, [])
+})
+
+// ── Giving up on MusicBrainz (ticket 05) ─────────────────────────────────────
+
+/**
+ * Sources answer; MusicBrainz answers however the test says, in order, the last
+ * answer repeating. `0` is a blocked provider — no answer at all, which is what
+ * Ben's own machine gets — and 503 is a provider having trouble.
+ *
+ * `asked` counts searches only. A lookup that succeeds goes on to ask about
+ * labels, genres and personnel, and those follow-ups would make "how many
+ * lookups reached the network" unreadable.
+ */
+const musicbrainzAnswering = (...statuses: readonly number[]) => {
+  const asked: string[] = []
+  let index = 0
+  const http: HttpPort = {
+    patch: notPatched,
+    get: async (url) => {
+      if (!isMusicbrainz(url)) {
+        return { status: 200, attempts: 1, headers: { 'content-type': 'text/html' }, body: PAGE }
+      }
+      // Statuses answer searches. A lookup that succeeds goes on to ask about
+      // labels, genres and personnel, and letting those consume the list would
+      // make "the second lookup" mean whichever request happened to be second.
+      if (!url.includes('query=')) {
+        return { status: 200, attempts: 1, headers: { 'content-type': 'application/json' }, body: musicbrainzBody(url) }
+      }
+      asked.push(url)
+      const status = statuses[Math.min(index++, statuses.length - 1)] ?? 200
+      return status === 200
+        ? { status, attempts: 1, headers: { 'content-type': 'application/json' }, body: musicbrainzBody(url) }
+        : { status, attempts: 3, headers: {}, body: '' }
+    },
+    post: async () => ({ status: 200, attempts: 1, headers: { 'content-type': 'text/html' }, body: PAGE }),
+  }
+  return { http, asked }
+}
+
+/** What a source says when MusicBrainz cannot be asked: the format, in words. */
+const EXTRACTED_WITH_FORMATS = JSON.stringify({
+  candidates: RELEASES.map((release) => ({ ...release, releaseDate: '2026-09-12', format: 'album' })),
+})
+
+const statingFormats = scriptedModelExtracting(EXTRACTED_WITH_FORMATS)
+
+/** A shortlist item as a degraded run can honestly propose one: no id to give. */
+const unverifiedItem = (index: number): ShortlistItem => {
+  const { musicbrainzId: _none, ...rest } = item(index)
+  return { ...rest, unverified: true }
+}
+
+for (const [what, status] of [['a blocked provider', 0], ['a 503', 503]] as const) {
+  test(`two silent lookups against ${what} degrade the run, and it finishes anyway`, async () => {
+    const { http, asked } = musicbrainzAnswering(status)
+    const model = statingFormats(
+      proposes('fetch_source', '{"source_id": "loudwire"}'),
+      proposes('lookup_release', JSON.stringify(RELEASES[0])),
+      proposes('lookup_release', JSON.stringify(RELEASES[1])),
+      proposes('lookup_release', JSON.stringify(RELEASES[2])),
+      finishes([unverifiedItem(1)]),
+    )
+    const { outcome, runRow, stepRows } = await run(model.port, { http, dryRun: true })
+
+    assert.equal(outcome.terminationReason, 'completed_short', 'a degraded run still ends normally')
+    assert.equal(runRow?.['musicbrainz_degraded'], 1)
+    assert.equal(asked.length, 2, 'the third lookup asks nothing: two silences were enough')
+
+    // The trace says what kind of thing stopped, and what the verdict now rests
+    // on, on the step that made no request at all.
+    const third = stepRows.filter((step) => step['tool_name'] === 'lookup_release')[2]
+    assert.equal(third?.['failure_category'], 'unavailable')
+    assert.match(String(third?.['tool_result']), /reissue or remaster/)
+    assert.match(String(third?.['warning']), /MusicBrainz is unavailable/)
+  })
+}
+
+test('one silence followed by an answer is not a degraded run', async () => {
+  const { http, asked } = musicbrainzAnswering(503, 200)
+  const model = statingFormats(
+    proposes('fetch_source', '{"source_id": "loudwire"}'),
+    proposes('lookup_release', JSON.stringify(RELEASES[0])),
+    proposes('lookup_release', JSON.stringify(RELEASES[1])),
+    proposes('lookup_release', JSON.stringify(RELEASES[2])),
+    finishes([item(2)]),
+  )
+  const { outcome, runRow } = await run(model.port, { http, dryRun: true })
+
+  assert.equal(outcome.terminationReason, 'completed_short')
+  assert.equal(runRow?.['musicbrainz_degraded'], 0)
+  assert.equal(asked.length, 3, 'a provider that answered is still asked')
+})
+
+test('a lookup that answers clears what the silence before it counted', async () => {
+  // The reset, at the loop rather than in the replay: silence, an answer, then
+  // silence again is one failure, not two, and the run is not degraded.
+  const { http, asked } = musicbrainzAnswering(503, 200, 503)
+  const model = statingFormats(
+    proposes('fetch_source', '{"source_id": "loudwire"}'),
+    proposes('lookup_release', JSON.stringify(RELEASES[0])),
+    proposes('lookup_release', JSON.stringify(RELEASES[1])),
+    proposes('lookup_release', JSON.stringify(RELEASES[2])),
+    finishes([item(2)]),
+  )
+  const { outcome, runRow } = await run(model.port, { http, dryRun: true })
+
+  assert.equal(outcome.terminationReason, 'completed_short')
+  assert.equal(runRow?.['musicbrainz_degraded'], 0)
+  assert.equal(asked.length, 3, 'every lookup reached MusicBrainz')
+})
+
+test('a degraded run over a calendar that states no formats still proposes', async () => {
+  // Run `e480b9c1` on Ben's own machine, in miniature: MusicBrainz blocked, and
+  // thirteen of fourteen candidates with no stated format. Before his decision
+  // of 17 September this ended `no_candidates` with an empty shortlist, which
+  // is the dead run ADR-0052 exists to prevent.
+  const { http } = musicbrainzAnswering(0)
+  const model = scriptedModel(
+    proposes('fetch_source', '{"source_id": "loudwire"}'),
+    proposes('lookup_release', JSON.stringify(RELEASES[0])),
+    proposes('lookup_release', JSON.stringify(RELEASES[1])),
+    finishes([unverifiedItem(1), unverifiedItem(2)]),
+  )
+  const { outcome, runRow } = await run(model.port, { http, dryRun: true })
+
+  assert.equal(outcome.terminationReason, 'completed_short')
+  assert.equal(outcome.shortlistSize, 2, 'silence is the calendar\'s word, not a refusal')
+  assert.equal(runRow?.['musicbrainz_degraded'], 1)
+})
+
+test('a degraded run still refuses what a source described as something else', async () => {
+  // The other half of the decision: silence is trusted, a statement is not
+  // overruled. A source calling it a live album still ends the proposal.
+  const { http } = musicbrainzAnswering(0)
+  const live = JSON.stringify({
+    candidates: RELEASES.map((release) => ({ ...release, releaseDate: '2026-09-12', format: 'live album' })),
+  })
+  const model = scriptedModelExtracting(live)(
+    proposes('fetch_source', '{"source_id": "loudwire"}'),
+    proposes('lookup_release', JSON.stringify(RELEASES[0])),
+    proposes('lookup_release', JSON.stringify(RELEASES[1])),
+    finishes([unverifiedItem(1)]),
+  )
+  const { outcome, stepRows } = await run(model.port, { http, dryRun: true })
+
+  assert.equal(outcome.terminationReason, 'validation_failed')
+  assert.match(String(finishRow(stepRows)['error']), /the source called it a live album/)
+})
+
+test('a degraded run says so on every proposal that rests on it', async () => {
+  const { http } = musicbrainzAnswering(0)
+  const model = statingFormats(
+    proposes('fetch_source', '{"source_id": "loudwire"}'),
+    proposes('lookup_release', JSON.stringify(RELEASES[0])),
+    proposes('lookup_release', JSON.stringify(RELEASES[1])),
+    finishes([unverifiedItem(1)]),
+  )
+  const { outcome, written } = await run(model.port, { http })
+
+  assert.equal(outcome.shortlist[0]?.judgedWithoutMusicbrainz, true)
+  assert.equal(written.length, 1)
+  const rationale = JSON.stringify(written[0]?.properties['Rationale'])
+  assert.match(rationale, /without MusicBrainz/i)
+})
+
+test('a resume works out for itself that MusicBrainz is still unavailable', async () => {
+  // The counter is recomputed from the trailing lookups rather than stored:
+  // ADR-0046 stores only what cannot be derived.
+  const { http, asked } = musicbrainzAnswering(0)
+  const killed = statingFormats(
+    proposes('fetch_source', '{"source_id": "loudwire"}'),
+    proposes('lookup_release', JSON.stringify(RELEASES[0])),
+    proposes('lookup_release', JSON.stringify(RELEASES[1])),
+    finishes([unverifiedItem(1)]),
+  )
+  const first = await run(killed.port, { http, dryRun: true })
+  assert.equal(asked.length, 2, 'the run being continued had already given up')
+
+  // Its first three steps, as a run that was killed before it could finish.
+  const store = openStore(':memory:')
+  const parent = killedAfter(store, first.store.stepsOf(first.outcome.runId).slice(0, 3))
+
+  const resumed = statingFormats(
+    proposes('lookup_release', JSON.stringify(RELEASES[2])),
+    finishes([unverifiedItem(1)]),
+  )
+  const { outcome, runRow } = await run(resumed.port, {
+    http,
+    store,
+    dryRun: true,
+    resumeRunId: parent,
+  })
+
+  assert.equal(asked.length, 2, 'the resumed run asks nothing either')
+  assert.equal(runRow?.['musicbrainz_degraded'], 1)
+  assert.equal(outcome.terminationReason, 'completed_short')
+
+  // The parent says so on its own row too: it is the run that gave up, and a
+  // count of degraded runs that missed the killed ones would be wrong about
+  // exactly the runs this feature exists for.
+  const parentRow = store.database.prepare('SELECT * FROM runs WHERE run_id = ?').get(parent)
+  assert.equal(parentRow?.['musicbrainz_degraded'], 1)
 })
