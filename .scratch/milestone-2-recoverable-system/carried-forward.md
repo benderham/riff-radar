@@ -41,3 +41,29 @@ The EP thresholds — 4 tracks, 20 minutes — have never fired outside their un
 ## 6. No human verdict exists
 
 Nine records sit at `Status = Proposed`. Until Ben sets a Status and a Rating on them, nothing in this project has been measured against whether the recommendations are any good — only against whether the machinery works. Milestone 3's evaluation has no baseline until that happens.
+
+# Carried forward from milestone 2
+
+Same rule as above: each item was found by a real run, and each has evidence behind it. Evidence: `docs/evidence/milestone-2.md`.
+
+## 7. The step ceiling now breaks the *recovery*, not just the first run
+
+Item 1 above was about a busy week costing a run. Milestone 2 produced the case that matters more: `d5d6e816`, a re-run over a fourteen-day window with five fewer candidates than the run before it, used all thirty steps — twenty-one of them lookups — and wrote nothing, for $0.0294. A re-run is what recovery looks like, and on a wide window recovery cannot finish.
+
+The two directions ADR-0044 named are unchanged: one action that looks several releases up, or the code rather than the model choosing which candidates deserve one. Nothing about this is a recovery problem, which is why milestone 2 deliberately left it alone.
+
+Evidence: `d5d6e816`, and `d2b59538` at 27 of 30 on the same window.
+
+## 8. A live kill between two page creations was attempted and not achieved
+
+Criterion 7's live pair proves that a killed run's rows are suppressed by the next run. It does not show a shortlist *split* across two runs, because both attempts to kill a run between two page creations missed: five creates are fast, and the second attempt's run never reached `finish`. The mechanism is covered deterministically by a test, and the gap is that ADR-0051's accepted consequence — a shortlist split across two runs, so Rank is per run — has still never happened for real.
+
+Cheap if it is ever wanted: a run that writes a shortlist of five while a poller kills it on the first new row will eventually land mid-write; it is a matter of buying attempts.
+
+## 9. A cost report that sums `runs.estimated_cost` will omit every killed run
+
+`d2b59538`'s row reads `$0.0000` and its steps read `$0.0437`, because a run row is written at the end. `npm run trace` already totals from steps (ADR-0050). Milestone 3's failure and cost reporting has to do the same, or it will be blind to exactly the runs it exists to describe.
+
+## 10. Degraded mode is evidenced by tests and a diary entry, not by an exported trace
+
+Runs `e480b9c1` and `3e657aa3` on Ben's machine are the real thing and are still only in his local database. `docs/evidence/milestone-2.md` carries the export command; until it is run, the criterion rests on unit tests and on the diary.

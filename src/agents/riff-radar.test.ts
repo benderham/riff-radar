@@ -1139,6 +1139,45 @@ test('re-running a week after a write proposes nothing twice', async () => {
   )
 })
 
+test('a run killed part way through its write leaves rows the next run suppresses', async () => {
+  // The kill itself cannot be staged in process: every failure a fake can
+  // produce triggers the compensating rollback (ADR-0042), and a killed
+  // process rolls nothing back. So what is constructed here is the state a
+  // kill leaves — a run row that never recorded a write, and two of its three
+  // pages still in Notion — and what is asserted is the next run's behaviour,
+  // which reads Notion rather than the run row (ADR-0051).
+  const store = openStore(':memory:')
+  const killed = killedAfter(store, await prefixOfARealRun(2))
+  const wrote = RELEASES.slice(0, 2).map((release) => ({ ...release }))
+
+  const left = RELEASES[2] as { artist: string; title: string }
+  const second = await run(
+    scriptedModel(
+      proposes('fetch_source', '{"source_id": "loudwire"}'),
+      proposes('lookup_release', JSON.stringify({ artist: left.artist, title: left.title })),
+      finishes([item(3, { rank: 1 })]),
+    ).port,
+    { store, alreadyInNotion: wrote },
+  )
+
+  const killedRow = store.database.prepare('SELECT * FROM runs WHERE run_id = ?').get(killed)
+  assert.equal(killedRow?.['notion_write_performed'], 0, 'the killed run never recorded its write')
+  assert.equal(killedRow?.['termination_reason'], null, 'nor did it record an ending')
+
+  const fetched = JSON.parse(String(second.stepRows[0]?.['tool_result']))
+  assert.equal(fetched.alreadyProposed, 2, 'the rows the killed run did write are suppressed')
+
+  const plain = (property: Record<string, unknown> | undefined): string =>
+    ((property?.['title'] ?? property?.['rich_text']) as { text: { content: string } }[])[0]?.text
+      .content ?? ''
+  assert.deepEqual(
+    second.written.map((page) => plain(page.properties['Artist'])),
+    ['Blood Incantation'],
+    'only what is left is proposed, and nothing twice',
+  )
+  assert.equal(second.outcome.notionWritePerformed, true)
+})
+
 test('a suppression read that fails refuses the run, leaving no row behind', async () => {
   const store = openStore(':memory:')
   // The schema is described, so the preflight passes and the query is what fails.
