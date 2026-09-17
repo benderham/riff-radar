@@ -17,17 +17,18 @@
 export const NO_ANSWER = 0
 
 /**
- * Structural rather than `HttpResponse`, because the domain imports nothing
- * from the layers above it — and because the three fields always travel
- * together, which is what makes passing them one at a time a clump.
+ * The response, structurally: the domain imports nothing from the layers above
+ * it, and the three fields always travel together anyway.
  */
-interface Answered {
-  readonly status: number
-  readonly body: string
-  readonly attempts: number
-}
-
-export const describeStatus = ({ status, body, attempts }: Answered): string => {
+export const describeStatus = ({
+  status,
+  body,
+  attempts,
+}: {
+  status: number
+  body: string
+  attempts: number
+}): string => {
   const what = status === NO_ANSWER ? `no answer: ${body}` : `HTTP ${status}`
 
   return attempts > 1 ? `${what} after ${attempts} attempts` : what
@@ -54,7 +55,7 @@ export const retriedNote = (what: string, attempts: number): string | undefined 
  * `exactOptionalPropertyTypes`.
  */
 export const warned = (...notes: readonly (string | undefined)[]): { warning?: string } => {
-  const said = notes.filter((note) => note !== undefined && note !== '').join('; ')
+  const said = notes.filter(Boolean).join('; ')
 
-  return said === '' ? {} : { warning: said }
+  return said ? { warning: said } : {}
 }

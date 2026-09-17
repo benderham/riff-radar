@@ -7,9 +7,11 @@
  * (ADR-0018), and this is the one implementation that really waits.
  */
 
+import { setTimeout as wait } from 'node:timers/promises'
+
 import type { ClockPort } from '../ports.ts'
 
 export const systemClock: ClockPort = {
   now: () => new Date(),
-  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  sleep: (ms) => wait(ms),
 }

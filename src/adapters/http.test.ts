@@ -32,16 +32,6 @@ const recordingClock = (): ClockPort & { readonly waits: number[] } => {
   }
 }
 
-const respondWith = (body: string, init: ResponseInit = {}) => {
-  const calls: { url: string; init: RequestInit }[] = []
-  const fetchImpl = async (url: string | URL | Request, requestInit: RequestInit = {}) => {
-    calls.push({ url: String(url), init: requestInit })
-    return new Response(body, init)
-  }
-  const clock = recordingClock()
-  return { calls, clock, http: httpAdapter(clock, fetchImpl as typeof fetch) }
-}
-
 /** Each entry answers one attempt; the last one answers every attempt after it. */
 const serving = (answers: readonly [string, ResponseInit][]) => {
   const calls: { url: string; init: RequestInit }[] = []
@@ -55,10 +45,9 @@ const serving = (answers: readonly [string, ResponseInit][]) => {
 }
 
 test('status, headers and body all come back', async () => {
-  const { http } = respondWith('<html>Ulcerate</html>', {
-    status: 200,
-    headers: { 'content-type': 'text/html; charset=utf-8' },
-  })
+  const { http } = serving([
+    ['<html>Ulcerate</html>', { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } }],
+  ])
 
   const response = await http.get('https://example.test/metal')
   assert.equal(response.status, 200)
@@ -67,7 +56,7 @@ test('status, headers and body all come back', async () => {
 })
 
 test('the request identifies the project and carries a timeout', async () => {
-  const { calls, http } = respondWith('ok')
+  const { calls, http } = serving([['ok', {}]])
   await http.get('https://example.test/metal')
 
   const [call] = calls
@@ -78,7 +67,7 @@ test('the request identifies the project and carries a timeout', async () => {
 })
 
 test('a non-2xx response is returned, not thrown: the caller decides', async () => {
-  const { http } = respondWith('go away', { status: 403 })
+  const { http } = serving([['go away', { status: 403 }]])
 
   const response = await http.get('https://example.test/metal')
   assert.equal(response.status, 403)
@@ -90,7 +79,7 @@ test('a non-2xx response is returned, not thrown: the caller decides', async () 
 // failure comes back as a response nobody has to catch, carrying its cause.
 
 test('a caller may add headers, and still identifies the project', async () => {
-  const { calls, http } = respondWith('{}')
+  const { calls, http } = serving([['{}', {}]])
   await http.get('https://example.test/search', { 'x-subscription-token': 'secret' })
 
   const headers = calls[0]?.init.headers as Record<string, string>
@@ -99,7 +88,7 @@ test('a caller may add headers, and still identifies the project', async () => {
 })
 
 test('a post sends the body, the method and the content type', async () => {
-  const { calls, http } = respondWith('{"results":[]}')
+  const { calls, http } = serving([['{"results":[]}', {}]])
   await http.post('https://example.test/search', '{"query":"ulcerate"}', {
     authorization: 'Bearer secret',
   })
@@ -115,7 +104,7 @@ test('a post sends the body, the method and the content type', async () => {
 })
 
 test('a post returns a non-2xx rather than throwing, like a get', async () => {
-  const { http } = respondWith('unauthorized', { status: 401 })
+  const { http } = serving([['unauthorized', { status: 401 }]])
 
   const response = await http.post('https://example.test/search', '{}')
   assert.equal(response.status, 401)
@@ -239,7 +228,7 @@ test('an answer is an answer: refused, not found and malformed cost one attempt 
 })
 
 test('a success costs one attempt and reports it, so every response carries a count', async () => {
-  const { http } = respondWith('ok')
+  const { http } = serving([['ok', {}]])
 
   const response = await http.get('https://example.test/metal')
   assert.equal(response.attempts, 1)

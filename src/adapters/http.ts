@@ -66,7 +66,7 @@ const backoffMs = (attempt: number): number =>
 const retryAfterMs = (header: string | undefined, now: number): number | undefined => {
   if (header === undefined) return undefined
 
-  const seconds = Number(header.trim())
+  const seconds = Number(header)
   const ms = Number.isFinite(seconds) ? seconds * 1_000 : Date.parse(header) - now
 
   if (!Number.isFinite(ms) || ms <= 0) return undefined
@@ -109,13 +109,12 @@ const because = (error: unknown): string => {
   return [self, inner].filter(Boolean).join(': ')
 }
 
-const tried = async (request: () => Promise<Omit<HttpResponse, 'attempts'>>) => {
-  try {
-    return await request()
-  } catch (error) {
-    return { status: NO_ANSWER, headers: {}, body: because(error) }
-  }
-}
+/** What a request that never got an answer comes back as (ADR-0043). */
+const noAnswer = (error: unknown): Omit<HttpResponse, 'attempts'> => ({
+  status: NO_ANSWER,
+  headers: {},
+  body: because(error),
+})
 
 /**
  * Up to three attempts, and then whatever the third one said.
@@ -131,7 +130,7 @@ const attempted = async (
   request: () => Promise<Omit<HttpResponse, 'attempts'>>,
 ): Promise<HttpResponse> => {
   for (let attempt = 1; ; attempt += 1) {
-    const response = { ...(await tried(request)), attempts: attempt }
+    const response = { ...(await request().catch(noAnswer)), attempts: attempt }
     const category = categoriseFailure(response.status, response.body)
 
     if (attempt >= HTTP_MAX_ATTEMPTS || category === undefined || !isRetryable(category)) {
