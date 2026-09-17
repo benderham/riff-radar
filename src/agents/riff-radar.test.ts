@@ -1077,6 +1077,11 @@ test('a vibe note cited in the stored source text scores; an invented one does n
 
 // ── Suppression: what Notion already holds never reaches the model ───────────
 
+/** What a Notion property says, for the tests that read the pages a write created. */
+const plain = (property: Record<string, unknown> | undefined): string =>
+  ((property?.['title'] ?? property?.['rich_text']) as { text: { content: string } }[])[0]?.text
+    .content ?? ''
+
 test('a release already in Notion is never offered to the model', async () => {
   const model = scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), ...looksUpThenFinishes(3))
   const { stepRows } = await run(model.port, {
@@ -1114,10 +1119,6 @@ test('re-running a week after a write proposes nothing twice', async () => {
   // Read back out of the pages the write actually created, not out of the
   // finish step: what suppression reads next Friday is the cell, and a cell
   // written under a name suppression does not look for would suppress nothing.
-  const plain = (property: Record<string, unknown> | undefined): string =>
-    ((property?.['title'] ?? property?.['rich_text']) as { text: { content: string } }[])[0]?.text
-      .content ?? ''
-
   const proposed = first.written.map((page) => ({
     artist: plain(page.properties['Artist']),
     title: plain(page.properties['Album']),
@@ -1137,6 +1138,42 @@ test('re-running a week after a write proposes nothing twice', async () => {
     ).length,
     0,
   )
+})
+
+test('a run killed part way through its write leaves rows the next run suppresses', async () => {
+  // The kill itself cannot be staged in process: every failure a fake can
+  // produce triggers the compensating rollback (ADR-0042), and a killed
+  // process rolls nothing back. So what is constructed here is the state a
+  // kill leaves — a run row that never recorded a write, and two of its three
+  // pages still in Notion — and what is asserted is the next run's behaviour,
+  // which reads Notion rather than the run row (ADR-0051).
+  const store = openStore(':memory:')
+  killedAfter(store, await prefixOfARealRun(2))
+  const wrote = RELEASES.slice(0, 2).map((release) => ({ ...release }))
+
+  const left = RELEASES[2] as { artist: string; title: string }
+  const second = await run(
+    scriptedModel(
+      proposes('fetch_source', '{"source_id": "loudwire"}'),
+      proposes('lookup_release', JSON.stringify({ artist: left.artist, title: left.title })),
+      finishes([item(3, { rank: 1 })]),
+    ).port,
+    { store, alreadyInNotion: wrote },
+  )
+
+  // The killed run's row is the premise, not a result: `killedAfter` leaves it
+  // with no termination reason and `notion_write_performed = 0`, which is what
+  // a process that died before its own ending leaves behind.
+
+  const fetched = JSON.parse(String(second.stepRows[0]?.['tool_result']))
+  assert.equal(fetched.alreadyProposed, 2, 'the rows the killed run did write are suppressed')
+
+  assert.deepEqual(
+    second.written.map((page) => plain(page.properties['Artist'])),
+    ['Blood Incantation'],
+    'only what is left is proposed, and nothing twice',
+  )
+  assert.equal(second.outcome.notionWritePerformed, true)
 })
 
 test('a suppression read that fails refuses the run, leaving no row behind', async () => {
