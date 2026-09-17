@@ -29,6 +29,19 @@ export const cell = (value: unknown, width: number): string => {
   return (text.length >= width ? `${text.slice(0, width - 2)}… ` : text).padEnd(width)
 }
 
+/**
+ * What a step has to say, in one line: the category first, then the prose.
+ *
+ * The category leads because it is the countable half — a column of
+ * `[transient]` reads down the page in a way a sentence does not — and because
+ * a step can carry one without prose of its own.
+ */
+export const noteOf = (step: Record<string, unknown>): string => {
+  const said = step['error'] ?? step['warning'] ?? ''
+  const category = step['failure_category'] == null ? '' : `[${step['failure_category']}] `
+  return `${category}${said}`
+}
+
 // Nothing runs on import: the formatting above is tested, and this is a script.
 if (process.argv[1]?.endsWith('trace.ts')) {
   const database = new DatabaseSync(DATABASE_PATH, { readOnly: true })
@@ -81,7 +94,7 @@ if (process.argv[1]?.endsWith('trace.ts')) {
 
   console.log(`${cell('#', 4)}${cell('kind', 14)}${cell('tool', 16)}${cell('args', 46)}${cell('ms', 7)}note`)
   for (const step of steps) {
-    const note = step['error'] ?? step['warning'] ?? ''
+    const note = noteOf(step)
     console.log(
       cell(step['step_index'], 4) +
         cell(step['kind'], 14) +

@@ -34,6 +34,8 @@ import {
   releaseIdentityOf,
 } from './domain/candidates.ts'
 import { isEligible } from './domain/eligibility.ts'
+import type { FailureCategory } from './domain/failure.ts'
+import { optionalCategory } from './domain/failure.ts'
 import type { Usage } from './domain/cost.ts'
 import type { ShortlistItem } from './domain/shortlist.ts'
 import { shortlistItemSchema } from './domain/shortlist.ts'
@@ -56,6 +58,8 @@ export type Dispatch =
       readonly cacheReported?: boolean
       /** Something the run should record but not stop for. */
       readonly warning?: string
+      /** What kind of external thing produced that warning, when one did (ADR-0048). */
+      readonly failureCategory?: FailureCategory
     }
   | { readonly done: true; readonly shortlist: readonly ShortlistItem[] }
 
@@ -122,12 +126,17 @@ export const tools = {
       const suppressed = merged.length - context.candidates.length
 
       const warning = fetched.warning === undefined ? {} : { warning: fetched.warning }
+      // The category belongs to the step and not to the model's reading of it:
+      // it is a fact about the call, and the model is told what happened in
+      // words, as it always was.
+      const category = optionalCategory(fetched.failureCategory)
 
       return {
         done: false,
         usage: fetched.usage,
         cacheReported: fetched.cacheReported,
         ...warning,
+        ...category,
         // The model is handed candidates rather than the page. The candidates
         // are the merged set rather than this page's, because `finish` needs
         // every source URL a release was seen on — but a page is an order of
@@ -212,6 +221,7 @@ export const tools = {
       return {
         done: false,
         ...(found.warning === undefined ? {} : { warning: found.warning }),
+        ...optionalCategory(found.failureCategory),
         result: JSON.stringify({
           artist,
           title,
@@ -244,6 +254,7 @@ export const tools = {
       return {
         done: false,
         ...(search.warning === undefined ? {} : { warning: search.warning }),
+        ...optionalCategory(search.failureCategory),
         result: JSON.stringify({
           query,
           found: search.results.length,

@@ -11,6 +11,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
+import type { FailureCategory } from '../domain/failure.ts'
 import type { TerminationReason } from '../domain/run.ts'
 
 const SCHEMA = readFileSync(fileURLToPath(new URL('./schema.sql', import.meta.url)), 'utf8')
@@ -55,6 +56,12 @@ export interface RecordedStep {
   readonly error: string | null
   /** Recorded, not stopped for: a source that returned nothing usable. */
   readonly warning: string | null
+  /**
+   * What kind of external thing broke, beside the prose in `error` or
+   * `warning` that says it in words (ADR-0048). Null on a step where nothing
+   * outside the run failed, which is most of them.
+   */
+  readonly failureCategory: FailureCategory | null
   readonly uncachedInputTokens: number
   readonly cachedInputTokens: number
   readonly outputTokens: number
@@ -124,19 +131,22 @@ const assertSchemaIsCurrent = (database: DatabaseSync, path: string): void => {
     .all()
     .map((row) => row['name'] as string)
 
-  for (const table of tables) {
-    const missing = columnsOf(expected, table).filter(
+  // Every table, not the first one that disagrees: a schema change touching two
+  // tables would otherwise be reported half at a time, and the file deleted
+  // twice to learn the same thing.
+  const missing = tables.flatMap((table) => {
+    const absent = columnsOf(expected, table).filter(
       (column) => !columnsOf(database, table).includes(column),
     )
-    if (missing.length > 0) {
-      expected.close()
-      throw new Error(
-        `${path} was written by an older schema (${table} is missing ${missing.join(', ')}). ` +
-          `Delete the file and run again.`,
-      )
-    }
-  }
+    return absent.length === 0 ? [] : [`${table} is missing ${absent.join(', ')}`]
+  })
   expected.close()
+
+  if (missing.length > 0) {
+    throw new Error(
+      `${path} was written by an older schema (${missing.join('; ')}). Delete the file and run again.`,
+    )
+  }
 }
 
 export const openStore = (path: string): Store => {
@@ -174,9 +184,9 @@ export const openStore = (path: string): Store => {
           `INSERT INTO steps (
              step_id, run_id, step_index, timestamp, duration_ms, kind,
              model_response, proposed_action, validation_result, dispatched_action,
-             tool_name, tool_args, tool_result, error, warning,
+             tool_name, tool_args, tool_result, error, warning, failure_category,
              uncached_input_tokens, cached_input_tokens, output_tokens, cost
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           step.stepId,
@@ -194,6 +204,7 @@ export const openStore = (path: string): Store => {
           step.toolResult,
           step.error,
           step.warning,
+          step.failureCategory,
           step.uncachedInputTokens,
           step.cachedInputTokens,
           step.outputTokens,

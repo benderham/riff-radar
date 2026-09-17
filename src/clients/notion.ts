@@ -29,6 +29,7 @@ import { NOTION_ENDPOINT, NOTION_PAGE_SIZE, NOTION_PROPERTIES, NOTION_VERSION } 
 import { artistTitleIdentity } from '../domain/candidates.ts'
 import { notionPage } from '../domain/notion-page.ts'
 import type { ShortlistItem } from '../domain/shortlist.ts'
+import { categoriseFailure, categoryOf, withCategory } from '../domain/failure.ts'
 import { describeStatus } from '../domain/http-outcome.ts'
 import type { Ports } from '../ports.ts'
 import { coverArtUrl } from './coverart.ts'
@@ -52,6 +53,16 @@ export class SchemaMismatch extends NotionRefusal {}
  * rollback is the part that matters.
  */
 export class NotionWriteFailed extends Error {}
+
+/**
+ * A refusal, carrying what kind of refusal it was.
+ *
+ * Notion is the one provider whose failures throw rather than return (ADR-0039:
+ * a suppression read that fails refuses the run), so the category travels on
+ * the error to the step that records it, instead of being re-read from prose.
+ */
+const refusal = <E extends Error>(error: E, status: number, body: string): E =>
+  withCategory(error, categoriseFailure(status, body))
 
 /**
  * Only the three properties identity needs, and every one of them optional:
@@ -131,8 +142,12 @@ export const suppressedReleases = async (
     if (response.status < 200 || response.status >= 300) {
       // The body is not repeated: Notion echoes the request in its errors, and
       // the request carries the database id and could carry the token.
-      throw new SuppressionUnavailable(
-        `Notion refused the suppression query with ${describeStatus(response.status, response.body)}`,
+      throw refusal(
+        new SuppressionUnavailable(
+          `Notion refused the suppression query with ${describeStatus(response.status, response.body)}`,
+        ),
+        response.status,
+        response.body,
       )
     }
 
@@ -140,8 +155,9 @@ export const suppressedReleases = async (
     try {
       parsed = querySchema.parse(JSON.parse(response.body))
     } catch (error) {
-      throw new SuppressionUnavailable(
-        `Notion's answer was not the shape this reads: ${(error as Error).message}`,
+      throw withCategory(
+        new SuppressionUnavailable(`Notion's answer was not the shape this reads: ${(error as Error).message}`),
+        'malformed',
       )
     }
 
@@ -179,8 +195,12 @@ export const preflightSchema = async (
   const response = await ports.http.get(`${NOTION_ENDPOINT}/databases/${databaseId}`, headersFor(token))
 
   if (response.status < 200 || response.status >= 300) {
-    throw new SchemaMismatch(
-      `Notion refused to describe the database with ${describeStatus(response.status, response.body)}`,
+    throw refusal(
+      new SchemaMismatch(
+        `Notion refused to describe the database with ${describeStatus(response.status, response.body)}`,
+      ),
+      response.status,
+      response.body,
     )
   }
 
@@ -188,7 +208,10 @@ export const preflightSchema = async (
   try {
     properties = schemaResponse.parse(JSON.parse(response.body)).properties
   } catch (error) {
-    throw new SchemaMismatch(`Notion's description of the database was unreadable: ${(error as Error).message}`)
+    throw withCategory(
+      new SchemaMismatch(`Notion's description of the database was unreadable: ${(error as Error).message}`),
+      'malformed',
+    )
   }
 
   const problems = Object.entries(NOTION_PROPERTIES).flatMap(([name, expected]) => {
@@ -212,7 +235,11 @@ const createPage = async (
   if (response.status < 200 || response.status >= 300) {
     // Notion echoes the request in its errors, and the request carries the
     // database id; the status is what says what to do about it.
-    throw new NotionWriteFailed(`Notion refused a page with ${describeStatus(response.status, response.body)}`)
+    throw refusal(
+      new NotionWriteFailed(`Notion refused a page with ${describeStatus(response.status, response.body)}`),
+      response.status,
+      response.body,
+    )
   }
 
   return z.object({ id: z.string() }).parse(JSON.parse(response.body)).id
@@ -226,7 +253,11 @@ const archivePage = async (ports: Ports, token: string, pageId: string): Promise
     headersFor(token),
   )
   if (response.status < 200 || response.status >= 300) {
-    throw new Error(`${describeStatus(response.status, response.body)} archiving ${pageId}`)
+    throw refusal(
+      new Error(`${describeStatus(response.status, response.body)} archiving ${pageId}`),
+      response.status,
+      response.body,
+    )
   }
 }
 
@@ -285,9 +316,14 @@ export const proposeShortlist = async (
       }
     }
 
-    throw new NotionWriteFailed(
-      `${(error as Error).message}; ${created.length} page(s) written and rolled back` +
-        (undone.length === 0 ? '' : `, except: ${undone.join('; ')}`),
+    // The rollback's own failures are appended to the message, but the category
+    // is the one that stopped the write: that is the call the step is about.
+    throw withCategory(
+      new NotionWriteFailed(
+        `${(error as Error).message}; ${created.length} page(s) written and rolled back` +
+          (undone.length === 0 ? '' : `, except: ${undone.join('; ')}`),
+      ),
+      categoryOf(error),
     )
   }
 

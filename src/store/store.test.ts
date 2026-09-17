@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 
+import { FAILURE_CATEGORIES } from '../domain/failure.ts'
 import { TERMINATION_REASONS } from '../domain/run.ts'
 import type { RecordedStep } from './store.ts'
 import { openStore } from './store.ts'
@@ -15,13 +16,14 @@ const RUN_COLUMNS = [
   'prompt_version', 'profile_version', 'action_schema_version', 'model_id',
   'termination_reason', 'uncached_input_tokens', 'cached_input_tokens', 'output_tokens',
   'estimated_cost', 'shortlist_size', 'notion_write_performed', 'cost_is_upper_bound',
+  'resumed_from', 'musicbrainz_degraded',
 ]
 
 const STEP_COLUMNS = [
   'step_id', 'run_id', 'step_index', 'timestamp', 'duration_ms', 'kind', 'model_response',
   'proposed_action', 'validation_result', 'dispatched_action', 'tool_name', 'tool_args',
-  'tool_result', 'error', 'warning', 'uncached_input_tokens', 'cached_input_tokens', 'output_tokens',
-  'cost',
+  'tool_result', 'error', 'warning', 'failure_category', 'candidates_after',
+  'uncached_input_tokens', 'cached_input_tokens', 'output_tokens', 'cost',
 ]
 
 const columnsOf = (database: DatabaseSync, table: string) =>
@@ -167,6 +169,7 @@ const step: RecordedStep = {
   toolResult: 'cleaned text',
   error: null,
   warning: null,
+  failureCategory: null,
   uncachedInputTokens: 100,
   cachedInputTokens: 20,
   outputTokens: 10,
@@ -201,6 +204,70 @@ test('a database written by an older schema is reported at open time', () => {
 
   assert.throws(() => openStore(path), /older schema \(runs is missing .*cost_is_upper_bound/)
   rmSync(path)
+})
+
+// The milestone's four new columns arrive in one schema change, so a database
+// written before them is refused once rather than twice, and the message names
+// the columns rather than the first one it noticed. Only the names matter to
+// the check, so the older schema is rebuilt from the column lists above.
+const MILESTONE_2_COLUMNS = ['resumed_from', 'musicbrainz_degraded', 'failure_category', 'candidates_after']
+
+const tableOf = (name: string, columns: readonly string[], skip: readonly string[] = []) =>
+  `CREATE TABLE ${name} (${columns.filter((column) => !skip.includes(column)).join(' TEXT, ')} TEXT);`
+
+const olderDatabaseAt = (suffix: string, sql: string): string => {
+  const path = `${tmpdir()}/riff-radar-${suffix}-${process.pid}.db`
+  const older = new DatabaseSync(path)
+  older.exec(sql)
+  older.close()
+  return path
+}
+
+test('a database written before this milestone is told all four columns at once', () => {
+  const path = olderDatabaseAt(
+    'milestone-1',
+    tableOf('runs', RUN_COLUMNS, MILESTONE_2_COLUMNS) +
+      tableOf('steps', STEP_COLUMNS, MILESTONE_2_COLUMNS) +
+      tableOf('source_texts', SOURCE_TEXT_COLUMNS),
+  )
+
+  assert.throws(() => openStore(path), (error: Error) => {
+    assert.match(error.message, /runs is missing resumed_from, musicbrainz_degraded/)
+    assert.match(error.message, /steps is missing failure_category, candidates_after/)
+    assert.match(error.message, /Delete the file and run again/)
+    return true
+  })
+
+  rmSync(path)
+})
+
+test('the schema accepts every failure category and refuses anything else', () => {
+  const store = openStore(':memory:')
+  store.startRun(started)
+
+  for (const [index, category] of FAILURE_CATEGORIES.entries()) {
+    store.recordStep({ ...step, stepId: `step-${category}`, stepIndex: index, failureCategory: category })
+  }
+  assert.equal(
+    store.database.prepare('SELECT count(*) AS n FROM steps WHERE failure_category IS NOT NULL').get()?.['n'],
+    FAILURE_CATEGORIES.length,
+  )
+
+  assert.throws(() =>
+    store.database.prepare('UPDATE steps SET failure_category = ? WHERE step_id = ?').run('broke', 'step-transient'),
+  )
+})
+
+test('a step records the category beside the prose, and null when nothing broke', () => {
+  const store = openStore(':memory:')
+  store.startRun(started)
+  store.recordStep({ ...step, warning: 'loudwire.com returned HTTP 503', failureCategory: 'transient' })
+  store.recordStep({ ...step, stepId: 'step-2', stepIndex: 1 })
+
+  const rows = store.database.prepare('SELECT * FROM steps ORDER BY step_index').all()
+  assert.equal(rows[0]?.['failure_category'], 'transient')
+  assert.equal(rows[0]?.['warning'], 'loudwire.com returned HTTP 503')
+  assert.equal(rows[1]?.['failure_category'], null)
 })
 
 const SOURCE_TEXT_COLUMNS = [
