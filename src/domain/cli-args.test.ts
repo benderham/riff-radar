@@ -68,3 +68,43 @@ test('--last-days without a value is a usage error', () => {
 test('what was typed is kept verbatim for the trace', () => {
   assert.equal(parseCliArgs(['run', '--last-days', '14', '--dry-run']).raw, 'run --last-days 14 --dry-run')
 })
+
+test('--resume names the run to continue', () => {
+  assert.deepEqual(parseCliArgs(['run', '--resume', 'abc-123']), {
+    command: 'run',
+    lastDays: 7,
+    dryRun: false,
+    resumeRunId: 'abc-123',
+    raw: 'run --resume abc-123',
+  })
+})
+
+test('--resume without a run id is a usage error', () => {
+  assert.throws(() => parseCliArgs(['run', '--resume']), UsageError)
+})
+
+// The window comes from the parent's row, so a second one is a contradiction
+// rather than an override, and guessing which was meant is what ADR-0047
+// refuses to do.
+test('--resume and a window argument together are refused', () => {
+  for (const argv of [
+    ['run', '--resume', 'abc-123', '--last-days', '14'],
+    ['run', '--last-days', '14', '--resume', 'abc-123'],
+  ]) {
+    assert.throws(() => parseCliArgs(argv), (error: unknown) => {
+      assert.ok(error instanceof UsageError)
+      assert.match(error.message, /--resume/)
+      assert.match(error.message, /--last-days/)
+      return true
+    })
+  }
+})
+
+test('a resume may still be a dry run', () => {
+  assert.equal(parseCliArgs(['run', '--resume', 'abc-123', '--dry-run']).dryRun, true)
+})
+
+test('without --resume there is no resume, even when one would be plausible', () => {
+  // ADR-0047: the absence of the flag always means a new run.
+  assert.equal(parseCliArgs(['run']).resumeRunId, undefined)
+})

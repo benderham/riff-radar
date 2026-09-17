@@ -20,6 +20,7 @@ import { runRiffRadar } from './agents/riff-radar.ts'
 import { NotionRefusal } from './clients/notion.ts'
 import { UsageError, parseCliArgs } from './domain/cli-args.ts'
 import { appleMusicSearchUrl } from './domain/notion-page.ts'
+import { ResumeRefusal } from './domain/run.ts'
 import type { ShortlistItem } from './domain/shortlist.ts'
 import { tasteProfileSchema } from './domain/taste-profile.ts'
 import type { Ports } from './ports.ts'
@@ -104,7 +105,7 @@ export const runCli = async ({
       notionDatabaseId: env['NOTION_DATABASE_ID'] ?? '',
     })
 
-    log(`run ${outcome.runId}`)
+    log(`run ${outcome.runId}${args.resumeRunId === undefined ? '' : `, resumed from ${args.resumeRunId}`}`)
     log(`window ${outcome.window.from} to ${outcome.window.to}${args.dryRun ? ' (dry run)' : ''}`)
     log(`stopped: ${outcome.terminationReason}`)
     log(
@@ -125,10 +126,11 @@ export const runCli = async ({
     // exit code would say they are.
     return outcome.notionWriteError === undefined ? EXIT_OK : EXIT_WRITE_FAILED
   } catch (error) {
-    // The two failures that are refusals rather than crashes: Notion could not
-    // be read (ADR-0039), or its database is not the one this writes to. Both
-    // happen before the run row, so nothing was spent and nothing was left.
-    if (!(error instanceof NotionRefusal)) throw error
+    // The failures that are refusals rather than crashes: Notion could not be
+    // read (ADR-0039), its database is not the one this writes to, or the run
+    // asked for by `--resume` cannot be continued. All happen before the run
+    // row, so nothing was spent and nothing was left.
+    if (!(error instanceof NotionRefusal) && !(error instanceof ResumeRefusal)) throw error
     log(`cannot start: ${error.message}`)
     return EXIT_REFUSED
   } finally {

@@ -170,6 +170,7 @@ const step: RecordedStep = {
   error: null,
   warning: null,
   failureCategory: null,
+  candidatesAfter: null,
   uncachedInputTokens: 100,
   cachedInputTokens: 20,
   outputTokens: 10,
@@ -339,5 +340,163 @@ test('a source text cannot be recorded against a run that does not exist', () =>
       candidateCount: 0,
       warning: null,
     }),
+  )
+})
+
+test('a resumed run records the run it continues', () => {
+  const store = openStore(':memory:')
+  store.startRun(started)
+  store.startRun({ ...started, runId: 'run-2', resumedFrom: 'run-1' })
+
+  assert.equal(
+    store.database.prepare('SELECT resumed_from FROM runs WHERE run_id = ?').get('run-2')?.[
+      'resumed_from'
+    ],
+    'run-1',
+  )
+  // The parent's own row says nothing about the child: the link points one way.
+  assert.equal(
+    store.database.prepare('SELECT resumed_from FROM runs WHERE run_id = ?').get('run-1')?.[
+      'resumed_from'
+    ],
+    null,
+  )
+})
+
+test('a run cannot claim to resume a run that does not exist', () => {
+  const store = openStore(':memory:')
+  assert.throws(() => store.startRun({ ...started, runId: 'run-2', resumedFrom: 'no-such-run' }))
+})
+
+test('the run a resume needs is readable by id', () => {
+  const store = openStore(':memory:')
+  store.startRun(started)
+
+  assert.deepEqual(store.runOf('run-1'), {
+    runId: 'run-1',
+    resolvedFrom: '2026-09-08',
+    resolvedTo: '2026-09-14',
+    resumedFrom: null,
+  })
+  assert.equal(store.runOf('no-such-run'), undefined)
+})
+
+test('the steps a resume replays come back in order, with what it replays them from', () => {
+  const store = openStore(':memory:')
+  store.startRun(started)
+  store.recordStep({ ...step, stepIndex: 1, stepId: 'step-b', candidatesAfter: '[]' })
+  store.recordStep({ ...step, stepIndex: 0, stepId: 'step-a', candidatesAfter: null })
+
+  assert.deepEqual(
+    store.stepsOf('run-1').map((each) => each.candidatesAfter),
+    [null, '[]'],
+  )
+  const [first] = store.stepsOf('run-1')
+  assert.equal(first?.kind, 'action')
+  assert.equal(first?.toolResult, 'cleaned text')
+  assert.equal(first?.cachedInputTokens, 20)
+})
+
+// ADR-0046: the one part of a step a resume cannot replay from what the trace
+// already holds, so what goes in has to come back out unchanged.
+test('a candidate list round-trips through the column it is stored in', () => {
+  const store = openStore(':memory:')
+  store.startRun(started)
+
+  const candidates = [
+    {
+      artist: 'Ulcerate',
+      title: 'Cutting the Throat of God',
+      releaseDates: ['2026-09-12'],
+      sourceUrls: ['https://example.test/one'],
+      label: 'Debemur Morti Productions',
+      lookup: {
+        found: true,
+        releaseGroupId: 'rg-1',
+        primaryType: 'Album',
+        secondaryTypes: [],
+        firstReleaseDate: '2026-09-12',
+        genres: ['death metal'],
+        artists: ['Ulcerate'],
+      },
+    },
+    { artist: 'Chat Pile', title: 'Cool World', releaseDates: [], sourceUrls: [], lookup: { found: false } },
+  ]
+  store.recordStep({ ...step, candidatesAfter: JSON.stringify(candidates) })
+
+  const [only] = store.stepsOf('run-1')
+  assert.deepEqual(JSON.parse(only?.candidatesAfter ?? 'null'), candidates)
+})
+
+test('an aborted run records what it spent and claims nothing else', () => {
+  const store = openStore(':memory:')
+  store.startRun(started)
+  store.abortRun({
+    runId: 'run-1',
+    endedAt: '2026-09-14T09:00:05.000Z',
+    uncachedInputTokens: 200,
+    cachedInputTokens: 40,
+    outputTokens: 20,
+    estimatedCost: 0.0002,
+  })
+
+  const row = store.database.prepare('SELECT * FROM runs WHERE run_id = ?').get('run-1')
+  assert.equal(row?.['termination_reason'], 'aborted')
+  assert.equal(row?.['ended_at'], '2026-09-14T09:00:05.000Z')
+  assert.equal(row?.['uncached_input_tokens'], 200)
+  // A run whose work was handed on is in no position to say what it produced.
+  assert.equal(row?.['shortlist_size'], 0)
+  assert.equal(row?.['notion_write_performed'], 0)
+})
+
+test('aborting keeps the one-reason-per-run guarantee, in both directions', () => {
+  const store = openStore(':memory:')
+  store.startRun(started)
+  const aborting = {
+    runId: 'run-1',
+    endedAt: '2026-09-14T09:00:05.000Z',
+    uncachedInputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+    estimatedCost: 0,
+  }
+  store.abortRun(aborting)
+
+  assert.throws(() => store.abortRun(aborting), /already ended/)
+  assert.throws(
+    () =>
+      store.finishRun({
+        ...aborting,
+        terminationReason: 'completed',
+        shortlistSize: 5,
+        notionWritePerformed: true,
+        costIsUpperBound: false,
+      }),
+    /already ended/,
+  )
+})
+
+test('a run is findable by the first few characters of its id, as the listing prints it', () => {
+  const store = openStore(':memory:')
+  store.startRun({ ...started, runId: 'f55f647d-aaaa-bbbb-cccc-dddddddddddd' })
+
+  assert.deepEqual(
+    store.runsMatching('f55f647d').map((run) => run.runId),
+    ['f55f647d-aaaa-bbbb-cccc-dddddddddddd'],
+  )
+  assert.deepEqual(store.runsMatching('nope'), [])
+  // The exact read is still exact: a chain is walked by whole ids.
+  assert.equal(store.runOf('f55f647d'), undefined)
+  assert.equal(store.runOf('f55f647d-aaaa-bbbb-cccc-dddddddddddd')?.runId, 'f55f647d-aaaa-bbbb-cccc-dddddddddddd')
+})
+
+test('an ambiguous prefix reports every run it matches, oldest first', () => {
+  const store = openStore(':memory:')
+  store.startRun({ ...started, runId: 'ab-second', startedAt: '2026-09-14T10:00:00.000Z' })
+  store.startRun({ ...started, runId: 'ab-first', startedAt: '2026-09-14T09:00:00.000Z' })
+
+  assert.deepEqual(
+    store.runsMatching('ab').map((run) => run.runId),
+    ['ab-first', 'ab-second'],
   )
 })

@@ -26,6 +26,12 @@ export interface StartedRun {
   readonly profileVersion: number
   readonly actionSchemaVersion: number
   readonly modelId: string
+  /**
+   * The run this one continues, when it is a resume (ADR-0047). A resume is a
+   * new row rather than an appendix to its parent's, and this is the link that
+   * makes the pair readable as one piece of work.
+   */
+  readonly resumedFrom?: string
 }
 
 export interface RecordedStep {
@@ -62,10 +68,42 @@ export interface RecordedStep {
    * outside the run failed, which is most of them.
    */
   readonly failureCategory: FailureCategory | null
+  /**
+   * The run's candidate list after this step, as JSON. Written on every step,
+   * because it is the only part of the loop's working memory a resume cannot
+   * replay from the rest of the trace (ADR-0046).
+   */
+  readonly candidatesAfter: string | null
   readonly uncachedInputTokens: number
   readonly cachedInputTokens: number
   readonly outputTokens: number
   readonly cost: number
+}
+
+/** A run as a resume needs to see it: the window it covered, and what it continued. */
+export interface StoredRun {
+  readonly runId: string
+  readonly resolvedFrom: string
+  readonly resolvedTo: string
+  readonly resumedFrom: string | null
+}
+
+/**
+ * A step as a replay reads it: what the model said, what the tool answered,
+ * what the run held afterwards, and what it cost. Narrower than
+ * `RecordedStep` on purpose — a replay reconstructs working memory, and the
+ * columns written for a human to read are not part of that.
+ */
+export interface TracedStep {
+  readonly kind: RecordedStep['kind']
+  readonly modelResponse: string | null
+  readonly toolResult: string | null
+  /** The refusal an invalid action was told, which is part of the history it replays. */
+  readonly error: string | null
+  readonly candidatesAfter: string | null
+  readonly uncachedInputTokens: number
+  readonly cachedInputTokens: number
+  readonly outputTokens: number
 }
 
 export interface FinishedRun {
@@ -79,6 +117,24 @@ export interface FinishedRun {
   readonly shortlistSize: number
   readonly notionWritePerformed: boolean
   readonly costIsUpperBound: boolean
+}
+
+/**
+ * A run closed because its work was handed to a resume (ADR-0047).
+ *
+ * Narrower than `FinishedRun` on purpose. A run that ended itself declares what
+ * it produced; an aborted one produced nothing and is in no position to say
+ * whether it wrote to Notion or how long its shortlist was — those columns stay
+ * unset rather than being filled in with a plausible zero that its own steps
+ * might contradict. What it did spend is a fact, summed from its trace.
+ */
+export interface AbortedRun {
+  readonly runId: string
+  readonly endedAt: string
+  readonly uncachedInputTokens: number
+  readonly cachedInputTokens: number
+  readonly outputTokens: number
+  readonly estimatedCost: number
 }
 
 export interface RecordedSourceText {
@@ -111,7 +167,22 @@ export interface Store {
    * and no past run's anything is reachable through it (ADR-0009).
    */
   sourceTextsOf(runId: string): StoredSourceText[]
+  /** The run with exactly this id, or nothing. How a chain is walked. */
+  runOf(runId: string): StoredRun | undefined
+  /**
+   * Every run whose id starts with this, oldest first.
+   *
+   * `--resume` resolves what it was given through here rather than matching it
+   * whole, because the id a person has in hand is the one the tool printed, and
+   * both `npm run trace`'s listing and its own argument are prefixes. More than
+   * one match is for the caller to refuse; this only reports them.
+   */
+  runsMatching(prefix: string): StoredRun[]
+  /** Every step of a run, in the order it took them. The input to a replay. */
+  stepsOf(runId: string): TracedStep[]
   finishRun(run: FinishedRun): void
+  /** Closes a run `aborted` because a resume took its work on. */
+  abortRun(run: AbortedRun): void
   close(): void
 }
 
@@ -162,8 +233,9 @@ export const openStore = (path: string): Store => {
         .prepare(
           `INSERT INTO runs (
              run_id, started_at, cli_args, resolved_from, resolved_to,
-             prompt_version, profile_version, action_schema_version, model_id
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             prompt_version, profile_version, action_schema_version, model_id,
+             resumed_from
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           run.runId,
@@ -175,6 +247,7 @@ export const openStore = (path: string): Store => {
           run.profileVersion,
           run.actionSchemaVersion,
           run.modelId,
+          run.resumedFrom ?? null,
         )
     },
 
@@ -185,8 +258,9 @@ export const openStore = (path: string): Store => {
              step_id, run_id, step_index, timestamp, duration_ms, kind,
              model_response, proposed_action, validation_result, dispatched_action,
              tool_name, tool_args, tool_result, error, warning, failure_category,
+             candidates_after,
              uncached_input_tokens, cached_input_tokens, output_tokens, cost
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           step.stepId,
@@ -205,6 +279,7 @@ export const openStore = (path: string): Store => {
           step.error,
           step.warning,
           step.failureCategory,
+          step.candidatesAfter,
           step.uncachedInputTokens,
           step.cachedInputTokens,
           step.outputTokens,
@@ -239,6 +314,70 @@ export const openStore = (path: string): Store => {
         .prepare(`SELECT url, raw_body FROM source_texts WHERE run_id = ? ORDER BY fetched_at`)
         .all(runId)
         .map((row) => ({ url: row['url'] as string, rawBody: row['raw_body'] as string }))
+    },
+
+    runOf(runId) {
+      return this.runsMatching(runId).find((run) => run.runId === runId)
+    },
+
+    runsMatching(prefix) {
+      return database
+        .prepare(
+          `SELECT run_id, resolved_from, resolved_to, resumed_from
+             FROM runs WHERE run_id LIKE ? ORDER BY started_at`,
+        )
+        .all(`${prefix}%`)
+        .map((row) => ({
+          runId: row['run_id'] as string,
+          resolvedFrom: row['resolved_from'] as string,
+          resolvedTo: row['resolved_to'] as string,
+          resumedFrom: row['resumed_from'] as string | null,
+        }))
+    },
+
+    stepsOf(runId) {
+      return database
+        .prepare(
+          `SELECT kind, model_response, tool_result, error, candidates_after,
+                  uncached_input_tokens, cached_input_tokens, output_tokens
+             FROM steps WHERE run_id = ? ORDER BY step_index`,
+        )
+        .all(runId)
+        .map((row) => ({
+          kind: row['kind'] as RecordedStep['kind'],
+          modelResponse: row['model_response'] as string | null,
+          toolResult: row['tool_result'] as string | null,
+          error: row['error'] as string | null,
+          candidatesAfter: row['candidates_after'] as string | null,
+          uncachedInputTokens: row['uncached_input_tokens'] as number,
+          cachedInputTokens: row['cached_input_tokens'] as number,
+          outputTokens: row['output_tokens'] as number,
+        }))
+    },
+
+    abortRun(run) {
+      // The same WHERE clause as `finishRun`, carrying the same guarantee:
+      // exactly one termination reason per run, whoever writes it.
+      const result = database
+        .prepare(
+          `UPDATE runs SET
+             ended_at = ?, termination_reason = 'aborted',
+             uncached_input_tokens = ?, cached_input_tokens = ?, output_tokens = ?,
+             estimated_cost = ?
+           WHERE run_id = ? AND termination_reason IS NULL`,
+        )
+        .run(
+          run.endedAt,
+          run.uncachedInputTokens,
+          run.cachedInputTokens,
+          run.outputTokens,
+          run.estimatedCost,
+          run.runId,
+        )
+
+      if (result.changes === 0) {
+        throw new Error(`run ${run.runId} has already ended, or does not exist`)
+      }
     },
 
     finishRun(run) {

@@ -43,3 +43,28 @@ The columns all exist already — ticket 01 added them.
 At-least-once on the interrupted step is safe because every tool in the loop is side-effect-free. The only side effect in the system is the Notion write, which is post-loop and covered by suppression (ADR-0051).
 
 The candidate list is re-serialised on every step, so a busy run writes it twenty-odd times. That is kilobytes, and it buys a resume that cannot be subtly wrong.
+
+## Comments
+
+**17 September 2026, during implementation.** Two things the ticket did not
+predict.
+
+`model_response` could not answer the question ADR-0046 asked of it: it held
+the provider's raw body, and rebuilding an assistant message from that would
+have put Fireworks' wire format inside the loop. It now holds
+`{content, toolCalls, raw}` — ADR-0055.
+
+A resume replays the whole ancestor chain rather than the run named on the
+command line. Ticket 04's criterion about a grandchild inheriting the chain's
+spend turned out not to be an accounting nicety: replaying one link would lose
+the *conversation* of everything before it, so a resume of a resume was broken
+in ticket 03's own happy path. Implemented here, with a test; ticket 04's
+criterion is therefore already met.
+
+**Found, not fixed:** `citedVibes` checks a model's vibe note against
+`store.sourceTextsOf(runId)`, which is narrow to the current run by design
+(ADR-0009). A resumed run stored none of the parent's pages, so a vibe note
+quoting a page the *parent* fetched is silently dropped from the ranking. It
+degrades quietly rather than failing, and the fix is a decision about whether
+`sourceTextsOf` should follow `resumed_from`. Belongs with ticket 04's other
+chain semantics, or its own ticket.

@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 import {
+  ACTION_SCHEMA_VERSION,
   MAX_RUN_COST_USD,
+  MODEL_ID,
   MUSICBRAINZ_ENDPOINT,
   NOTION_ENDPOINT,
   NOTION_PROPERTIES,
@@ -22,6 +24,7 @@ import type {
   ModelResponse,
   ToolDefinition,
 } from '../ports.ts'
+import type { RecordedStep, Store, TracedStep } from '../store/store.ts'
 import { openStore } from '../store/store.ts'
 import { runRiffRadar } from './riff-radar.ts'
 
@@ -294,15 +297,23 @@ const run = async (
     alreadyInNotion: readonly { artist: string; title: string }[]
     notionSchema: string
     createStatus: readonly number[]
+    store: Store
+    resumeRunId: string
   }> = {},
 ) => {
-  const store = openStore(':memory:')
+  const store = args.store ?? openStore(':memory:')
   const notion = withNotion(args.http ?? fixtureHttp(), args.alreadyInNotion ?? [], {
     ...(args.notionSchema === undefined ? {} : { schema: args.notionSchema }),
     ...(args.createStatus === undefined ? {} : { createStatus: args.createStatus }),
   })
   const outcome = await runRiffRadar({
-    args: { command: 'run', lastDays: 7, dryRun: args.dryRun ?? false, raw: 'run' },
+    args: {
+      command: 'run',
+      lastDays: 7,
+      dryRun: args.dryRun ?? false,
+      ...(args.resumeRunId === undefined ? {} : { resumeRunId: args.resumeRunId }),
+      raw: 'run',
+    },
     ports: {
       clock: tickingClock(),
       model,
@@ -1156,4 +1167,409 @@ test('a dry run still reads Notion, because it still costs model tokens to run u
   )
 
   assert.equal(JSON.parse(String(stepRows[0]?.['tool_result'])).alreadyProposed, 1)
+})
+
+// ── Resume ───────────────────────────────────────────────────────────────────
+
+/**
+ * A run that was killed, written straight into a real database.
+ *
+ * Nothing in the loop can abort itself, and nothing was built to let a test
+ * abort it: a resume's input is the trace, so a partial trace is a legitimate
+ * input and this exercises the real path rather than a test-only hook. The
+ * steps are real ones, taken from a run that happened, so the parent is a
+ * genuine prefix of a genuine run rather than a plausible-looking fiction.
+ */
+const killedAfter = (store: Store, steps: readonly TracedStep[]): string => {
+  const runId = 'killed-parent'
+  store.startRun({
+    runId,
+    startedAt: '2026-09-14T09:00:00.000Z',
+    cliArgs: 'run',
+    resolvedFrom: '2026-09-08',
+    resolvedTo: '2026-09-14',
+    promptVersion: PROMPT_VERSION,
+    profileVersion: profile.version,
+    actionSchemaVersion: ACTION_SCHEMA_VERSION,
+    modelId: MODEL_ID,
+  })
+
+  const empty: Omit<RecordedStep, 'stepId' | 'runId' | 'stepIndex' | 'kind'> = {
+    timestamp: '2026-09-14T09:00:01.000Z',
+    durationMs: 10,
+    modelResponse: null,
+    proposedAction: null,
+    validationResult: null,
+    dispatchedAction: null,
+    toolName: null,
+    toolArgs: null,
+    toolResult: null,
+    error: null,
+    warning: null,
+    failureCategory: null,
+    candidatesAfter: null,
+    uncachedInputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+    cost: 0,
+  }
+
+  for (const [index, step] of steps.entries()) {
+    store.recordStep({ ...empty, ...step, stepId: `killed-${index}`, runId, stepIndex: index })
+  }
+
+  return runId
+}
+
+/** The first `count` steps of a run that fetched, looked one release up and finished. */
+const prefixOfARealRun = async (count: number): Promise<TracedStep[]> => {
+  const { store, outcome } = await run(
+    scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), ...looksUpThenFinishes(1))
+      .port,
+    { dryRun: true },
+  )
+  assert.equal(outcome.terminationReason, 'completed_short', 'the run to take a prefix of')
+  return store.stepsOf(outcome.runId).slice(0, count)
+}
+
+// ADR-0046: the trace is the checkpoint, and this is the one column that makes
+// it one. A step without it is a step a resume would have to guess at.
+test('every recorded step carries the candidate list it left behind', async () => {
+  const cases = [
+    ['a run that finished', scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), ...looksUpThenFinishes(1))],
+    ['a run that wrote to Notion', scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), ...looksUpThenFinishes(1))],
+    ['a run of invalid actions', scriptedModel(proposes('web_search', '{"q": "wrong key"}'))],
+  ] as const
+
+  for (const [what, model] of cases) {
+    const { stepRows } = await run(model.port, { dryRun: what !== 'a run that wrote to Notion' })
+    assert.ok(stepRows.length > 0, what)
+    for (const step of stepRows) {
+      assert.notEqual(step['candidates_after'], null, `${what}: ${String(step['kind'])} step`)
+    }
+  }
+})
+
+test('a step the loop broke on still records what the run held', async () => {
+  const model = scriptedModel(
+    proposes('fetch_source', '{"source_id": "loudwire"}'),
+    new Error('the provider hung up'),
+  )
+  const { outcome, stepRows } = await run(model.port, { dryRun: true })
+
+  assert.equal(outcome.terminationReason, 'tool_failure')
+  assert.equal(stepRows[1]?.['kind'], 'model_error')
+  // The candidates the first step found are not lost with the step that broke.
+  assert.match(String(stepRows[1]?.['candidates_after']), /Ulcerate/)
+})
+
+test('a resumed run is a new row linked to the parent, and the parent is closed aborted', async () => {
+  const store = openStore(':memory:')
+  const parent = killedAfter(store, await prefixOfARealRun(2))
+
+  const { outcome, runRow, stepRows } = await run(scriptedModel(finishes(items(1))).port, {
+    store,
+    resumeRunId: parent,
+    dryRun: true,
+  })
+
+  assert.notEqual(outcome.runId, parent, 'a resume is a new run, not an appendix')
+  assert.equal(runRow?.['resumed_from'], parent)
+  assert.equal(outcome.terminationReason, 'completed_short')
+
+  // Exactly one termination reason per run still holds, and the parent's is the
+  // one that says what happened to it.
+  const parentRow = store.database.prepare('SELECT * FROM runs WHERE run_id = ?').get(parent)
+  assert.equal(parentRow?.['termination_reason'], 'aborted')
+  assert.notEqual(parentRow?.['ended_at'], null)
+
+  // `step_index` is a position within a run, so the child's start at zero.
+  assert.deepEqual(stepRows.map((step) => step['step_index']), [0])
+})
+
+test('a resumed run continues the parent conversation rather than starting one', async () => {
+  const store = openStore(':memory:')
+  const parent = killedAfter(store, await prefixOfARealRun(2))
+  const model = scriptedModel(finishes(items(1)))
+
+  await run(model.port, { store, resumeRunId: parent, dryRun: true })
+
+  const [first] = model.requests
+  const roles = (first?.messages ?? []).map((message) => message.role)
+  assert.deepEqual(roles, ['system', 'user', 'assistant', 'tool', 'assistant', 'tool'])
+  // The candidates the parent found are in the history as the tool said them.
+  assert.match(String(first?.messages[3]?.content), /Ulcerate/)
+})
+
+test('a resumed run does not repeat the work the parent completed', async () => {
+  const store = openStore(':memory:')
+  const parent = killedAfter(store, await prefixOfARealRun(2))
+
+  const fetched: string[] = []
+  const watching: HttpPort = {
+    ...fixtureHttp(),
+    get: async (url, headers) => {
+      if (!isMusicbrainz(url) && !url.startsWith(NOTION_ENDPOINT)) fetched.push(url)
+      return fixtureHttp().get(url, headers)
+    },
+  }
+
+  await run(scriptedModel(finishes(items(1))).port, {
+    store,
+    resumeRunId: parent,
+    http: watching,
+    dryRun: true,
+  })
+
+  assert.deepEqual(fetched, [], 'the parent already fetched its source')
+})
+
+// The parent was killed between a tool call and the step that records it, so
+// that step is not in the trace at all. At-least-once is safe here: every tool
+// in the loop is side-effect-free (ADR-0051).
+test('a step interrupted before it was recorded is simply taken again', async () => {
+  const store = openStore(':memory:')
+  const parent = killedAfter(store, await prefixOfARealRun(1))
+  const model = scriptedModel(
+    proposes('lookup_release', '{"artist": "Ulcerate", "title": "Cutting the Throat of God"}'),
+    finishes(items(1)),
+  )
+
+  const { outcome, stepRows } = await run(model.port, { store, resumeRunId: parent, dryRun: true })
+
+  assert.equal(outcome.terminationReason, 'completed_short')
+  assert.equal(stepRows[0]?.['tool_name'], 'lookup_release', 'the unrecorded lookup is taken again')
+  // Nothing of the lost step reached the replayed conversation.
+  assert.deepEqual((model.requests[0]?.messages ?? []).map((each) => each.role), [
+    'system',
+    'user',
+    'assistant',
+    'tool',
+  ])
+})
+
+// The criterion this milestone's checkpointing rests on: everything but the
+// candidate list is derived from what the trace already holds (ADR-0046).
+test('what a resume is not told, it works out: usage, history and the invalid count', async () => {
+  const store = openStore(':memory:')
+  const steps = await prefixOfARealRun(2)
+  const parent = killedAfter(store, steps)
+
+  const spent = steps.reduce(
+    (total, step) => total + step.uncachedInputTokens + step.cachedInputTokens + step.outputTokens,
+    0,
+  )
+  assert.ok(spent > 0, 'the parent spent something to inherit')
+
+  const { outcome } = await run(scriptedModel(finishes(items(1))).port, {
+    store,
+    resumeRunId: parent,
+    dryRun: true,
+  })
+
+  const inherited =
+    outcome.usage.uncachedInputTokens + outcome.usage.cachedInputTokens + outcome.usage.outputTokens
+  assert.ok(inherited > spent, `${inherited} tokens includes the parent's ${spent}`)
+})
+
+test('a resume inherits the run of invalid actions the parent ended on', async () => {
+  const store = openStore(':memory:')
+  const twoBadSteps = [...(await prefixOfARealRun(1))]
+  // Two invalid actions, written as the loop would have written them.
+  const model = scriptedModel(proposes('web_search', '{"q": "wrong key"}'))
+  const { store: refused, outcome: refusedRun } = await run(model.port, { dryRun: true })
+  assert.equal(refusedRun.terminationReason, 'invalid_action_limit')
+  twoBadSteps.push(...refused.stepsOf(refusedRun.runId).slice(0, 2))
+
+  const parent = killedAfter(store, twoBadSteps)
+  const { outcome, stepRows } = await run(scriptedModel(proposes('web_search', '{"q": "again"}')).port, {
+    store,
+    resumeRunId: parent,
+    dryRun: true,
+  })
+
+  // One more invalid action is the third in a row, not the first.
+  assert.equal(outcome.terminationReason, 'invalid_action_limit')
+  assert.equal(stepRows.length, 1)
+})
+
+test('a resumed run covers the parent window, whatever the clock says', async () => {
+  const store = openStore(':memory:')
+  const parent = killedAfter(store, await prefixOfARealRun(2))
+
+  const { outcome, runRow } = await run(scriptedModel(finishes(items(1))).port, {
+    store,
+    resumeRunId: parent,
+    dryRun: true,
+  })
+
+  assert.deepEqual(outcome.window, { from: '2026-09-08', to: '2026-09-14' })
+  assert.equal(runRow?.['resolved_from'], '2026-09-08')
+  assert.equal(runRow?.['resolved_to'], '2026-09-14')
+})
+
+// Startup is the same path as a fresh run, which is what lets a half-written
+// parent self-correct: the pages it already wrote are in Notion, so they are
+// suppressed the second time round.
+test('a resume reads the schema and the suppression set again', async () => {
+  const store = openStore(':memory:')
+  const parent = killedAfter(store, await prefixOfARealRun(2))
+
+  const { stepRows } = await run(scriptedModel(finishes([])).port, {
+    store,
+    resumeRunId: parent,
+    dryRun: true,
+    alreadyInNotion: [{ artist: 'Ulcerate', title: 'Cutting the Throat of God' }],
+  })
+
+  assert.equal(stepRows.length, 1)
+  const candidates = JSON.parse(String(stepRows[0]?.['candidates_after']))
+  assert.equal(
+    candidates.filter((each: { artist: string }) => each.artist === 'Ulcerate').length,
+    0,
+    'a release Notion already holds is dropped from the replayed list',
+  )
+})
+
+test('a resume of a run that does not exist is refused, and writes nothing', async () => {
+  const store = openStore(':memory:')
+
+  await assert.rejects(
+    () => run(scriptedModel(finishes([])).port, { store, resumeRunId: 'no-such-run', dryRun: true }),
+    /no-such-run/,
+  )
+  assert.equal(store.database.prepare('SELECT count(*) AS n FROM runs').get()?.['n'], 0)
+})
+
+// Each run's row already holds its chain's accumulated spend, so a grandchild
+// that replayed only its parent would lose the conversation and the cost of
+// everything before it.
+test('a resume of a resume inherits the whole chain, not just its parent', async () => {
+  const store = openStore(':memory:')
+  const grandparent = killedAfter(store, await prefixOfARealRun(1))
+
+  // One lookup, then the provider hangs up: the middle of a chain, killed the
+  // way the run it resumed was.
+  const child = await run(
+    scriptedModel(
+      proposes('lookup_release', '{"artist": "Ulcerate", "title": "Cutting the Throat of God"}'),
+      new Error('the provider hung up'),
+    ).port,
+    { store, resumeRunId: grandparent, dryRun: true },
+  )
+  assert.equal(child.outcome.terminationReason, 'tool_failure')
+
+  // A killed run's row would have no reason at all; this one has to be reopened
+  // because the loop got far enough to record why it stopped.
+  store.database
+    .prepare('UPDATE runs SET termination_reason = NULL, ended_at = NULL WHERE run_id = ?')
+    .run(child.outcome.runId)
+
+  const model = scriptedModel(finishes(items(1)))
+  const grandchild = await run(model.port, { store, resumeRunId: child.outcome.runId, dryRun: true })
+
+  assert.equal(grandchild.outcome.terminationReason, 'completed_short')
+  // The grandparent's fetch and the child's lookup are both in the history.
+  const roles = (model.requests[0]?.messages ?? []).map((message) => message.role)
+  assert.deepEqual(roles, ['system', 'user', 'assistant', 'tool', 'assistant', 'tool'])
+  assert.ok(
+    grandchild.outcome.usage.outputTokens > child.outcome.usage.outputTokens,
+    'the whole chain is paid for',
+  )
+})
+
+// ADR-0047: two runs over the same window are both legitimate and are not the
+// same operation. Nothing infers which was meant, so an unfinished run for the
+// same dates changes nothing about a run started without the flag.
+test('without the flag a run is new, even with an unfinished run over the same window', async () => {
+  const store = openStore(':memory:')
+  const killed = killedAfter(store, await prefixOfARealRun(2))
+  const model = scriptedModel(proposes('fetch_source', '{"source_id": "loudwire"}'), finishes([]))
+
+  const { outcome, runRow } = await run(model.port, { store, dryRun: true })
+
+  assert.equal(runRow?.['resumed_from'], null, 'a run without --resume resumes nothing')
+  assert.notEqual(outcome.runId, killed)
+  // The other run is untouched: not continued, not closed, not commented on.
+  const killedRow = store.database.prepare('SELECT * FROM runs WHERE run_id = ?').get(killed)
+  assert.equal(killedRow?.['termination_reason'], null)
+  assert.equal(killedRow?.['ended_at'], null)
+  // And it started over: the first thing it did was fetch a source for itself.
+  assert.deepEqual((model.requests[0]?.messages ?? []).map((each) => each.role), ['system', 'user'])
+})
+
+test('a resume is refused by the schema preflight, exactly as a fresh run is', async () => {
+  const store = openStore(':memory:')
+  const parent = killedAfter(store, await prefixOfARealRun(2))
+
+  await assert.rejects(
+    () =>
+      run(scriptedModel(finishes([])).port, {
+        store,
+        resumeRunId: parent,
+        dryRun: true,
+        notionSchema: JSON.stringify({ properties: { Album: { type: 'title' } } }),
+      }),
+    /Notion database/,
+  )
+
+  // Refused before the run row, so the parent is still there to be resumed once
+  // the database is put right.
+  const parentRow = store.database.prepare('SELECT * FROM runs WHERE run_id = ?').get(parent)
+  assert.equal(parentRow?.['termination_reason'], null)
+  assert.equal(store.database.prepare('SELECT count(*) AS n FROM runs').get()?.['n'], 1)
+})
+
+// The id a person has in hand is the one the tool printed, and `npm run trace`
+// prints the first eight characters of it.
+test('a resume takes the first few characters of a run id', async () => {
+  const store = openStore(':memory:')
+  const parent = killedAfter(store, await prefixOfARealRun(2))
+
+  const { runRow } = await run(scriptedModel(finishes(items(1))).port, {
+    store,
+    resumeRunId: parent.slice(0, 6),
+    dryRun: true,
+  })
+
+  assert.equal(runRow?.['resumed_from'], parent)
+})
+
+test('a prefix matching two runs is refused, naming both, and starts nothing', async () => {
+  const store = openStore(':memory:')
+  killedAfter(store, await prefixOfARealRun(1))
+  store.startRun({
+    runId: 'killed-parent-two',
+    startedAt: '2026-09-14T09:00:00.000Z',
+    cliArgs: 'run',
+    resolvedFrom: '2026-09-08',
+    resolvedTo: '2026-09-14',
+    promptVersion: PROMPT_VERSION,
+    profileVersion: profile.version,
+    actionSchemaVersion: ACTION_SCHEMA_VERSION,
+    modelId: MODEL_ID,
+  })
+
+  await assert.rejects(
+    () => run(scriptedModel(finishes([])).port, { store, resumeRunId: 'killed-parent', dryRun: true }),
+    /matches 2 runs/,
+  )
+  assert.equal(store.database.prepare('SELECT count(*) AS n FROM runs').get()?.['n'], 2)
+})
+
+// A resume hands the parent's work on exactly once. Ticket 04 turns this into a
+// refusal with a message; what matters here is that it leaves nothing behind.
+test('resuming a run whose work was already handed on starts no second child', async () => {
+  const store = openStore(':memory:')
+  const parent = killedAfter(store, await prefixOfARealRun(2))
+
+  await run(scriptedModel(finishes(items(1))).port, { store, resumeRunId: parent, dryRun: true })
+  const after = () => store.database.prepare('SELECT count(*) AS n FROM runs').get()?.['n']
+  const before = after()
+
+  await assert.rejects(
+    () => run(scriptedModel(finishes([])).port, { store, resumeRunId: parent, dryRun: true }),
+    /already ended/,
+  )
+  assert.equal(after(), before, 'a refused resume leaves no half-started run')
 })
