@@ -1,9 +1,15 @@
 {
+  "configuration": {
+    "at": "2026-09-18T03:52:02.489Z",
+    "promptVersion": 6,
+    "profileVersion": 2,
+    "modelId": "accounts/fireworks/models/deepseek-v4p1-flash"
+  },
   "cases": [
     {
       "slug": "00-smoke",
-      "runId": "3af003b7-af09-4270-a382-a6156710fea6",
-      "terminationReason": "max_steps_exceeded",
+      "runId": "630cbedb-76c8-47d8-81d7-4af71c0bfcf3",
+      "terminationReason": "no_candidates",
       "defects": [
         {
           "defect": "missed",
@@ -11,14 +17,14 @@
           "detail": "labelled eligible and not on the shortlist"
         }
       ],
-      "steps": 30,
-      "latencyMs": 374819,
+      "steps": 25,
+      "latencyMs": 165383,
       "tokens": {
-        "uncachedInputTokens": 17348,
-        "cachedInputTokens": 215306,
-        "outputTokens": 26447
+        "uncachedInputTokens": 8957,
+        "cachedInputTokens": 170146,
+        "outputTokens": 13455
       },
-      "cost": 0.022778722
+      "cost": 0.012041862
     }
   ],
   "totals": {
@@ -33,14 +39,14 @@
       "escaped": 0
     },
     "incomplete": 1,
-    "steps": 30,
+    "steps": 25,
     "tokens": {
-      "uncachedInputTokens": 17348,
-      "cachedInputTokens": 215306,
-      "outputTokens": 26447
+      "uncachedInputTokens": 8957,
+      "cachedInputTokens": 170146,
+      "outputTokens": 13455
     },
-    "cost": 0.022778722,
-    "meanCost": 0.022778722,
-    "medianLatencyMs": 374819
+    "cost": 0.012041862,
+    "meanCost": 0.012041862,
+    "medianLatencyMs": 165383
   }
 }

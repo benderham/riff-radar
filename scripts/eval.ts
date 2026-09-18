@@ -18,11 +18,12 @@
  */
 
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import process from 'node:process'
 import { parseArgs } from 'node:util'
 import { z } from 'zod'
 
-import { SOURCES, TASTE_PROFILE_PATH } from '../config.ts'
+import { MODEL_ID, PROMPT_VERSION, SOURCES, TASTE_PROFILE_PATH } from '../config.ts'
 import type { SourceId } from '../config.ts'
 import { fireworksModel } from '../src/adapters/fireworks.ts'
 import { runRiffRadar } from '../src/agents/riff-radar.ts'
@@ -36,11 +37,24 @@ import { openStore } from '../src/store/store.ts'
 const FIXTURES = new URL('../fixtures/', import.meta.url)
 const CASES = new URL('eval/', FIXTURES)
 
-/** Fake, and fixed: a case asks about a week in the past and must keep asking about it. */
+/** Fake: a pass never reaches Notion, and every case's recordings name this one. */
 const NOTION_DATABASE_ID = 'eval-database'
 
-const fixture = (relativePath: string): string =>
-  readFileSync(new URL(relativePath, FIXTURES), 'utf8')
+/**
+ * A case whose slug starts `00-` is a fixture of the runner rather than a
+ * Golden Case: it proves the wiring and must not reach a pass, where it would
+ * skew the mean cost, the median latency and every defect count that ADR-0065's
+ * budgets are set against. `--case 00-smoke` still runs it.
+ */
+const isGoldenCase = (slug: string): boolean => !slug.startsWith('00-')
+
+const fixture = (relativePath: string, slug: string): string => {
+  try {
+    return readFileSync(new URL(relativePath, FIXTURES), 'utf8')
+  } catch {
+    throw new Error(`${slug}: fixtures/${relativePath} is named by case.json and is not there`)
+  }
+}
 
 /**
  * A recorded answer, or a loud failure.
@@ -69,7 +83,12 @@ export const recordedHttp = (evalCase: EvalCase): HttpPort => {
   const answer = (url: string): HttpResponse => {
     const source = sourceUrls.get(url)
     if (source !== undefined) {
-      return { status: 200, attempts: 1, headers: { 'content-type': 'text/html' }, body: fixture(source) }
+      return {
+        status: 200,
+        attempts: 1,
+        headers: { 'content-type': 'text/html' },
+        body: fixture(source, evalCase.slug),
+      }
     }
 
     if (configured.includes(url)) {
@@ -88,11 +107,24 @@ export const recordedHttp = (evalCase: EvalCase): HttpPort => {
       )
     }
 
+    // A bare path is the ordinary recording and means 200. The object form
+    // carries the status, which is how a case records a refusal or a rate
+    // limit — the failures two of the seven Defects are about.
+    const body = recorded[1]
+    if (typeof body === 'string') {
+      return {
+        status: 200,
+        attempts: 1,
+        headers: { 'content-type': 'application/json' },
+        body: fixture(body, evalCase.slug),
+      }
+    }
+
     return {
-      status: 200,
+      status: body.status,
       attempts: 1,
-      headers: { 'content-type': 'application/json' },
-      body: fixture(recorded[1]),
+      headers: body.headers ?? { 'content-type': 'application/json' },
+      body: body.file === undefined ? '' : fixture(body.file, evalCase.slug),
     }
   }
 
@@ -125,8 +157,13 @@ export const readCase = (slug: string): EvalCase => {
   return parsed.data
 }
 
+const readProfile = () =>
+  tasteProfileSchema.parse(JSON.parse(readFileSync(TASTE_PROFILE_PATH, 'utf8')))
+
+const profileVersion = (): number => readProfile().version
+
 const runCase = async (evalCase: EvalCase, apiKey: string): Promise<CaseResult> => {
-  const profile = tasteProfileSchema.parse(JSON.parse(readFileSync(TASTE_PROFILE_PATH, 'utf8')))
+  const profile = readProfile()
 
   const store = openStore(':memory:')
   const ports = {
@@ -192,15 +229,29 @@ if (process.argv[1]?.endsWith('eval.ts')) {
       ? readdirSync(CASES, { withFileTypes: true })
           .filter((entry) => entry.isDirectory())
           .map((entry) => entry.name)
+          .filter(isGoldenCase)
           .sort()
       : [values.case]
 
   const results: CaseResult[] = []
+  const broken: string[] = []
+
   for (const slug of slugs) {
-    const evalCase = readCase(slug)
     console.log(`── ${slug} ${'─'.repeat(Math.max(0, 60 - slug.length))}`)
 
-    const result = await runCase(evalCase, apiKey)
+    // A case that throws — a recording nobody made, a file that moved — must
+    // not take the pass down with it: every case before it has already been
+    // paid for at the model, and a report that is never written is that spend
+    // thrown away. The failure is reported and the pass goes on.
+    let result
+    try {
+      result = await runCase(readCase(slug), apiKey)
+    } catch (error) {
+      broken.push(slug)
+      console.log(`  could not run: ${(error as Error).message}`)
+      continue
+    }
+
     results.push(result)
 
     console.log(
@@ -214,10 +265,19 @@ if (process.argv[1]?.endsWith('eval.ts')) {
     if (result.defects.length === 0) console.log('  no defects')
   }
 
-  const report = aggregate(results)
-  const out = values.out ?? `docs/evidence/eval-${new Date().toISOString().replaceAll(':', '-')}.json`
+  const report = aggregate(results, {
+    at: new Date().toISOString(),
+    promptVersion: PROMPT_VERSION,
+    profileVersion: profileVersion(),
+    modelId: MODEL_ID,
+  })
+
+  const out =
+    values.out ??
+    fileURLToPath(new URL(`../docs/evidence/eval-${report.configuration.at.replaceAll(':', '-')}.json`, import.meta.url))
   writeFileSync(out, `${JSON.stringify(report, null, 2)}\n`)
 
+  if (broken.length > 0) console.log(`\ncould not run: ${broken.join(', ')}`)
   console.log(`\n${report.totals.cases} cases  ·  $${report.totals.cost.toFixed(4)}  ·  median ${(
     report.totals.medianLatencyMs / 1000
   ).toFixed(1)}s  ·  ${report.totals.incomplete} incomplete`)

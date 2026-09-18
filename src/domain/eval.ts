@@ -375,6 +375,37 @@ export const gradeRun = (run: GradedRun): Finding[] => {
   ]
 }
 
+const SAFE_PATH = /^[A-Za-z0-9][A-Za-z0-9._\-/]*$/
+
+/** A file under `fixtures/`, and never one outside it. */
+const safePath = z
+  .string()
+  .regex(SAFE_PATH, 'must be a relative path with no leading slash')
+  .refine((value) => !value.includes('..'), 'must not climb out of fixtures/')
+
+/**
+ * A recorded answer: a file for the ordinary case, and a status for the cases
+ * the ordinary one cannot express.
+ *
+ * A bare path means 200, which is what almost every recording is. The object
+ * form exists because two of the seven Defects are about failure — `escaped` is
+ * at zero tolerance in ADR-0065 — and a format that can only record success is
+ * a format in which those cases cannot be written at all. Tickets 05 and 06
+ * inherit this, so it is settled before twenty manifests exist rather than
+ * after.
+ */
+const recordedResponse = z.union([
+  safePath,
+  z
+    .object({
+      status: z.number().int().min(0).max(599),
+      /** Absent is an empty body, which is what a refusal usually has. */
+      file: safePath.optional(),
+      headers: z.record(z.string(), z.string()).optional(),
+    })
+    .strict(),
+])
+
 /**
  * A Golden Case, as `fixtures/eval/<NN>-<slug>/case.json` states it.
  *
@@ -383,20 +414,11 @@ export const gradeRun = (run: GradedRun): Finding[] => {
  * quietly differ from their manifests measures nothing (ADR-0058).
  *
  * `args` is a real argv fragment, parsed by `parseCliArgs` like any other, so a
- * case cannot drift from the CLI it is meant to be exercising. `sources` maps a
- * configured source to a file under `fixtures/`, referenced rather than copied,
- * because twelve copies of 1.9MB to vary a date range is storage bought for
- * nothing (ADR-0062). `responses` maps a URL prefix to a recorded body inside
- * the case directory.
+ * case cannot drift from the CLI it is meant to be exercising. Both `sources`
+ * and `responses` name files relative to `fixtures/` rather than to the case
+ * directory, so a body two cases share is referenced twice instead of copied
+ * twice (ADR-0062). `responses` keys are URL prefixes, longest match first.
  */
-const SAFE_PATH = /^[A-Za-z0-9][A-Za-z0-9._\-/]*$/
-
-/** Neither half of a case may name a file outside the tree it belongs to. */
-const safePath = z
-  .string()
-  .regex(SAFE_PATH, 'must be a relative path with no leading slash')
-  .refine((value) => !value.includes('..'), 'must not climb out of its directory')
-
 export const caseSchema = z
   .object({
     slug: z.string().min(1),
@@ -412,7 +434,7 @@ export const caseSchema = z
       steps: z.number().int().positive(),
       costUsd: z.number().positive(),
     }),
-    responses: z.record(z.string().min(1), safePath),
+    responses: z.record(z.string().min(1), recordedResponse),
   })
   .strict()
 
@@ -443,7 +465,20 @@ export interface PassTotals {
   readonly medianLatencyMs: number
 }
 
+/**
+ * What produced a pass, pinned so that two passes can be told apart by more
+ * than their numbers. ADR-0058 compares deltas against a noise floor, which
+ * means nothing if the prompt, the profile or the model moved in between.
+ */
+export interface PassConfiguration {
+  readonly at: string
+  readonly promptVersion: number
+  readonly profileVersion: number
+  readonly modelId: string
+}
+
 export interface PassReport {
+  readonly configuration: PassConfiguration
   readonly cases: readonly CaseResult[]
   readonly totals: PassTotals
 }
@@ -470,7 +505,10 @@ const median = (values: readonly number[]): number => {
  * reads and the numbers a comparison is drawn from are the same thing, and an
  * empty pass totals to zero rather than to `NaN`.
  */
-export const aggregate = (cases: readonly CaseResult[]): PassReport => {
+export const aggregate = (
+  cases: readonly CaseResult[],
+  configuration: PassConfiguration,
+): PassReport => {
   const defects = Object.fromEntries(DEFECTS.map((defect) => [defect, 0])) as Record<Defect, number>
   for (const each of cases) {
     for (const finding of each.defects) defects[finding.defect] += 1
@@ -479,6 +517,7 @@ export const aggregate = (cases: readonly CaseResult[]): PassReport => {
   const cost = cases.reduce((total, each) => total + each.cost, 0)
 
   return {
+    configuration,
     cases,
     totals: {
       cases: cases.length,

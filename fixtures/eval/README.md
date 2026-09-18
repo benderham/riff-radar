@@ -10,6 +10,11 @@ case directory, so a body two cases share is referenced twice rather than copied
 twice. The two Source pages are always shared this way: twelve copies of 1.9MB
 to vary a date range is storage bought for nothing (ADR-0062).
 
+A `responses` value is a file path for the ordinary recording, which means a
+200. The object form — `{ "status": 503, "headers": {...}, "file": "..." }` —
+records everything else, because two of the seven Defects are about failure and
+a format that can only record success cannot carry those cases at all.
+
 `responses` keys are URL **prefixes**, and the longest match wins. That is what
 makes a broad recording a fallback: a case can answer every MusicBrainz
 release-group query with one not-found body, and a harvested case overrides it
@@ -20,9 +25,17 @@ source absent from `sources` is the one deliberate exception: it answers 404, an
 the run degrades with a warning the way it would against a source that was down
 (ADR-0030).
 
-`00-smoke` is not one of the twenty. It exists to prove the runner and to be the
-worked example the schema is written against: one source, no MusicBrainz
-coverage, an empty Notion database.
+`00-smoke` is not one of the twenty, and the runner skips it: a slug starting
+`00-` is a fixture of the runner rather than a Golden Case, because a pass that
+included it would skew the mean cost, the median latency and every defect count
+ADR-0065's budgets are set against. `npm run eval --case 00-smoke` still runs
+it. It exists to prove the runner and to be the worked example the schema is
+written against: one source, no MusicBrainz coverage, an empty Notion database.
+
+A case that throws — a recording nobody made, a file that moved — is reported
+and skipped rather than ending the pass: every case before it has already been
+paid for at the model, and a report that never gets written is that spend thrown
+away.
 
 `sample-report.json` is a **constructed** pass, not a recorded one: four cases
 with numbers chosen to exercise the arithmetic — two defect words, an incomplete

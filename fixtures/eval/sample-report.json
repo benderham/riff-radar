@@ -1,4 +1,10 @@
 {
+  "configuration": {
+    "at": "2026-01-20T22:14:05.117Z",
+    "promptVersion": 6,
+    "profileVersion": 2,
+    "modelId": "accounts/fireworks/models/deepseek-v4p1-flash"
+  },
   "cases": [
     {
       "slug": "01-january-week-two",

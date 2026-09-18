@@ -457,6 +457,16 @@ const usage = (output: number) => ({
   outputTokens: output,
 })
 
+const CONFIGURATION = {
+  at: '2026-01-20T09:00:00.000Z',
+  promptVersion: 1,
+  profileVersion: 1,
+  modelId: 'a-model',
+}
+
+/** Two arguments every aggregation test passes the same way. */
+const totalsOf = (cases: readonly CaseResult[]) => aggregate(cases, CONFIGURATION).totals
+
 const result = (over: Partial<CaseResult> = {}): CaseResult => ({
   slug: '01-january-week-one',
   runId: 'run-1',
@@ -470,7 +480,7 @@ const result = (over: Partial<CaseResult> = {}): CaseResult => ({
 })
 
 test('a pass sums its cost, its steps and its tokens', () => {
-  const totals = aggregate([result(), result({ cost: 0.018, steps: 20, tokens: usage(700) })]).totals
+  const totals = totalsOf([result(), result({ cost: 0.018, steps: 20, tokens: usage(700) })])
 
   assert.equal(totals.cases, 2)
   assert.equal(totals.steps, 32)
@@ -484,10 +494,10 @@ test('a pass sums its cost, its steps and its tokens', () => {
 })
 
 test('a pass counts each defect by its word', () => {
-  const totals = aggregate([
+  const totals = totalsOf([
     result({ defects: [{ defect: 'missed', detail: 'one' }, { defect: 'missed', detail: 'two' }] }),
     result({ defects: [{ defect: 'wasteful', detail: 'over' }] }),
-  ]).totals
+  ])
 
   assert.equal(totals.defects['missed'], 2)
   assert.equal(totals.defects['wasteful'], 1)
@@ -495,42 +505,46 @@ test('a pass counts each defect by its word', () => {
 })
 
 test('every defect is reported, including the ones no case had', () => {
-  assert.deepEqual(Object.keys(aggregate([result()]).totals.defects).sort(), [...DEFECTS].sort())
+  assert.deepEqual(Object.keys(totalsOf([result()]).defects).sort(), [...DEFECTS].sort())
 })
 
 test('a pass counts the cases that did not complete', () => {
-  const totals = aggregate([result(), result({ terminationReason: 'max_steps_exceeded' })]).totals
+  const totals = totalsOf([result(), result({ terminationReason: 'max_steps_exceeded' })])
 
   assert.equal(totals.incomplete, 1)
 })
 
 test('median latency of an odd number of cases is the middle one', () => {
-  const totals = aggregate([
+  const totals = totalsOf([
     result({ latencyMs: 10_000 }),
     result({ latencyMs: 50_000 }),
     result({ latencyMs: 30_000 }),
-  ]).totals
+  ])
 
   assert.equal(totals.medianLatencyMs, 30_000)
 })
 
 test('median latency of an even number of cases is between the middle two', () => {
-  const totals = aggregate([
+  const totals = totalsOf([
     result({ latencyMs: 10_000 }),
     result({ latencyMs: 50_000 }),
     result({ latencyMs: 30_000 }),
     result({ latencyMs: 20_000 }),
-  ]).totals
+  ])
 
   assert.equal(totals.medianLatencyMs, 25_000)
 })
 
 test('a pass of no cases aggregates to zero rather than to NaN', () => {
-  const totals = aggregate([]).totals
+  const totals = totalsOf([])
 
   assert.equal(totals.cases, 0)
   assert.equal(totals.meanCost, 0)
   assert.equal(totals.medianLatencyMs, 0)
+})
+
+test('a pass reports the configuration it was given, unchanged', () => {
+  assert.deepEqual(aggregate([], CONFIGURATION).configuration, CONFIGURATION)
 })
 
 test('the committed sample report is what aggregating its own cases produces', () => {
@@ -538,5 +552,5 @@ test('the committed sample report is what aggregating its own cases produces', (
     readFileSync(new URL('../../fixtures/eval/sample-report.json', import.meta.url), 'utf8'),
   )
 
-  assert.deepEqual(aggregate(sample.cases).totals, sample.totals)
+  assert.deepEqual(aggregate(sample.cases, sample.configuration).totals, sample.totals)
 })
