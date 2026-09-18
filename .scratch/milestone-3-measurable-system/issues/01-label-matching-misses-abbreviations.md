@@ -2,9 +2,9 @@
 
 **What to build:** Decide and implement how a profile label term matches a label a source printed, when one is an abbreviation of the other.
 
-**Blocked by:** nothing
+**Blocked by:** 08 — the baseline must be taken before this ships
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 ## Why
 
@@ -46,9 +46,10 @@ Whichever is chosen, a label that scored should be **visible as a signal in the 
 
 ## Notes
 
-Milestone 3 measures ranking against a golden dataset. A signal that silently
-never fires is the kind of thing an evaluation reports as "the profile has no
-effect" — so this is worth settling before the baseline is taken, not after.
+This is milestone 3's **controlled change** (ADR-0058, ADR-0065), and the
+ordering was reversed when the milestone was defined on 18 September 2026: the
+baseline is taken **before** this ships, not after. Fixing it early destroys the
+only before-and-after the milestone has. See ticket 08.
 
 Evidence: run `3e657aa3`, finish step, `ranking` array — five items, `signals: []`
 on all five. ADR-0052's second amendment describes the same finding.
