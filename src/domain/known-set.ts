@@ -23,6 +23,8 @@
  * tests (ADR-0064).
  */
 
+import { z } from 'zod'
+
 import { artistTitleIdentity } from './candidates.ts'
 
 /** Ben's column, in his order. The agent writes none of them (ADR-0061). */
@@ -72,6 +74,22 @@ export interface KnownSet {
   readonly weeks: readonly KnownWeek[]
   readonly excluded: Exclusions
 }
+
+/** What `known-set.json` has to carry for a Back-test to be computable from it. */
+const frozenSchema = z.object({
+  weeks: z.array(
+    z.object({
+      weekEnding: z.string(),
+      releases: z.array(
+        z.object({
+          artistTitle: z.string(),
+          musicbrainzId: z.string().optional(),
+          rating: z.enum(RATINGS),
+        }),
+      ),
+    }),
+  ),
+})
 
 const FRIDAY = 5
 
@@ -179,3 +197,31 @@ export const curate = (rows: readonly CuratedRow[]): KnownSet => {
     excluded,
   }
 }
+
+/**
+ * A frozen set as read back from `known-set.json`, keyed by week.
+ *
+ * The parse is deliberately narrow: only what the Back-test divides by, so a
+ * file written by an older freeze still resolves rather than failing the pass
+ * that reads it. Keyed by the closing Friday, which is what a case's resolved
+ * window ends on — that is how a case finds its week without carrying a field
+ * naming one (ADR-0066).
+ */
+export const knownSetWeeks = (frozen: unknown): Map<string, KnownWeek> =>
+  new Map(
+    frozenSchema.parse(frozen).weeks.map((week) => [
+      week.weekEnding,
+      {
+        weekEnding: week.weekEnding,
+        k: week.releases.length,
+        // Rebuilt field by field rather than spread: an absent id and an
+        // `undefined` one are different things under the strict optional
+        // types, and zod's `.optional()` produces the second.
+        releases: week.releases.map((release) => ({
+          artistTitle: release.artistTitle,
+          rating: release.rating,
+          ...(release.musicbrainzId === undefined ? {} : { musicbrainzId: release.musicbrainzId }),
+        })),
+      },
+    ]),
+  )

@@ -20,6 +20,9 @@ export const MODEL_ID = 'accounts/fireworks/models/deepseek-v4p1-flash'
 
 /** Fixed paths, relative to the repository root. */
 export const TASTE_PROFILE_PATH = 'taste-profile.json'
+
+/** The frozen Known Set the Back-test divides by (ADR-0066). */
+export const KNOWN_SET_PATH = 'known-set.json'
 export const DATABASE_PATH = 'riff-radar.db'
 
 export const REQUIRED_CREDENTIALS = [

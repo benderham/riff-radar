@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import type { CuratedRow } from './known-set.ts'
-import { curate, preferredCount, weekEnding } from './known-set.ts'
+import { curate, knownSetWeeks, preferredCount, weekEnding } from './known-set.ts'
 
 /** A hand-entered, rated, dated row: the membership case every test varies from. */
 const row = (over: Partial<CuratedRow> = {}): CuratedRow => ({
@@ -152,4 +152,36 @@ test('a Thursday closes with the Friday after it', () => {
 test('the week may cross a month and a year', () => {
   assert.equal(weekEnding('2026-01-28'), '2026-01-30')
   assert.equal(weekEnding('2025-12-31'), '2026-01-02')
+})
+
+// ── Reading a frozen file back ───────────────────────────────────────────────
+
+test('a frozen set is keyed by the week a case window closes on', () => {
+  const weeks = knownSetWeeks({
+    frozenAt: '2026-09-18T04:15:56.343Z',
+    weeks: [
+      {
+        weekEnding: '2026-01-16',
+        k: 1,
+        releases: [{ artistTitle: 'ulcerate|a', rating: 'OK' }],
+      },
+    ],
+  })
+
+  assert.equal(weeks.get('2026-01-16')?.k, 1)
+  assert.equal(weeks.get('2026-01-09'), undefined)
+})
+
+test('k is recomputed from the releases rather than trusted', () => {
+  const weeks = knownSetWeeks({
+    weeks: [
+      { weekEnding: '2026-01-16', k: 99, releases: [{ artistTitle: 'ulcerate|a', rating: 'AOTY' }] },
+    ],
+  })
+
+  assert.equal(weeks.get('2026-01-16')?.k, 1)
+})
+
+test('a file that is not a frozen set is refused rather than read as empty', () => {
+  assert.throws(() => knownSetWeeks({ weeks: [{ weekEnding: 7 }] }))
 })

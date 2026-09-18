@@ -23,16 +23,19 @@ import process from 'node:process'
 import { parseArgs } from 'node:util'
 import { z } from 'zod'
 
-import { MODEL_ID, PROMPT_VERSION, SOURCES, TASTE_PROFILE_PATH } from '../config.ts'
+import { KNOWN_SET_PATH, MODEL_ID, PROMPT_VERSION, SOURCES, TASTE_PROFILE_PATH } from '../config.ts'
 import type { SourceId } from '../config.ts'
 import { fireworksModel } from '../src/adapters/fireworks.ts'
 import { runRiffRadar } from '../src/agents/riff-radar.ts'
 import { parseCliArgs } from '../src/domain/cli-args.ts'
+import { backtest } from '../src/domain/backtest.ts'
 import type { CaseResult, EvalCase } from '../src/domain/eval.ts'
 import { aggregate, caseSchema, gradeRun } from '../src/domain/eval.ts'
+import { knownSetWeeks } from '../src/domain/known-set.ts'
 import { tasteProfileSchema } from '../src/domain/taste-profile.ts'
 import type { HttpPort, HttpResponse } from '../src/ports.ts'
 import { openStore } from '../src/store/store.ts'
+import type { KnownWeek } from '../src/domain/known-set.ts'
 
 const FIXTURES = new URL('../fixtures/', import.meta.url)
 const CASES = new URL('eval/', FIXTURES)
@@ -70,9 +73,14 @@ const fixture = (relativePath: string, slug: string): string => {
  * a source that was down (ADR-0030).
  */
 export const recordedHttp = (evalCase: EvalCase): HttpPort => {
-  const answers = Object.entries(evalCase.responses).sort(
-    ([one], [other]) => other.length - one.length,
-  )
+  // Matched case-insensitively, because the encoded artist and title travel in
+  // the URL: a harvest seeds a lookup from the Known Set's normalised identity
+  // while the model asks with the calendar's capitalisation, and a MusicBrainz
+  // query means the same thing either way. Without this the seeded recordings
+  // would be invisible to the run they exist for.
+  const answers = Object.entries(evalCase.responses)
+    .map(([prefix, body]) => [prefix.toLowerCase(), body] as const)
+    .sort(([one], [other]) => other.length - one.length)
 
   const sourceUrls = new Map<string, string>(
     Object.entries(evalCase.sources).map(([id, file]) => [SOURCES[id as SourceId], file]),
@@ -100,7 +108,7 @@ export const recordedHttp = (evalCase: EvalCase): HttpPort => {
       }
     }
 
-    const recorded = answers.find(([prefix]) => url.startsWith(prefix))
+    const recorded = answers.find(([prefix]) => url.toLowerCase().startsWith(prefix))
     if (recorded === undefined) {
       throw new Error(
         `${evalCase.slug}: no recorded response for ${url}. Record one, or widen a prefix in case.json.`,
@@ -157,12 +165,42 @@ export const readCase = (slug: string): EvalCase => {
   return parsed.data
 }
 
+/**
+ * The frozen Known Set, or nothing.
+ *
+ * Read once per pass and keyed by the Friday a week closes on, which is how a
+ * case finds its week without carrying a field for it: the resolved window's
+ * end *is* the bucket's name (ADR-0066). A pass on a machine without the file
+ * runs and reports no back-test, because the Golden Cases grade defects with or
+ * without Ben's reference set.
+ */
+const knownWeeks = (): Map<string, KnownWeek> => {
+  let frozen
+  try {
+    frozen = readFileSync(KNOWN_SET_PATH, 'utf8')
+  } catch (error) {
+    // Absent is a fine answer — the Golden Cases grade defects with or without
+    // Ben's reference set. Unreadable for any other reason is not.
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    return new Map()
+  }
+
+  // A file that is not a frozen set is refused rather than read as empty: a
+  // silent empty Map would report "no back-test" for a corrupt one exactly as
+  // it does for an absent one.
+  return knownSetWeeks(JSON.parse(frozen))
+}
+
 const readProfile = () =>
   tasteProfileSchema.parse(JSON.parse(readFileSync(TASTE_PROFILE_PATH, 'utf8')))
 
 const profileVersion = (): number => readProfile().version
 
-const runCase = async (evalCase: EvalCase, apiKey: string): Promise<CaseResult> => {
+const runCase = async (
+  evalCase: EvalCase,
+  apiKey: string,
+  weeks: Map<string, KnownWeek>,
+): Promise<CaseResult> => {
   const profile = readProfile()
 
   const store = openStore(':memory:')
@@ -185,6 +223,12 @@ const runCase = async (evalCase: EvalCase, apiKey: string): Promise<CaseResult> 
   const latencyMs = Date.now() - startedAt
 
   const steps = store.stepsOf(outcome.runId)
+  // Only a harvested case is back-tested, and a harvested case is named by the
+  // week it replays. The smoke case's window ends on a real Known Set week, so
+  // keying on the window alone would score a hand-built fixture against Ben's
+  // January albums; a mutated case (ticket 06) inherits its parent's `now` and
+  // would do the same.
+  const week = evalCase.slug === outcome.window.to ? weeks.get(evalCase.slug) : undefined
 
   return {
     slug: evalCase.slug,
@@ -208,6 +252,7 @@ const runCase = async (evalCase: EvalCase, apiKey: string): Promise<CaseResult> 
     latencyMs,
     tokens: outcome.usage,
     cost: outcome.estimatedCost,
+    ...(week === undefined ? {} : { backtest: backtest(outcome.shortlist, week) }),
   }
 }
 
@@ -233,6 +278,7 @@ if (process.argv[1]?.endsWith('eval.ts')) {
           .sort()
       : [values.case]
 
+  const weeks = knownWeeks()
   const results: CaseResult[] = []
   const broken: string[] = []
 
@@ -245,7 +291,7 @@ if (process.argv[1]?.endsWith('eval.ts')) {
     // thrown away. The failure is reported and the pass goes on.
     let result
     try {
-      result = await runCase(readCase(slug), apiKey)
+      result = await runCase(readCase(slug), apiKey, weeks)
     } catch (error) {
       broken.push(slug)
       console.log(`  could not run: ${(error as Error).message}`)
@@ -263,6 +309,13 @@ if (process.argv[1]?.endsWith('eval.ts')) {
       console.log(`  ${finding.defect}${finding.release === undefined ? '' : `  ${finding.release}`}  ${finding.detail}`)
     }
     if (result.defects.length === 0) console.log('  no defects')
+    if (result.backtest !== undefined) {
+      const { hits, k, score, preferred } = result.backtest
+      console.log(
+        `  back-test ${hits}/${Math.min(k, 5)} = ${score.toFixed(2)}  (k ${k}` +
+          `${preferred === undefined ? '' : `, ${preferred} rated Rotate or AOTY`})`,
+      )
+    }
   }
 
   const report = aggregate(results, {
