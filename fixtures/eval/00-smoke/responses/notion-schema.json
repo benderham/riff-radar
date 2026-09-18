@@ -1,0 +1,51 @@
+{
+  "object": "database",
+  "id": "eval-database",
+  "properties": {
+    "Album": {
+      "id": "Album",
+      "name": "Album",
+      "type": "title"
+    },
+    "Artist": {
+      "id": "Artist",
+      "name": "Artist",
+      "type": "rich_text"
+    },
+    "Release Date": {
+      "id": "Release Date",
+      "name": "Release Date",
+      "type": "date"
+    },
+    "Apple Music": {
+      "id": "Apple Music",
+      "name": "Apple Music",
+      "type": "url"
+    },
+    "Status": {
+      "id": "Status",
+      "name": "Status",
+      "type": "select"
+    },
+    "MusicBrainz ID": {
+      "id": "MusicBrainz ID",
+      "name": "MusicBrainz ID",
+      "type": "rich_text"
+    },
+    "Source URL": {
+      "id": "Source URL",
+      "name": "Source URL",
+      "type": "url"
+    },
+    "Rationale": {
+      "id": "Rationale",
+      "name": "Rationale",
+      "type": "rich_text"
+    },
+    "Run ID": {
+      "id": "Run ID",
+      "name": "Run ID",
+      "type": "rich_text"
+    }
+  }
+}

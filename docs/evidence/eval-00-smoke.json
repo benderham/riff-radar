@@ -1,0 +1,46 @@
+{
+  "cases": [
+    {
+      "slug": "00-smoke",
+      "runId": "3af003b7-af09-4270-a382-a6156710fea6",
+      "terminationReason": "max_steps_exceeded",
+      "defects": [
+        {
+          "defect": "missed",
+          "release": "Edenbridge|Set The Dark On Fire",
+          "detail": "labelled eligible and not on the shortlist"
+        }
+      ],
+      "steps": 30,
+      "latencyMs": 374819,
+      "tokens": {
+        "uncachedInputTokens": 17348,
+        "cachedInputTokens": 215306,
+        "outputTokens": 26447
+      },
+      "cost": 0.022778722
+    }
+  ],
+  "totals": {
+    "cases": 1,
+    "defects": {
+      "unlisted": 0,
+      "missed": 1,
+      "spurious": 0,
+      "ungrounded": 0,
+      "misranked": 0,
+      "wasteful": 0,
+      "escaped": 0
+    },
+    "incomplete": 1,
+    "steps": 30,
+    "tokens": {
+      "uncachedInputTokens": 17348,
+      "cachedInputTokens": 215306,
+      "outputTokens": 26447
+    },
+    "cost": 0.022778722,
+    "meanCost": 0.022778722,
+    "medianLatencyMs": 374819
+  }
+}
