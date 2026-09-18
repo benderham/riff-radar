@@ -215,8 +215,11 @@ export const MAX_SOURCE_TEXT_CHARS = 80_000
  * it replaced. What keeps the two in step is a test, not a shared table:
  * `notion-page.test.ts` asserts the builder names nothing absent from here.
  *
- * `Rating` is deliberately absent — it is Ben's column, and the way to
- * guarantee the agent never writes it is that no code can name it.
+ * `Rating` is deliberately absent — it is Ben's column, and its absence here
+ * is what makes "the agent never writes it" a fact about the code. Since
+ * ADR-0061 the guarantee is that no *write* path names it: `known-set.ts`
+ * carries its own read-only schema, and has no path that creates or patches a
+ * page.
  *
  * `Album Cover` is not here either, because it is not a property: it is the
  * page's own cover image, set as `cover.external.url` when the page is created.

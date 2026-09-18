@@ -4,7 +4,7 @@
 
 **Blocked by:** nothing
 
-**Status:** ready-for-human
+**Status:** done
 
 ## Why
 
@@ -24,13 +24,17 @@ Then freeze. Record in a note for the Eval Report: the date, the number of rows 
 
 ## Acceptance criteria
 
-- [ ] Jan–Aug 2026 rows carry a Rating
-- [ ] No rows deleted
-- [ ] `Run ID` non-empty rows identified and excluded from the Known Set
-- [ ] The freeze declared: date, row count, rule
-- [ ] Weeks bucketed by `Release Date`, with `k` per week, so ticket 05 can pick its twelve
-- [ ] Count of rows left unrated recorded, for the Eval Report
-- [ ] Not revised after any result is seen
+- [x] Jan–Aug 2026 rows carry a Rating — as far as Ben rated them, and to 18 September rather than August; 139 of 288 left unrated and excluded
+- [x] No rows deleted
+- [x] `Run ID` non-empty rows identified and excluded from the Known Set — 15
+- [x] The freeze declared: date, row count, rule — `docs/evidence/known-set-freeze.md`
+- [x] Weeks bucketed by `Release Date`, with `k` per week, so ticket 05 can pick its twelve — 33 weeks, 12 of them in January–March
+- [x] Count of rows left unrated recorded, for the Eval Report — 139
+- [x] Not revised after any result is seen — no pass has been run
+
+## What was built after all
+
+`npm run known-set` and `src/domain/known-set.ts`. The rating was Ben's and could not be automated; bucketing 288 rows by week, applying the membership rule and counting the exclusions is arithmetic, and doing it by hand would have been both slower and unrepeatable. The script is read-only and names `Rating` in its own schema, which ADR-0061 permits and `NOTION_PROPERTIES` still does not. The set itself is written to a gitignored `known-set.json`, because it is taste data; the committed record is counts.
 
 ## Notes
 

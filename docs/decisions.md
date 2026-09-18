@@ -738,3 +738,15 @@ Not every Defect deserves the same treatment, and the shape of the threshold can
 **Reported, never blocking:** `unlisted`, Acceptance Rate, Taste Yield, and the back-test recall.
 
 **Consequences:** the budget numbers are set as the **last** act of the milestone, after the baseline pass has run. A threshold chosen beforehand is a bar invented in order to be cleared, and it would be chosen by whoever is about to be measured against it. The cost of waiting is that "remaining failures and readiness threshold are documented" cannot be closed early, which is correct rather than unfortunate.
+
+## ADR-0066: The frozen Known Set is a gitignored file and a committed record
+
+**Status:** ACCEPTED — 18 September 2026.
+
+ADR-0063 defines the Known Set and requires that it be frozen and declared, and ticket 04 was written as `ready-for-human` on the basis that "what to build" was nothing. The rating is Ben's and cannot be automated. The other half of the ticket — applying the membership rule to 288 rows, bucketing them by week, and counting every exclusion — is arithmetic, and doing it by hand would be both slower and unrepeatable, so it is `npm run known-set`, with the curation itself pure and tested in `src/domain/known-set.ts` (ADR-0064).
+
+That produces two artefacts and they are treated differently, because they are different things. The **curation record** is counts — the date, the rows read, the rows rated, the rule, `k` per week, the exclusions — and it is committed as `docs/evidence/known-set-freeze.md`, because the Eval Report rests on it and a declaration nobody can read is not a declaration. The **frozen set itself** names the albums Ben likes and the ones he does not, which is precisely what `AGENTS.md` means by detailed taste data, and this repository is public. It is written to `known-set.json`, gitignored, and read from Ben's machine by the Back-test. The path is fixed rather than a flag, because the only thing an `--out` would buy is writing taste data somewhere that is not gitignored.
+
+A week is named by the **Friday its seven-day window closes on**. `resolveWindow(now, 7)` is the six days before `now` plus `now`, so a Friday-morning run covers Saturday through Friday and holds exactly one release Friday; bucketing on the closing Friday therefore produces the same partition a weekly Golden Case asks for, and the bucket's name is the `now` that case is run at.
+
+**Consequences:** the Back-test is reproducible on Ben's machine and not from the repository, which is the price of not publishing his listening. Re-running the command after rating more rows would silently produce a different reference set under the same declaration, so a re-run is a new freeze with a new date and a new record — stated in the record itself, because the freeze is the one rule of ADR-0063 that an ordinary convenience could quietly break. `Rating` is now named by a second read-only path, which is what ADR-0061 permits and what the comment in `config.ts` had to be corrected to say.
