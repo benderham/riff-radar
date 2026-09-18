@@ -1,0 +1,692 @@
+{
+  "frozenAt": "2026-09-18T04:20:26.503Z",
+  "rows": 288,
+  "members": 120,
+  "weeks": [
+    {
+      "weekEnding": "2026-01-02",
+      "k": 1,
+      "releases": [
+        {
+          "artistTitle": "paleface swiss|the wilted - ep",
+          "rating": "Rotate"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-01-09",
+      "k": 2,
+      "releases": [
+        {
+          "artistTitle": "beyond the black|break the silence",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "for my pain...|buried blue",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-01-16",
+      "k": 4,
+      "releases": [
+        {
+          "artistTitle": "n0trixx|a catalogue of madness and melancholia",
+          "rating": "Rotate"
+        },
+        {
+          "artistTitle": "soen|reliance",
+          "rating": "AOTY"
+        },
+        {
+          "artistTitle": "poison the well|peace in place",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "ov sulfur|endless",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-01-23",
+      "k": 1,
+      "releases": [
+        {
+          "artistTitle": "poppy|empty hands",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-01-30",
+      "k": 3,
+      "releases": [
+        {
+          "artistTitle": "the hirsch effekt|der brauch",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "møl|dreamcrush",
+          "rating": "AOTY"
+        },
+        {
+          "artistTitle": "atreyu|the end is not the end",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-02-06",
+      "k": 6,
+      "releases": [
+        {
+          "artistTitle": "angine de poitrine|vol.ii",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "olhava|memorial",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "bilmuri|kinda hard",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "tailgunner|midnight blitz",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "all them witches|house of mirrors",
+          "rating": "Rotate"
+        },
+        {
+          "artistTitle": "karnivool|in verses",
+          "rating": "AOTY"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-02-13",
+      "k": 4,
+      "releases": [
+        {
+          "artistTitle": "hoaxed|death knocks",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "rats will feast|an evocation - ep",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "resistor|bite this!",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "converge|love is not enough",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-02-20",
+      "k": 4,
+      "releases": [
+        {
+          "artistTitle": "abstracted|hiraeth",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "dissentience|kaiju - ep",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "the dear hunter|sunya",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "sylosis|the new flesh",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-02-27",
+      "k": 3,
+      "releases": [
+        {
+          "artistTitle": "blackwater drowning|obscure sorrows",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "rob zombie|the great satan",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "health|r-type i - ep",
+          "rating": "Rotate"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-03-13",
+      "k": 3,
+      "releases": [
+        {
+          "artistTitle": "magnolia park|nights after vamp",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "devin townsend|the moth (deluxe edition)",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "lamb of god|into oblivion",
+          "rating": "Rotate"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-03-20",
+      "k": 4,
+      "releases": [
+        {
+          "artistTitle": "egregore|it echoes in the wild",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "darkthrone|pre-historic metal",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "gaerea|loss",
+          "rating": "AOTY"
+        },
+        {
+          "artistTitle": "neurosis|an undying love for a burning world",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-03-27",
+      "k": 3,
+      "releases": [
+        {
+          "artistTitle": "bekor qilish|consecrated abysses of dread",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "muse|the wow! signal",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "winterfylleth|the unyielding season",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-04-03",
+      "k": 8,
+      "releases": [
+        {
+          "artistTitle": "nervosa|slave machine",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "corrosion of conformity|good god / baad man",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "no terror in the bang|existence - ep",
+          "rating": "Rotate"
+        },
+        {
+          "artistTitle": "sunn o)))|sunn o)))",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "green carnation|a dark poem, part ii: sanguis",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "apolaustic|no plenitude without suffering",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "sepultura|the cloud of unknowing - ep",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "war nerve|reckoning - ep",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-04-10",
+      "k": 6,
+      "releases": [
+        {
+          "artistTitle": "evanescence|sanctuary",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "enter shikari|lose your self",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "vomitory|in death throes",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "bodysnatcher|hell is here, hell is home",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "archspire|too fast to die",
+          "rating": "Rotate"
+        },
+        {
+          "artistTitle": "immolation|descent",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-04-17",
+      "k": 2,
+      "releases": [
+        {
+          "artistTitle": "nine inch nails & boys noize|nine inch noize",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "wage war|it calls me by name - ep",
+          "rating": "Rotate"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-04-24",
+      "k": 3,
+      "releases": [
+        {
+          "artistTitle": "the amity affliction|house of cards",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "six feet under|next to die",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "at the gates|the ghost of a future dead",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-05-01",
+      "k": 1,
+      "releases": [
+        {
+          "artistTitle": "haste the day|dissenter",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-05-08",
+      "k": 1,
+      "releases": [
+        {
+          "artistTitle": "iatt|etheric realms of the night",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-05-15",
+      "k": 1,
+      "releases": [
+        {
+          "artistTitle": "periphery|a pale white dot",
+          "rating": "Rotate"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-05-22",
+      "k": 1,
+      "releases": [
+        {
+          "artistTitle": "dimmu borgir|grand serpent rising",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-06-05",
+      "k": 3,
+      "releases": [
+        {
+          "artistTitle": "evergrey|architects of a new weave (deluxe version)",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "august burns red|season of surrender",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "converge|hum of hurt",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-06-19",
+      "k": 1,
+      "releases": [
+        {
+          "artistTitle": "mork|monolitt",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-06-26",
+      "k": 5,
+      "releases": [
+        {
+          "artistTitle": "mortiis|ghosts of europa",
+          "rating": "Rotate"
+        },
+        {
+          "artistTitle": "haggus|the mincecore manifesto",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "junius|sotera",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "amberian dawn|temptation's gates",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "sans froid|back into the womb",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-07-03",
+      "k": 4,
+      "releases": [
+        {
+          "artistTitle": "moonspell|far from god",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "witchsorrow|the devil and all his works",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "todomal|graveyards of joy",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "solace|fading failing ruin",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-07-10",
+      "k": 6,
+      "releases": [
+        {
+          "artistTitle": "no cure|it is going to get dark",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "eva under fire|villainous",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "if these trees could talk|the hidden hand",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "the plot in you|the plot in you",
+          "rating": "Rotate"
+        },
+        {
+          "artistTitle": "devildriver|strike and kill",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "bring me the horizon|count your blessings | repented",
+          "rating": "AOTY"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-07-17",
+      "k": 14,
+      "releases": [
+        {
+          "artistTitle": "loathe|a stranger to you",
+          "rating": "Rotate"
+        },
+        {
+          "artistTitle": "eaten by sharks|the undertow of hate",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "lost vital spark|the motion paradox",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "haken|in a fever dream - ep",
+          "rating": "Rotate"
+        },
+        {
+          "artistTitle": "motionless in white|decades",
+          "rating": "Rotate"
+        },
+        {
+          "artistTitle": "protest the hero|within",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "eternal drak|the violence of time",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "black sites|for eternity",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "left to die|initium mortis",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "necrocosm|to the depths - ep",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "inferno|the anthropic sophisms (on the heights of despair)",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "boundaries|yearning: the unbeautiful after",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "psycroptic|the pulse of annihilation",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "coffin hunters|cosmic dawn",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-07-24",
+      "k": 4,
+      "releases": [
+        {
+          "artistTitle": "combichrist|the venom in the mouth of god",
+          "rating": "Rotate"
+        },
+        {
+          "artistTitle": "tyraels ascension|grave seeker",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "lockstep|i know what i saw",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "caelestia|revelations in black",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-07-31",
+      "k": 5,
+      "releases": [
+        {
+          "artistTitle": "chamber of unlight|avernus",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "allt|ataraxia",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "as bright as the stars|celestial ascension",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "five finger death punch|legacy",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "future palace|resurgence",
+          "rating": "Rotate"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-08-07",
+      "k": 5,
+      "releases": [
+        {
+          "artistTitle": "cancer bats|give me dirt",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "hulder|verbolgen",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "dark plague|masquerade",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "electric callboy|tanzneid",
+          "rating": "Rotate"
+        },
+        {
+          "artistTitle": "xandria|eclipse (deluxe version)",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-08-21",
+      "k": 3,
+      "releases": [
+        {
+          "artistTitle": "chelsea wolfe|the dark",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "axty|the pain made me who i am",
+          "rating": "Rotate"
+        },
+        {
+          "artistTitle": "the night eternal|cold velvet",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-08-28",
+      "k": 5,
+      "releases": [
+        {
+          "artistTitle": "kamelot|dark asylum",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "beartooth|pure ecstasy",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "mastodon|marrow deep",
+          "rating": "Rotate"
+        },
+        {
+          "artistTitle": "russian circles|nine",
+          "rating": "Rotate"
+        },
+        {
+          "artistTitle": "ocean sleeper|peace when i'm dead",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-09-04",
+      "k": 3,
+      "releases": [
+        {
+          "artistTitle": "president|blood of your empire",
+          "rating": "Rotate"
+        },
+        {
+          "artistTitle": "behemoth|i, scvlptor",
+          "rating": "OK"
+        },
+        {
+          "artistTitle": "green carnation|a dark poem, part iii: the messiah complex",
+          "rating": "OK"
+        }
+      ]
+    },
+    {
+      "weekEnding": "2026-09-11",
+      "k": 1,
+      "releases": [
+        {
+          "artistTitle": "mother of millions|t",
+          "rating": "Rotate"
+        }
+      ]
+    }
+  ],
+  "excluded": {
+    "agentWritten": 15,
+    "unrated": 139,
+    "nope": 14,
+    "undated": 0,
+    "unidentifiable": 0
+  }
+}

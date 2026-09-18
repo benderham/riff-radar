@@ -12,12 +12,12 @@
  * The guarantee ADR-0061 amended ADR-0042 down to is "no write path names
  * `Rating`", and this file is why the weaker sentence is worth having.
  *
- * Two outputs, for one reason. The curation record — the date, the rows, the
- * rule and `k` per week — is counts, and goes in the Eval Report. The frozen
- * set itself is a list of albums Ben likes, which `AGENTS.md` says is not
- * committed; it is written to one gitignored path that the Back-test reads from
- * his machine. The path is fixed rather than a flag: the only thing an `--out`
- * would buy is writing taste data somewhere that is not gitignored.
+ * Two outputs. The curation record — the date, the rows, the rule and `k` per
+ * week — is counts, and goes in the Eval Report. The frozen set itself is the
+ * reference set the Back-test divides by, and it is committed: a benchmark
+ * nobody outside can inspect is what ADR-0063's freeze exists to prevent, and
+ * ADR-0066 records that as Ben's call. The path is fixed rather than a flag,
+ * because the only thing an `--out` would buy is a stale second copy.
  *
  * The curation is pure and lives in `src/domain/known-set.ts` (ADR-0064). This
  * file is paging and printing.
@@ -33,7 +33,7 @@ import { httpAdapter } from '../src/adapters/http.ts'
 import type { CuratedRow } from '../src/domain/known-set.ts'
 import { RATINGS, curate, preferredCount } from '../src/domain/known-set.ts'
 
-/** Gitignored, and not configurable: see the note above about `--out`. */
+/** Committed, and not configurable: see the note above about `--out`. */
 const OUT = 'known-set.json'
 
 const token = process.env['NOTION_TOKEN'] ?? ''
@@ -173,4 +173,4 @@ for (const week of busy) {
   console.log(`${week.weekEnding}   k ${week.k}, ${preferredCount(week)} rated Rotate or AOTY`)
 }
 
-console.log(`\nthe set itself is in ${OUT}, which is gitignored`)
+console.log(`\nthe set itself is in ${OUT}`)

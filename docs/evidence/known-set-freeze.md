@@ -1,6 +1,6 @@
 # The Known Set, frozen 18 September 2026
 
-The reference set the Back-test measures coverage against (ADR-0062), curated by Ben and frozen before any baseline pass was run (ADR-0063). Produced by `npm run known-set`, which reads the Notion database and writes the set itself to `known-set.json` — gitignored, because a list of the albums Ben likes is taste data and `AGENTS.md` says it is not committed. What is committed is this record: the date, the rows, the rule, and `k` per week.
+The reference set the Back-test measures coverage against (ADR-0062), curated by Ben and frozen before any baseline pass was run (ADR-0063). Produced by `npm run known-set`, which reads the Notion database and writes the set itself to `known-set.json`. Both are committed: the set, so the Back-test can be checked against what it was computed from, and this record — the date, the rows, the rule, and `k` per week (ADR-0066).
 
 **The rule.** A row is a member if its `Run ID` is empty — hand-entered, so uncontaminated by the agent's own writes since 16 September — and its `Rating` is anything other than `Nope`. `OK` counts. Rows left unrated are excluded and counted, because an unrated row cannot be told apart from a `Nope`. No rows were deleted: `suppressedReleases` reads the whole database unfiltered, so a deleted row becomes proposable again.
 
@@ -53,6 +53,6 @@ A week is named by the Friday its seven-day window closes on, because `resolveWi
 
 **One thing the reader of a Back-test number needs.** Ten of the 120 members are EPs by their own titles, and an EP is eligible only if it carries four tracks and twenty minutes (`eligibility.ts`). So a week where the agent misses an EP may be the agent correctly refusing it, which is the superset problem this ticket names applied to format rather than to taste. Membership is not eligibility: ticket 05 labels eligibility per case, and that is where the distinction is drawn.
 
-**Reproducing it, and what that must not become.** `npm run known-set` re-reads Notion and rewrites `known-set.json`, so the Back-test can be re-derived on Ben's machine rather than from a file nobody can check. The hazard is the other side of the same coin: rating more rows and re-running would silently produce a *different* reference set under the same declaration. Ticket 05 picks its twelve weeks from the set frozen here, and any later re-run is a new freeze with a new date and a new record.
+**Reproducing it, and what that must not become.** `npm run known-set` re-reads Notion and rewrites `known-set.json`, so the Back-test can be re-derived rather than taken on trust. The hazard is the other side of the same coin: rating more rows and re-running would silently produce a *different* reference set under the same declaration. Ticket 05 picks its twelve weeks from the set frozen here, and any later re-run is a new freeze with a new date and a new record.
 
 **Not revised after a result.** No pass has been run against these cases. This file is the declaration; a later change to the rule or the ratings would be a new freeze with a new date, not an edit to this one.
