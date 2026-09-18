@@ -628,3 +628,113 @@ So the rule moves to where the project's other conventions live — `AGENTS.md` 
 `parseCliArgs` walked `argv` with an index it mutated inside a `for` loop, which is the shape that quietly mishandles a flag at the end of the line. Node 22 ships `parseArgs` in `node:util`, which is exactly ADR-0013's stated preference: the standard library in place of a dependency, and now in place of our own code too. It settles unknown flags, missing values and ordering; what stays hand-written is the part that is about this command rather than about argument syntax — the single positional, the whole-number rule for `--last-days`, the `--resume` guard, and the pair that contradict each other.
 
 **Consequences:** `--last-days=14` is now accepted and means what `--last-days 14` means. The old parser rejected the equals form, and the test asserting that rejection has been rewritten rather than deleted, because the rejection was an artefact of a parser that only ever looked at the next token and not a rule anyone chose. Nothing else about the grammar moves. The file is no shorter — 96 lines against 91 — which is worth stating plainly: the win here is a deleted hand-rolled tokeniser, not a smaller file.
+
+## ADR-0058: A Golden Case is a frozen Fixture World, replayed against a live model
+
+**Status:** ACCEPTED — 18 September 2026, from the grilling session that defined milestone 3.
+
+The brief asks the evaluation to report correctness, required steps, grounding, escalation behaviour, latency, token use, estimated cost and failure categories. Three of those — steps, latency, cost — exist only at the scale of a whole run, which decides the unit before anything else does. A Golden Case is therefore one recorded set of HTTP responses plus the CLI arguments that ask for them, replayed through the real loop against a fake `http` port, a fake clock, a real in-memory SQLite store and a **live** model. Every metric the brief names then falls out of the schema that milestone 2 already built, and nothing new has to be instrumented.
+
+Two alternatives were weighed and refused. A step probe — a recorded conversation prefix, asking the model for its next action — is cheap and sharp and reports nothing about steps, latency or escalation, and it duplicates what the loop's unit tests already cover. A frozen transcript, recording the model's responses too, is free and perfectly deterministic and evaluates only the half of the system that is not a model: re-running it after a prompt change would report no change, which is the one thing the evaluation exists to detect.
+
+Sampling is one run per case per pass — roughly USD 0.26 for twenty — plus a **one-time** noise-floor probe of three samples over a fixed subset of five cases, published once. A before-and-after difference smaller than the published floor is not a result.
+
+**Consequences:** an evaluation pass is not byte-reproducible, so the brief's "repeatable against the same versions and dataset" now means the dataset, the prompt version, the profile version and the model identifier are pinned, and deltas are read against the floor. Three samples on every case would triple the cost of every pass forever to re-measure something that moves rarely. Changing model or provider invalidates the floor and requires re-probing, which is the hosted-model repeatability risk ADR-0019 already accepted, arriving where it was always going to.
+
+## ADR-0059: Defect — a third vocabulary, asserted by the grader and never by the run
+
+**Status:** ACCEPTED — 18 September 2026, from the same session.
+
+The project already has two failure vocabularies and neither says the agent was wrong. A **Failure Category** (ADR-0048) names what broke outside the process; a **Termination Reason** names why a run stopped. A run can end `completed` with all six categories clean, having missed an eligible release, cited a fact no source carried, or spent twenty steps to propose three items. Milestone 3's taxonomy is therefore a third vocabulary rather than a re-documentation of the first two.
+
+A **Defect** is something an evaluation found wrong with a run, in one of seven words:
+
+- `missed` — a release the case labels eligible, absent from the Shortlist.
+- `spurious` — an ineligible or out-of-window release present on the Shortlist.
+- `ungrounded` — a factual field with no source URL behind it, or a vibe note whose quote is not in the stored Source Text (ADR-0040).
+- `misranked` — the Shortlist order contradicts the profile's own arithmetic.
+- `wasteful` — the run completed, over the step or cost budget the case allows.
+- `escaped` — a tool failure milestone 2 built recovery for, that the run did not survive.
+- `unlisted` — a labelled release absent from the stored Source Text, so no agent behaviour could have found it.
+
+`unlisted` exists because of a measurement rather than a worry. `fixtures/wikipedia.html` cleans to 124,831 characters against a cap of 80,000 and loses 36% of itself, concentrated in the later months of the year. Without a word that separates source coverage from agent behaviour, a truncation gap is counted as the model being bad at its job, and the fix is applied to the wrong half of the system.
+
+**Consequences:** a Defect is asserted by the grader against a labelled case and is never recorded by a run about itself, which keeps it out of the trace schema entirely — nothing in `steps` or `runs` gains a column. The seven are constrained in the grader the way the six categories are constrained by a CHECK, because the point of the vocabulary is that it can be counted. `CONTEXT.md` gains the term, and the distinction from its two siblings is part of the definition.
+
+## ADR-0060: Taste is measured outside the Golden Dataset, and gates nothing
+
+**Status:** ACCEPTED — 18 September 2026, from the same session.
+
+"Did it find the right albums" and "were they any good" are different questions, and `CONTEXT.md` already splits the instruments: **Status** is Ben's verdict on whether a release belonged on the list and measures the agent; **Rating** is his verdict after listening and measures the recommendation. The Golden Dataset labels **eligibility only** — format, novelty and window, which are factual claims about fixed fixture bytes. It never labels rank order or desirability.
+
+Encoding Ben's taste into twenty fixtures would create a second copy of the Taste Profile, hand-maintained, silently drifting, and the first improvement to the real profile would fail the evaluation. The subjective measure therefore lives outside the dataset and is read from Notion: **Acceptance Rate** (proposals whose Status is not rejected, over proposals) and **Taste Yield** (proposals rated `Rotate` or `AOTY`, over proposals rated at all), both reported per `profile_version` with n stated, and both printed beside **Shortlist Fill Rate**.
+
+Fill rate is not decoration. Yield alone is maximised by proposing fewer, safer, better-known albums, which is the exact opposite of what Adjacency exists for; the denominator is what stops the metric from rewarding cowardice.
+
+**Consequences:** milestone 3 cannot demonstrate taste improving. At five proposals per run and a Rating that exists only after Ben has listened, the trend needs months and dozens of rated albums; the milestone defines the measure and takes the first reading, and saying so now is cheaper than failing the milestone on it later. Neither number gates anything — a quiet week of mediocre metal would otherwise fail a milestone for reasons that have nothing to do with the agent. The improvement loop runs through Ben editing the Taste Profile after reading the report, never through the agent adjusting itself, which is the boundary `AGENTS.md` and ADR-0009 already draw.
+
+## ADR-0061: `Rating` may be named by a read-only path — amending ADR-0042
+
+**Status:** ACCEPTED — 18 September 2026, amending ADR-0042.
+
+ADR-0042 records that `Rating` is absent from `NOTION_PROPERTIES`, and that its absence "is what makes 'the agent never writes Rating' a fact about the code rather than a promise". `config.ts` puts it more strongly still: "the way to guarantee the agent never writes it is that no code can name it." ADR-0060's Taste Yield cannot be computed without reading that column, so the two decisions collide and one of them has to move.
+
+The phrasing was stronger than the intent. What was being guaranteed is that the agent cannot overwrite Ben's verdicts — a property of the **write** path. A read-only query in a command with no write path does not touch it.
+
+`NOTION_PROPERTIES` is untouched and remains the single source of truth for both the page builder and the preflight, so the two still cannot drift. The taste command carries its own small read-only schema, naming `Rating` and `Status` and nothing else, and has no code path that creates or patches a page.
+
+**Consequences:** the guarantee is now "no write path names `Rating`" rather than "no code names it" — weaker as a sentence, identical in effect, and still checkable in one pass over the write path. The alternative kept the absolute form by having Ben export a Notion view to CSV for the command to read; it was refused because a hand-exported file is a number that goes stale between readings and nobody can tell when it did. Everything else in ADR-0042 stands, including the preflight and the compensating rollback.
+
+## ADR-0062: The Back-test — weekly windows over bytes already in the repository
+
+**Status:** ACCEPTED — 18 September 2026, from the same session.
+
+Ben's Notion database holds albums back to January 2026, which is a reference set the project did not have to build. Whether it could be used at all turned on one fact, and the fact was measured rather than assumed: both Sources are **year** pages, not current-week pages, and the URL never varies with the window — `sources.ts` fetches the whole 2026 calendar every run and filters to the window twice, once by asking the model and once in code. `fixtures/loudwire.html`, captured on 14 September, cleans to 47,083 characters against the 80,000 cap, is **not truncated at all**, and carries all twelve months of 2026.
+
+So a historical window is replayable against bytes already committed: no network, no new capture, no archive URL that does not exist.
+
+Windows are **weekly**, not monthly. The Shortlist caps at five, so a month-long window measures the cap rather than the agent, and milestone 2 already recorded a fourteen-day window ending `max_steps_exceeded` at twenty-six of thirty steps. Weeks are chosen where the Known Set holds at least one album, and the measure is `hits / min(k, 5)` — plain recall when the week holds five or fewer known albums, precision against the known pool when it holds more. No week is excluded on the grounds of being busy.
+
+**Consequences:** the earlier proposal to exclude weeks holding more than five known albums is refused: it selects exactly the quiet weeks and biases the sample toward easy ones, and Ben reports that busy weeks are why the cap exists at all. MusicBrainz answers are recorded live once per harvested week and then frozen, so the case is hermetic thereafter; the two Source bodies are shared bytes across every back-test case, and only the window and the recorded lookups differ. `fixtures/wikipedia.html` **is** truncated, losing 36% concentrated in the later months, which is recorded in `carried-forward.md` as a live coverage defect and is the reason ADR-0059 has an `unlisted` Defect.
+
+## ADR-0063: The Known Set is curated by Rating, frozen before the baseline, and declared
+
+**Status:** ACCEPTED — 18 September 2026, from the same session.
+
+The 272-odd hand-entered rows in Notion were collected before the five-item cap existed and under a looser bar — Ben's account is that some weeks held over thirty releases and only a small fraction met his taste, which is why the cap was introduced. The reference set is therefore a **superset** of what a capped run should propose, and a `missed` against a January row may be the agent correctly applying the stricter rule.
+
+Curating it by **deleting** rows was refused for a reason outside the evaluation: `suppressedReleases` reads the whole database with no filter, deliberately, because "a record Ben rejected is one he has already judged". Every deleted row becomes proposable again, so pruning trades a live guarantee for a reporting convenience. A new Notion property was refused as a fourth meaning layered onto rows that already carry Status and Rating.
+
+Curation is therefore by **Rating**, which already carries the needed meaning: `Nope` is "should not have made the cut". The Known Set is the rows whose `Run ID` is empty — hand-entered, so uncontaminated by the agent's own writes since 16 September — and whose Rating is anything other than `Nope`. `OK` counts: it means Ben listened and it was fine, which is a release the agent was right to surface even if he never played it twice.
+
+`Rotate` and `AOTY` are deliberately **not** the definition. Restricting the Known Set to them would impose a second bar on top of the one `Nope` already draws, and most weeks hold only a handful of rated albums, so the reference set would be thrown away to solve a problem that only exists when a week is busy. Their role is instead a secondary number, reported only where `k > 5`: when the five-item cap forced a choice, how many of the matches were rated `Rotate` or `AOTY`. That is the question stratification was reaching for, and it is the only place the answer means anything.
+
+Rows still unrated after curation are excluded — an unrated row cannot be distinguished from a `Nope` — and their count is reported, so a reader can see how much of the window was left out rather than inferring that it was empty.
+
+One rule governs the whole thing: **curation completes and freezes before the baseline pass runs**, and the evaluation report states the date it was done, the number of rows touched and the rule applied. It is never revised after a result has been seen.
+
+**Consequences:** hindsight is present in the reference set and declared rather than absent. A Rating set in September on a January release is a verdict the agent could not have had at the time, so the back-test measures coverage of the pool Ben's taste actually drew from, not agreement with his ranking — which is the same boundary ADR-0060 draws for the Golden Dataset. Undeclared or iterative curation would make the number meaningless with no way to tell from the outside, which is why the freeze is a decision and not a note. Proposals that match nothing in the Known Set are routed to a one-time review queue; Ben's labels there persist as case data, and a non-match he marks "correct, I had not heard of it" is what turns the reference set from what he found into what he would have wanted.
+
+## ADR-0064: The evaluation splits — a live runner, and pure graders under `npm test`
+
+**Status:** ACCEPTED — 18 September 2026, from the same session.
+
+`AGENTS.md` requires that tests not depend on live external services, and ADR-0058 makes the model live during an evaluation pass, so the pass cannot live in `npm test`. The milestone criterion "deterministic eval checks run automatically" is read as *graded by code rather than by hand*, which is satisfied by splitting the thing in two.
+
+The graders — the seven Defect assertions, the aggregation, the cost and latency arithmetic, the `hits / min(k, 5)` normalisation — are pure functions in `src/domain/eval.ts`, unit-tested inside `npm test` against a recorded evaluation output. The runner is `scripts/eval.ts` and calls the live model. The taste command is `scripts/taste.ts` and calls live Notion. Cases live in `fixtures/eval/`.
+
+**Consequences:** `npm run check` stays offline and green, and the component that could silently break — the grader — is the part under continuous test. Nothing new appears at the top level: runners join the six smoke scripts already in `scripts/`, pure code joins `src/domain/`, recorded bodies join `fixtures/`. The taste command is separate from the evaluation runner rather than a section of it, because welding a live Notion read into the pass would stop it running offline and stop it being re-runnable against an old dataset; the two also move on different cadences, the pass per commit and the taste numbers per month.
+
+## ADR-0065: The readiness threshold — two Defects at zero, four budgeted, the rest reported
+
+**Status:** ACCEPTED — 18 September 2026, from the same session. Numbers deliberately absent until the baseline exists.
+
+Not every Defect deserves the same treatment, and the shape of the threshold can be settled before its numbers can.
+
+**Zero tolerance:** `ungrounded` and `escaped`. The first is the project's honesty guarantee — a fact with no source behind it, or a quote that is not in the Source Text — and the second is a regression against recovery behaviour milestone 2 built and evidenced. One instance of either is a fault, not a score.
+
+**Budgeted:** `missed`, `spurious`, `misranked`, `wasteful`. A tolerated count, set from what the baseline actually does.
+
+**Reported, never blocking:** `unlisted`, Acceptance Rate, Taste Yield, and the back-test recall.
+
+**Consequences:** the budget numbers are set as the **last** act of the milestone, after the baseline pass has run. A threshold chosen beforehand is a bar invented in order to be cleared, and it would be chosen by whoever is about to be measured against it. The cost of waiting is that "remaining failures and readiness threshold are documented" cannot be closed early, which is correct rather than unfortunate.

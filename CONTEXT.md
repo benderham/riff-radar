@@ -92,3 +92,27 @@ _Avoid_: rerun of, repeat, second pass
 **Degraded**:
 A run that finished without a provider it would normally use, judging on weaker evidence and recording what it could not check.
 _Avoid_: fallback, partial, best-effort
+
+**Golden Case**:
+One recorded set of Source, MusicBrainz and Notion responses plus the arguments that ask for them, replayed through the real loop so that a Run happens against fixed bytes. The set of them is the Golden Dataset.
+_Avoid_: test case, scenario, fixture
+
+**Defect**:
+Something an evaluation found wrong with a Run, in one of seven words. Distinct from both its siblings: a Failure Category describes a failed external call, a Termination Reason describes a stopped Run, and a Defect describes a Run that was wrong. Asserted by the grader against a labelled case, never recorded by a Run about itself.
+_Avoid_: error, bug, miss, failure mode
+
+**Back-test**:
+A Run over a window in the past, judged against the albums Ben already has in Notion for that window. It measures coverage, never ranking.
+_Avoid_: replay, historical run, regression run
+
+**Known Set**:
+The albums Ben logged for a given window and rated anything other than Nope, excluding anything this agent wrote and anything still unrated. It is a partial reference set: absence from it is missing evidence, never proof that a release is bad.
+_Avoid_: ground truth, expected results, answer key
+
+**Acceptance Rate**:
+The share of proposals whose Status is not rejected. It measures the agent, and it moves without Ben listening to anything.
+_Avoid_: hit rate, precision
+
+**Taste Yield**:
+The share of rated proposals rated Rotate or AOTY. It measures the recommendation rather than the agent, it moves over months, and it is read beside Shortlist Fill Rate — the share of Runs that proposed a full five — because yield alone rewards proposing fewer and safer.
+_Avoid_: quality score, success rate
