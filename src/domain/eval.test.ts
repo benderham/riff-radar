@@ -1,10 +1,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+
+import { z } from 'zod'
 
 import type { Candidate } from './candidates.ts'
-import type { Defect, GradedRun } from './eval.ts'
+import type { CaseResult, Defect, GradedRun } from './eval.ts'
 import {
   DEFECTS,
+  aggregate,
+  caseSchema,
   escaped,
   gradeRun,
   misranked,
@@ -384,4 +389,168 @@ test('a clean run has no defects', () => {
   })
 
   assert.deepEqual(gradeRun(graded), [])
+})
+
+// ── The case manifest ────────────────────────────────────────────────────────
+
+const manifest = (over: Record<string, unknown> = {}) => ({
+  slug: '00-smoke',
+  args: ['run', '--last-days=7'],
+  now: '2026-01-15T09:00:00+11:00',
+  sources: { loudwire: 'loudwire.html' },
+  labels: { eligible: ['Ulcerate|Cutting the Throat of God'], ineligible: [] },
+  budget: { steps: 20, costUsd: 0.02 },
+  responses: { 'https://musicbrainz.org/ws/2/release-group': 'responses/release-group.json' },
+  ...over,
+})
+
+const refusal = (over: Record<string, unknown>): string => {
+  const parsed = caseSchema.safeParse(manifest(over))
+  assert.equal(parsed.success, false)
+  return z.prettifyError(parsed.error)
+}
+
+test('a well-formed case manifest parses', () => {
+  const parsed = caseSchema.safeParse(manifest())
+
+  assert.equal(parsed.success, true)
+  assert.deepEqual(parsed.data?.budget, { steps: 20, costUsd: 0.02 })
+})
+
+test("the committed smoke case is a case the schema accepts", () => {
+  const onDisk = JSON.parse(
+    readFileSync(new URL('../../fixtures/eval/00-smoke/case.json', import.meta.url), 'utf8'),
+  )
+
+  assert.equal(caseSchema.safeParse(onDisk).success, true)
+})
+
+test('a manifest missing its budget is refused, naming the field', () => {
+  assert.match(refusal({ budget: undefined }), /budget/)
+})
+
+test('a manifest whose labels are not lists of strings is refused', () => {
+  assert.match(refusal({ labels: { eligible: 'Ulcerate', ineligible: [] } }), /eligible/)
+})
+
+test('a source file that climbs out of fixtures is refused', () => {
+  assert.match(refusal({ sources: { loudwire: '../../etc/passwd' } }), /loudwire/)
+})
+
+test('a recorded response path that climbs out of the fixtures directory is refused', () => {
+  assert.match(refusal({ responses: { 'https://x.test': '../../../secrets.json' } }), /https:\/\/x\.test/)
+})
+
+test('a source nobody configured is refused', () => {
+  assert.match(refusal({ sources: { pitchfork: 'pitchfork.html' } }), /pitchfork/)
+})
+
+test('a budget of zero steps is refused', () => {
+  assert.match(refusal({ budget: { steps: 0, costUsd: 0.02 } }), /steps/)
+})
+
+// ── Aggregating a pass ───────────────────────────────────────────────────────
+
+const usage = (output: number) => ({
+  uncachedInputTokens: 100,
+  cachedInputTokens: 900,
+  outputTokens: output,
+})
+
+const CONFIGURATION = {
+  at: '2026-01-20T09:00:00.000Z',
+  promptVersion: 1,
+  profileVersion: 1,
+  modelId: 'a-model',
+}
+
+/** Two arguments every aggregation test passes the same way. */
+const totalsOf = (cases: readonly CaseResult[]) => aggregate(cases, CONFIGURATION).totals
+
+const result = (over: Partial<CaseResult> = {}): CaseResult => ({
+  slug: '01-january-week-one',
+  runId: 'run-1',
+  terminationReason: 'completed',
+  defects: [],
+  steps: 12,
+  latencyMs: 30_000,
+  tokens: usage(500),
+  cost: 0.012,
+  ...over,
+})
+
+test('a pass sums its cost, its steps and its tokens', () => {
+  const totals = totalsOf([result(), result({ cost: 0.018, steps: 20, tokens: usage(700) })])
+
+  assert.equal(totals.cases, 2)
+  assert.equal(totals.steps, 32)
+  assert.equal(totals.cost.toFixed(4), '0.0300')
+  assert.equal(totals.meanCost.toFixed(4), '0.0150')
+  assert.deepEqual(totals.tokens, {
+    uncachedInputTokens: 200,
+    cachedInputTokens: 1800,
+    outputTokens: 1200,
+  })
+})
+
+test('a pass counts each defect by its word', () => {
+  const totals = totalsOf([
+    result({ defects: [{ defect: 'missed', detail: 'one' }, { defect: 'missed', detail: 'two' }] }),
+    result({ defects: [{ defect: 'wasteful', detail: 'over' }] }),
+  ])
+
+  assert.equal(totals.defects['missed'], 2)
+  assert.equal(totals.defects['wasteful'], 1)
+  assert.equal(totals.defects['ungrounded'], 0)
+})
+
+test('every defect is reported, including the ones no case had', () => {
+  assert.deepEqual(Object.keys(totalsOf([result()]).defects).sort(), [...DEFECTS].sort())
+})
+
+test('a pass counts the cases that did not complete', () => {
+  const totals = totalsOf([result(), result({ terminationReason: 'max_steps_exceeded' })])
+
+  assert.equal(totals.incomplete, 1)
+})
+
+test('median latency of an odd number of cases is the middle one', () => {
+  const totals = totalsOf([
+    result({ latencyMs: 10_000 }),
+    result({ latencyMs: 50_000 }),
+    result({ latencyMs: 30_000 }),
+  ])
+
+  assert.equal(totals.medianLatencyMs, 30_000)
+})
+
+test('median latency of an even number of cases is between the middle two', () => {
+  const totals = totalsOf([
+    result({ latencyMs: 10_000 }),
+    result({ latencyMs: 50_000 }),
+    result({ latencyMs: 30_000 }),
+    result({ latencyMs: 20_000 }),
+  ])
+
+  assert.equal(totals.medianLatencyMs, 25_000)
+})
+
+test('a pass of no cases aggregates to zero rather than to NaN', () => {
+  const totals = totalsOf([])
+
+  assert.equal(totals.cases, 0)
+  assert.equal(totals.meanCost, 0)
+  assert.equal(totals.medianLatencyMs, 0)
+})
+
+test('a pass reports the configuration it was given, unchanged', () => {
+  assert.deepEqual(aggregate([], CONFIGURATION).configuration, CONFIGURATION)
+})
+
+test('the committed sample report is what aggregating its own cases produces', () => {
+  const sample = JSON.parse(
+    readFileSync(new URL('../../fixtures/eval/sample-report.json', import.meta.url), 'utf8'),
+  )
+
+  assert.deepEqual(aggregate(sample.cases, sample.configuration).totals, sample.totals)
 })

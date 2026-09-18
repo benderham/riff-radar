@@ -1,0 +1,110 @@
+{
+  "configuration": {
+    "at": "2026-01-20T22:14:05.117Z",
+    "promptVersion": 6,
+    "profileVersion": 2,
+    "modelId": "accounts/fireworks/models/deepseek-v4p1-flash"
+  },
+  "cases": [
+    {
+      "slug": "01-january-week-two",
+      "runId": "a1b2c3d4",
+      "terminationReason": "completed",
+      "defects": [],
+      "steps": 14,
+      "latencyMs": 41200,
+      "tokens": {
+        "uncachedInputTokens": 9100,
+        "cachedInputTokens": 132000,
+        "outputTokens": 3400
+      },
+      "cost": 0.0121
+    },
+    {
+      "slug": "02-january-week-three",
+      "runId": "e5f6a7b8",
+      "terminationReason": "completed",
+      "defects": [
+        {
+          "defect": "missed",
+          "release": "Edenbridge|Set The Dark On Fire",
+          "detail": "labelled eligible and not on the shortlist"
+        }
+      ],
+      "steps": 17,
+      "latencyMs": 52800,
+      "tokens": {
+        "uncachedInputTokens": 10400,
+        "cachedInputTokens": 141500,
+        "outputTokens": 3900
+      },
+      "cost": 0.0139
+    },
+    {
+      "slug": "03-duplicate-across-sources",
+      "runId": "c9d0e1f2",
+      "terminationReason": "completed_short",
+      "defects": [
+        {
+          "defect": "wasteful",
+          "detail": "22 steps against a budget of 20"
+        }
+      ],
+      "steps": 22,
+      "latencyMs": 68500,
+      "tokens": {
+        "uncachedInputTokens": 12800,
+        "cachedInputTokens": 168200,
+        "outputTokens": 4600
+      },
+      "cost": 0.0177
+    },
+    {
+      "slug": "04-musicbrainz-silent",
+      "runId": "a3b4c5d6",
+      "terminationReason": "max_steps_exceeded",
+      "defects": [
+        {
+          "defect": "missed",
+          "release": "Iotunn|Waves Over Copenhell",
+          "detail": "labelled eligible and not on the shortlist"
+        },
+        {
+          "defect": "unlisted",
+          "release": "Wormrot|Hiss",
+          "detail": "no stored source text lists this release"
+        }
+      ],
+      "steps": 30,
+      "latencyMs": 95100,
+      "tokens": {
+        "uncachedInputTokens": 18300,
+        "cachedInputTokens": 201700,
+        "outputTokens": 5200
+      },
+      "cost": 0.0244
+    }
+  ],
+  "totals": {
+    "cases": 4,
+    "defects": {
+      "unlisted": 1,
+      "missed": 2,
+      "spurious": 0,
+      "ungrounded": 0,
+      "misranked": 0,
+      "wasteful": 1,
+      "escaped": 0
+    },
+    "incomplete": 1,
+    "steps": 83,
+    "tokens": {
+      "uncachedInputTokens": 50600,
+      "cachedInputTokens": 643400,
+      "outputTokens": 17100
+    },
+    "cost": 0.06810000000000001,
+    "meanCost": 0.017025000000000002,
+    "medianLatencyMs": 60650
+  }
+}

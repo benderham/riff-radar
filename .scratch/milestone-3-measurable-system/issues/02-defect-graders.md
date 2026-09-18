@@ -30,13 +30,13 @@ Nothing is added to `runs` or `steps`. A Defect is a property of a grading, not 
 
 ## Acceptance criteria
 
-- [ ] The seven are a closed union; an eighth value does not typecheck
-- [ ] Each Defect has tests that fire it and tests that must **not** fire it
-- [ ] `ungrounded` calls the existing vibe-citation rule rather than a second copy
-- [ ] `unlisted` suppresses `missed` for the same release, proved by a test
-- [ ] No migration, no new column, no change to `src/store/`
-- [ ] Run records in tests are small and hand-written, not real traces
-- [ ] `npm run check` green
+- [x] The seven are a closed union; an eighth value does not typecheck
+- [x] Each Defect has tests that fire it and tests that must **not** fire it
+- [x] `ungrounded` calls the existing vibe-citation rule rather than a second copy
+- [x] `unlisted` suppresses `missed` for the same release, proved by a test
+- [x] No migration, no new column, no change to `src/store/`
+- [x] Run records in tests are small and hand-written, not real traces
+- [x] `npm run check` green
 
 ## Notes
 

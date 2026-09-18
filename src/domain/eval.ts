@@ -25,7 +25,12 @@
  *   already passed the validator; re-running it would grade the validator.
  */
 
+import { z } from 'zod'
+
+import { SOURCES } from '../../config.ts'
 import type { Candidate } from './candidates.ts'
+import type { Usage } from './cost.ts'
+import { NO_USAGE, addUsage } from './cost.ts'
 import { artistTitleIdentity, normaliseName } from './candidates.ts'
 import { isRetryable } from './failure.ts'
 import { htmlToText } from './html-text.ts'
@@ -53,6 +58,9 @@ export const DEFECTS = [
 ] as const
 
 export type Defect = (typeof DEFECTS)[number]
+
+/** The sources a case may serve from a fixture: the configured ones, and no others. */
+const SOURCE_IDS = Object.keys(SOURCES) as [keyof typeof SOURCES, ...(keyof typeof SOURCES)[]]
 
 export interface Finding {
   readonly defect: Defect
@@ -365,4 +373,161 @@ export const gradeRun = (run: GradedRun): Finding[] => {
     ...wasteful(run),
     ...escaped(run),
   ]
+}
+
+const SAFE_PATH = /^[A-Za-z0-9][A-Za-z0-9._\-/]*$/
+
+/** A file under `fixtures/`, and never one outside it. */
+const safePath = z
+  .string()
+  .regex(SAFE_PATH, 'must be a relative path with no leading slash')
+  .refine((value) => !value.includes('..'), 'must not climb out of fixtures/')
+
+/**
+ * A recorded answer: a file for the ordinary case, and a status for the cases
+ * the ordinary one cannot express.
+ *
+ * A bare path means 200, which is what almost every recording is. The object
+ * form exists because two of the seven Defects are about failure — `escaped` is
+ * at zero tolerance in ADR-0065 — and a format that can only record success is
+ * a format in which those cases cannot be written at all. Tickets 05 and 06
+ * inherit this, so it is settled before twenty manifests exist rather than
+ * after.
+ */
+const recordedResponse = z.union([
+  safePath,
+  z
+    .object({
+      status: z.number().int().min(0).max(599),
+      /** Absent is an empty body, which is what a refusal usually has. */
+      file: safePath.optional(),
+      headers: z.record(z.string(), z.string()).optional(),
+    })
+    .strict(),
+])
+
+/**
+ * A Golden Case, as `fixtures/eval/<NN>-<slug>/case.json` states it.
+ *
+ * Refused loudly rather than defaulted: a case that does not parse is not a
+ * case that runs with assumptions nobody wrote down, and a pass whose cases
+ * quietly differ from their manifests measures nothing (ADR-0058).
+ *
+ * `args` is a real argv fragment, parsed by `parseCliArgs` like any other, so a
+ * case cannot drift from the CLI it is meant to be exercising. Both `sources`
+ * and `responses` name files relative to `fixtures/` rather than to the case
+ * directory, so a body two cases share is referenced twice instead of copied
+ * twice (ADR-0062). `responses` keys are URL prefixes, longest match first.
+ */
+export const caseSchema = z
+  .object({
+    slug: z.string().min(1),
+    args: z.array(z.string()),
+    /** The instant the fake clock reports, so a January window is a fixed question. */
+    now: z.iso.datetime({ offset: true }),
+    sources: z.partialRecord(z.enum(SOURCE_IDS), safePath),
+    labels: z.object({
+      eligible: z.array(z.string()),
+      ineligible: z.array(z.string()),
+    }),
+    budget: z.object({
+      steps: z.number().int().positive(),
+      costUsd: z.number().positive(),
+    }),
+    responses: z.record(z.string().min(1), recordedResponse),
+  })
+  .strict()
+
+export type EvalCase = z.infer<typeof caseSchema>
+
+/** One case's run, graded. The unit both the report and the comparison are made of. */
+export interface CaseResult {
+  readonly slug: string
+  readonly runId: string
+  readonly terminationReason: TerminationReason
+  readonly defects: readonly Finding[]
+  readonly steps: number
+  /** Wall clock around the run. Real, because the model in a pass is real (ADR-0058). */
+  readonly latencyMs: number
+  readonly tokens: Usage
+  readonly cost: number
+}
+
+export interface PassTotals {
+  readonly cases: number
+  /** Every word, including the ones at zero: a taxonomy reports its absences. */
+  readonly defects: Record<Defect, number>
+  readonly incomplete: number
+  readonly steps: number
+  readonly tokens: Usage
+  readonly cost: number
+  readonly meanCost: number
+  readonly medianLatencyMs: number
+}
+
+/**
+ * What produced a pass, pinned so that two passes can be told apart by more
+ * than their numbers. ADR-0058 compares deltas against a noise floor, which
+ * means nothing if the prompt, the profile or the model moved in between.
+ */
+export interface PassConfiguration {
+  readonly at: string
+  readonly promptVersion: number
+  readonly profileVersion: number
+  readonly modelId: string
+}
+
+export interface PassReport {
+  readonly configuration: PassConfiguration
+  readonly cases: readonly CaseResult[]
+  readonly totals: PassTotals
+}
+
+/**
+ * The middle value, and the midpoint of the middle two where there is no
+ * middle. Median rather than mean, because one 44-second source fetch against a
+ * provider having a bad afternoon should not become the number a later pass is
+ * compared against.
+ */
+const median = (values: readonly number[]): number => {
+  if (values.length === 0) return 0
+
+  const sorted = [...values].sort((one, other) => one - other)
+  const middle = Math.floor(sorted.length / 2)
+
+  return sorted.length % 2 === 1
+    ? sorted[middle]!
+    : (sorted[middle - 1]! + sorted[middle]!) / 2
+}
+
+/**
+ * A pass, summed. Pure arithmetic over the case results, so the report a person
+ * reads and the numbers a comparison is drawn from are the same thing, and an
+ * empty pass totals to zero rather than to `NaN`.
+ */
+export const aggregate = (
+  cases: readonly CaseResult[],
+  configuration: PassConfiguration,
+): PassReport => {
+  const defects = Object.fromEntries(DEFECTS.map((defect) => [defect, 0])) as Record<Defect, number>
+  for (const each of cases) {
+    for (const finding of each.defects) defects[finding.defect] += 1
+  }
+
+  const cost = cases.reduce((total, each) => total + each.cost, 0)
+
+  return {
+    configuration,
+    cases,
+    totals: {
+      cases: cases.length,
+      defects,
+      incomplete: cases.filter((each) => !COMPLETED.includes(each.terminationReason)).length,
+      steps: cases.reduce((total, each) => total + each.steps, 0),
+      tokens: cases.reduce((total, each) => addUsage(total, each.tokens), NO_USAGE),
+      cost,
+      meanCost: cases.length === 0 ? 0 : cost / cases.length,
+      medianLatencyMs: median(cases.map((each) => each.latencyMs)),
+    },
+  }
 }

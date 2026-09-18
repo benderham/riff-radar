@@ -4,7 +4,7 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## Why
 
@@ -24,13 +24,13 @@ The two Source bodies are **referenced by name**, not copied: `fixtures/loudwire
 
 ## Acceptance criteria
 
-- [ ] `npm run eval` runs every case in `fixtures/eval/` and writes a report
-- [ ] `--case <slug>` runs one, for iterating without paying for twenty
-- [ ] Source bodies are referenced, not duplicated per case
-- [ ] A malformed `case.json` is refused with a message naming the case and the field
-- [ ] `git diff src/agents/ src/tools.ts` is empty at the end of this ticket
-- [ ] Aggregation and cost arithmetic are pure and unit-tested against a committed sample report
-- [ ] `npm run check` stays offline and green
+- [x] `npm run eval` runs every case in `fixtures/eval/` and writes a report
+- [x] `--case <slug>` runs one, for iterating without paying for twenty
+- [x] Source bodies are referenced, not duplicated per case
+- [x] A malformed `case.json` is refused with a message naming the case and the field
+- [x] `git diff src/agents/ src/tools.ts` is empty at the end of this ticket
+- [x] Aggregation and cost arithmetic are pure and unit-tested against a committed sample report
+- [x] `npm run check` stays offline and green
 
 ## Notes
 

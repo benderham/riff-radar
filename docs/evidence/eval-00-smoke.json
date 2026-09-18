@@ -1,0 +1,52 @@
+{
+  "configuration": {
+    "at": "2026-09-18T03:52:02.489Z",
+    "promptVersion": 6,
+    "profileVersion": 2,
+    "modelId": "accounts/fireworks/models/deepseek-v4p1-flash"
+  },
+  "cases": [
+    {
+      "slug": "00-smoke",
+      "runId": "630cbedb-76c8-47d8-81d7-4af71c0bfcf3",
+      "terminationReason": "no_candidates",
+      "defects": [
+        {
+          "defect": "missed",
+          "release": "Edenbridge|Set The Dark On Fire",
+          "detail": "labelled eligible and not on the shortlist"
+        }
+      ],
+      "steps": 25,
+      "latencyMs": 165383,
+      "tokens": {
+        "uncachedInputTokens": 8957,
+        "cachedInputTokens": 170146,
+        "outputTokens": 13455
+      },
+      "cost": 0.012041862
+    }
+  ],
+  "totals": {
+    "cases": 1,
+    "defects": {
+      "unlisted": 0,
+      "missed": 1,
+      "spurious": 0,
+      "ungrounded": 0,
+      "misranked": 0,
+      "wasteful": 0,
+      "escaped": 0
+    },
+    "incomplete": 1,
+    "steps": 25,
+    "tokens": {
+      "uncachedInputTokens": 8957,
+      "cachedInputTokens": 170146,
+      "outputTokens": 13455
+    },
+    "cost": 0.012041862,
+    "meanCost": 0.012041862,
+    "medianLatencyMs": 165383
+  }
+}

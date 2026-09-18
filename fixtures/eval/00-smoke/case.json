@@ -1,0 +1,23 @@
+{
+  "slug": "00-smoke",
+  "args": ["run", "--last-days=7"],
+  "now": "2026-01-16T09:00:00+11:00",
+  "sources": {
+    "loudwire": "loudwire.html"
+  },
+  "labels": {
+    "eligible": ["Edenbridge|Set The Dark On Fire"],
+    "ineligible": ["Evoken|Embrace The Emptiness Re-Release"]
+  },
+  "budget": {
+    "steps": 20,
+    "costUsd": 0.025
+  },
+  "responses": {
+    "https://musicbrainz.org/ws/2/release-group?query=": "musicbrainz-not-found.json",
+    "https://api.tavily.com/search": "tavily-search.json",
+    "https://api.notion.com/v1/databases/eval-database/query": "eval/00-smoke/responses/notion-query-empty.json",
+    "https://api.notion.com/v1/databases/eval-database": "eval/00-smoke/responses/notion-schema.json",
+    "https://api.notion.com/v1/pages": "eval/00-smoke/responses/notion-page-created.json"
+  }
+}
