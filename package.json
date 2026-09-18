@@ -12,6 +12,8 @@
     "typecheck": "tsc --noEmit",
     "trace": "node --disable-warning=ExperimentalWarning --import tsx scripts/trace.ts",
     "eval": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --import tsx scripts/eval.ts",
+    "known-set": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --import tsx scripts/known-set.ts",
+    "harvest": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --import tsx scripts/harvest.ts",
     "check": "npm run typecheck && npm test",
     "smoke:model": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --import tsx scripts/smoke-model.ts",
     "smoke:sources": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --import tsx scripts/smoke-sources.ts",

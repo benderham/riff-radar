@@ -54,3 +54,13 @@ Run `3e657aa3` shortlisted five releases and scored every one of them zero, beca
 This is a trap for the milestone rather than an item in it. It must be fixed **after** the baseline pass, not before, because it is this milestone's controlled change (ticket 01, blocked by ticket 08). Fixing it early destroys the only before-and-after comparison the milestone has.
 
 Evidence: run `3e657aa3`; ADR-0052's second amendment; `.scratch/milestone-3-measurable-system/issues/01-label-matching-misses-abbreviations.md`.
+
+## 6. A run spanning a year boundary reads only one year's calendar
+
+Found on 18 September 2026 while harvesting the Golden Cases. The week ending 2026-01-02 resolves to the window `2025-12-27..2026-01-02`: six of its seven days are in 2025, and both Sources are **year** pages for 2026. The case could only ever see its single January release, so it was swapped out of the harvested twelve for the week ending 2026-04-03.
+
+The case is a symptom rather than the problem. A real run on 2 January reads the same two pages and misses six days of releases with no warning at all — `truncated` does not fire, because nothing was truncated; the page simply does not carry December. Between the last Friday of December and the first of January, the agent is quietly blind to most of its window.
+
+Deliberately not fixed here, for the same reason as item 1: this is Source coverage, and the milestone is about measurement. The fix is a Source URL that varies with the window's years rather than one fixed page — `sources.ts` would fetch both the 2025 and 2026 calendars for a window that straddles them — and it needs a second captured fixture per Source before it can be tested. Ben raised it as the general case: the situation recurs every year and the answer is updated Sources rather than a special case for one week.
+
+Evidence: harvest of `2026-01-02`, window `2025-12-27..2026-01-02`, one release visible against `k = 1`.

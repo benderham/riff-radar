@@ -87,7 +87,7 @@ Do not weaken an assertion or delete a failing test merely to make the suite pas
 
 ## External actions and secrets
 
-- Never commit API keys, tokens, personal listening history, or detailed taste data.
+- Never commit API keys, tokens, personal listening history, or detailed taste data. The one declared exception is the frozen Known Set, `known-set.json`, which ADR-0066 commits so the Back-test can be checked.
 - Read credentials from environment variables.
 - Do not print secrets in traces, errors, fixtures, or diary entries.
 - Redact sensitive request headers and provider responses before logging.
