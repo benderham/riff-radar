@@ -1,0 +1,45 @@
+{
+  "slug": "05-recovers",
+  "args": [
+    "run",
+    "--last-days=7"
+  ],
+  "now": "2026-01-16T12:00:00Z",
+  "sources": {
+    "loudwire": "eval/05-recovers/loudwire.html"
+  },
+  "labels": {
+    "eligible": [
+      "ember wake|tidal flats",
+      "glass harbour|quietus"
+    ],
+    "ineligible": []
+  },
+  "budget": {
+    "steps": 25,
+    "costUsd": 0.05
+  },
+  "responses": {
+    "https://musicbrainz.org/ws/2/release-group?query=": "musicbrainz-not-found.json",
+    "https://musicbrainz.org/ws/2/release-group?query=artist%3A%22Ember%20Wake%22%20AND%20releasegroup%3A%22Tidal%20Flats%22&fmt=json&limit=5": [
+      {
+        "status": 503,
+        "headers": {
+          "retry-after": "1"
+        }
+      },
+      "eval/05-recovers/responses/ember-wake-tidal-flats-search.json"
+    ],
+    "https://musicbrainz.org/ws/2/release?release-group=aa1e0c7a-0007-4000-8000-000000000007&inc=recordings+labels&fmt=json&limit=1": "eval/05-recovers/responses/ember-wake-tidal-flats-release.json",
+    "https://musicbrainz.org/ws/2/release-group/aa1e0c7a-0007-4000-8000-000000000007?inc=genres&fmt=json": "musicbrainz-genres.json",
+    "https://musicbrainz.org/ws/2/artist/aa1e0c7a-9007-4000-8000-000000000007?inc=artist-rels&fmt=json": "musicbrainz-artist-rels.json",
+    "https://musicbrainz.org/ws/2/release-group?query=artist%3A%22Glass%20Harbour%22%20AND%20releasegroup%3A%22Quietus%22&fmt=json&limit=5": "eval/05-recovers/responses/glass-harbour-quietus-search.json",
+    "https://musicbrainz.org/ws/2/release?release-group=aa1e0c7a-0008-4000-8000-000000000008&inc=recordings+labels&fmt=json&limit=1": "eval/05-recovers/responses/glass-harbour-quietus-release.json",
+    "https://musicbrainz.org/ws/2/release-group/aa1e0c7a-0008-4000-8000-000000000008?inc=genres&fmt=json": "musicbrainz-genres.json",
+    "https://musicbrainz.org/ws/2/artist/aa1e0c7a-9008-4000-8000-000000000008?inc=artist-rels&fmt=json": "musicbrainz-artist-rels.json",
+    "https://api.tavily.com/search": "tavily-search.json",
+    "https://api.notion.com/v1/databases/eval-database/query": "notion-query-empty.json",
+    "https://api.notion.com/v1/databases/eval-database": "notion-schema.json",
+    "https://api.notion.com/v1/pages": "notion-page-created.json"
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "slug": "07-always-list",
+  "args": [
+    "run",
+    "--last-days=7"
+  ],
+  "now": "2026-01-16T12:00:00Z",
+  "sources": {
+    "loudwire": "eval/07-always-list/loudwire.html"
+  },
+  "labels": {
+    "eligible": [
+      "opeth|the drifting hour"
+    ],
+    "ineligible": []
+  },
+  "budget": {
+    "steps": 25,
+    "costUsd": 0.05
+  },
+  "responses": {
+    "https://musicbrainz.org/ws/2/release-group?query=": "musicbrainz-not-found.json",
+    "https://musicbrainz.org/ws/2/release-group?query=artist%3A%22Opeth%22%20AND%20releasegroup%3A%22The%20Drifting%20Hour%22&fmt=json&limit=5": "eval/07-always-list/responses/opeth-the-drifting-hour-search.json",
+    "https://musicbrainz.org/ws/2/release?release-group=aa1e0c7a-000d-4000-8000-00000000000d&inc=recordings+labels&fmt=json&limit=1": "eval/07-always-list/responses/opeth-the-drifting-hour-release.json",
+    "https://musicbrainz.org/ws/2/release-group/aa1e0c7a-000d-4000-8000-00000000000d?inc=genres&fmt=json": "eval/07-always-list/responses/opeth-the-drifting-hour-genres.json",
+    "https://musicbrainz.org/ws/2/artist/aa1e0c7a-900d-4000-8000-00000000000d?inc=artist-rels&fmt=json": "eval/07-always-list/responses/opeth-the-drifting-hour-artist.json",
+    "https://musicbrainz.org/ws/2/release-group?query=artist%3A%22Verglas%20Crown%22%20AND%20releasegroup%3A%22Mirrorlands%22&fmt=json&limit=5": "eval/07-always-list/responses/verglas-crown-mirrorlands-search.json",
+    "https://musicbrainz.org/ws/2/release?release-group=aa1e0c7a-0020-4000-8000-000000000020&inc=recordings+labels&fmt=json&limit=1": "eval/07-always-list/responses/verglas-crown-mirrorlands-release.json",
+    "https://musicbrainz.org/ws/2/release-group/aa1e0c7a-0020-4000-8000-000000000020?inc=genres&fmt=json": "eval/07-always-list/responses/verglas-crown-mirrorlands-genres.json",
+    "https://musicbrainz.org/ws/2/artist/aa1e0c7a-9020-4000-8000-000000000020?inc=artist-rels&fmt=json": "eval/07-always-list/responses/verglas-crown-mirrorlands-artist.json",
+    "https://musicbrainz.org/ws/2/release-group?query=artist%3A%22Saltpetre%22%20AND%20releasegroup%3A%22Unmarked%20Graves%22&fmt=json&limit=5": "eval/07-always-list/responses/saltpetre-unmarked-graves-search.json",
+    "https://musicbrainz.org/ws/2/release?release-group=aa1e0c7a-0021-4000-8000-000000000021&inc=recordings+labels&fmt=json&limit=1": "eval/07-always-list/responses/saltpetre-unmarked-graves-release.json",
+    "https://musicbrainz.org/ws/2/release-group/aa1e0c7a-0021-4000-8000-000000000021?inc=genres&fmt=json": "eval/07-always-list/responses/saltpetre-unmarked-graves-genres.json",
+    "https://musicbrainz.org/ws/2/artist/aa1e0c7a-9021-4000-8000-000000000021?inc=artist-rels&fmt=json": "eval/07-always-list/responses/saltpetre-unmarked-graves-artist.json",
+    "https://musicbrainz.org/ws/2/release-group?query=artist%3A%22Ninebar%20Tide%22%20AND%20releasegroup%3A%22Rope%20And%20Ash%22&fmt=json&limit=5": "eval/07-always-list/responses/ninebar-tide-rope-and-ash-search.json",
+    "https://musicbrainz.org/ws/2/release?release-group=aa1e0c7a-0022-4000-8000-000000000022&inc=recordings+labels&fmt=json&limit=1": "eval/07-always-list/responses/ninebar-tide-rope-and-ash-release.json",
+    "https://musicbrainz.org/ws/2/release-group/aa1e0c7a-0022-4000-8000-000000000022?inc=genres&fmt=json": "eval/07-always-list/responses/ninebar-tide-rope-and-ash-genres.json",
+    "https://musicbrainz.org/ws/2/artist/aa1e0c7a-9022-4000-8000-000000000022?inc=artist-rels&fmt=json": "eval/07-always-list/responses/ninebar-tide-rope-and-ash-artist.json",
+    "https://musicbrainz.org/ws/2/release-group?query=artist%3A%22Wrackline%22%20AND%20releasegroup%3A%22Foundered%22&fmt=json&limit=5": "eval/07-always-list/responses/wrackline-foundered-search.json",
+    "https://musicbrainz.org/ws/2/release?release-group=aa1e0c7a-0023-4000-8000-000000000023&inc=recordings+labels&fmt=json&limit=1": "eval/07-always-list/responses/wrackline-foundered-release.json",
+    "https://musicbrainz.org/ws/2/release-group/aa1e0c7a-0023-4000-8000-000000000023?inc=genres&fmt=json": "eval/07-always-list/responses/wrackline-foundered-genres.json",
+    "https://musicbrainz.org/ws/2/artist/aa1e0c7a-9023-4000-8000-000000000023?inc=artist-rels&fmt=json": "eval/07-always-list/responses/wrackline-foundered-artist.json",
+    "https://musicbrainz.org/ws/2/release-group?query=artist%3A%22Cold%20Quarter%22%20AND%20releasegroup%3A%22Ledgerman%22&fmt=json&limit=5": "eval/07-always-list/responses/cold-quarter-ledgerman-search.json",
+    "https://musicbrainz.org/ws/2/release?release-group=aa1e0c7a-0024-4000-8000-000000000024&inc=recordings+labels&fmt=json&limit=1": "eval/07-always-list/responses/cold-quarter-ledgerman-release.json",
+    "https://musicbrainz.org/ws/2/release-group/aa1e0c7a-0024-4000-8000-000000000024?inc=genres&fmt=json": "eval/07-always-list/responses/cold-quarter-ledgerman-genres.json",
+    "https://musicbrainz.org/ws/2/artist/aa1e0c7a-9024-4000-8000-000000000024?inc=artist-rels&fmt=json": "eval/07-always-list/responses/cold-quarter-ledgerman-artist.json",
+    "https://musicbrainz.org/ws/2/release-group?query=artist%3A%22Marrowfield%22%20AND%20releasegroup%3A%22Sunken%20Lanes%22&fmt=json&limit=5": "eval/07-always-list/responses/marrowfield-sunken-lanes-search.json",
+    "https://musicbrainz.org/ws/2/release?release-group=aa1e0c7a-0025-4000-8000-000000000025&inc=recordings+labels&fmt=json&limit=1": "eval/07-always-list/responses/marrowfield-sunken-lanes-release.json",
+    "https://musicbrainz.org/ws/2/release-group/aa1e0c7a-0025-4000-8000-000000000025?inc=genres&fmt=json": "eval/07-always-list/responses/marrowfield-sunken-lanes-genres.json",
+    "https://musicbrainz.org/ws/2/artist/aa1e0c7a-9025-4000-8000-000000000025?inc=artist-rels&fmt=json": "eval/07-always-list/responses/marrowfield-sunken-lanes-artist.json",
+    "https://api.tavily.com/search": "tavily-search.json",
+    "https://api.notion.com/v1/databases/eval-database/query": "notion-query-empty.json",
+    "https://api.notion.com/v1/databases/eval-database": "notion-schema.json",
+    "https://api.notion.com/v1/pages": "notion-page-created.json"
+  }
+}

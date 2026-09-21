@@ -1,0 +1,39 @@
+{
+  "slug": "01-duplicate",
+  "args": [
+    "run",
+    "--last-days=7"
+  ],
+  "now": "2026-01-16T12:00:00Z",
+  "sources": {
+    "loudwire": "eval/01-duplicate/loudwire.html",
+    "wikipedia": "eval/01-duplicate/wikipedia.html"
+  },
+  "labels": {
+    "eligible": [
+      "ashen gate|winter of the ledger",
+      "ruinsmith|hollow coast"
+    ],
+    "ineligible": []
+  },
+  "budget": {
+    "steps": 25,
+    "costUsd": 0.05
+  },
+  "responses": {
+    "https://musicbrainz.org/ws/2/release-group?query=": "musicbrainz-not-found.json",
+    "https://musicbrainz.org/ws/2/release-group?query=artist%3A%22Ashen%20Gate%22%20AND%20releasegroup%3A%22Winter%20Of%20The%20Ledger%22&fmt=json&limit=5": "eval/01-duplicate/responses/ashen-gate-winter-of-the-ledger-search.json",
+    "https://musicbrainz.org/ws/2/release?release-group=aa1e0c7a-0001-4000-8000-000000000001&inc=recordings+labels&fmt=json&limit=1": "eval/01-duplicate/responses/ashen-gate-winter-of-the-ledger-release.json",
+    "https://musicbrainz.org/ws/2/release-group/aa1e0c7a-0001-4000-8000-000000000001?inc=genres&fmt=json": "musicbrainz-genres.json",
+    "https://musicbrainz.org/ws/2/artist/aa1e0c7a-9001-4000-8000-000000000001?inc=artist-rels&fmt=json": "musicbrainz-artist-rels.json",
+    "https://musicbrainz.org/ws/2/release-group?query=artist%3A%22Ashen%20Gate%22%20AND%20releasegroup%3A%22Winter%20of%20the%20Ledger%22&fmt=json&limit=5": "eval/01-duplicate/responses/ashen-gate-winter-of-the-ledger-search.json",
+    "https://musicbrainz.org/ws/2/release-group?query=artist%3A%22Ruinsmith%22%20AND%20releasegroup%3A%22Hollow%20Coast%22&fmt=json&limit=5": "eval/01-duplicate/responses/ruinsmith-hollow-coast-search.json",
+    "https://musicbrainz.org/ws/2/release?release-group=aa1e0c7a-0002-4000-8000-000000000002&inc=recordings+labels&fmt=json&limit=1": "eval/01-duplicate/responses/ruinsmith-hollow-coast-release.json",
+    "https://musicbrainz.org/ws/2/release-group/aa1e0c7a-0002-4000-8000-000000000002?inc=genres&fmt=json": "musicbrainz-genres.json",
+    "https://musicbrainz.org/ws/2/artist/aa1e0c7a-9002-4000-8000-000000000002?inc=artist-rels&fmt=json": "musicbrainz-artist-rels.json",
+    "https://api.tavily.com/search": "tavily-search.json",
+    "https://api.notion.com/v1/databases/eval-database/query": "notion-query-empty.json",
+    "https://api.notion.com/v1/databases/eval-database": "notion-schema.json",
+    "https://api.notion.com/v1/pages": "notion-page-created.json"
+  }
+}

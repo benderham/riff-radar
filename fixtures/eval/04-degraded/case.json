@@ -1,0 +1,37 @@
+{
+  "slug": "04-degraded",
+  "args": [
+    "run",
+    "--last-days=7"
+  ],
+  "now": "2026-01-16T12:00:00Z",
+  "sources": {
+    "loudwire": "eval/04-degraded/loudwire.html",
+    "wikipedia": "eval/04-degraded/wikipedia.html"
+  },
+  "labels": {
+    "eligible": [
+      "pale harrow|ninth reckoning",
+      "coldwater saints|hymnal"
+    ],
+    "ineligible": [
+      "mourning pyre|roadburn rites"
+    ]
+  },
+  "budget": {
+    "steps": 25,
+    "costUsd": 0.05
+  },
+  "responses": {
+    "https://musicbrainz.org/ws/2": {
+      "status": 503,
+      "headers": {
+        "retry-after": "1"
+      }
+    },
+    "https://api.tavily.com/search": "tavily-search.json",
+    "https://api.notion.com/v1/databases/eval-database/query": "notion-query-empty.json",
+    "https://api.notion.com/v1/databases/eval-database": "notion-schema.json",
+    "https://api.notion.com/v1/pages": "notion-page-created.json"
+  }
+}

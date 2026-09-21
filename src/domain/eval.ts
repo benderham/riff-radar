@@ -389,7 +389,7 @@ const safePath = z
  * inherit this, so it is settled before twenty manifests exist rather than
  * after.
  */
-const recordedResponse = z.union([
+const oneResponse = z.union([
   safePath,
   z
     .object({
@@ -400,6 +400,21 @@ const recordedResponse = z.union([
     })
     .strict(),
 ])
+
+/**
+ * One recorded answer, or a sequence of them.
+ *
+ * A sequence answers successive calls to the same URL in order and then repeats
+ * its last entry, which is the only way a recording can say that a lookup
+ * failed and then succeeded. A stateless recording can express an outage but
+ * never a recovery, and recovery is the path the retry budget exists for and
+ * that `escaped` is defined against — a run that survived a transient failure
+ * is not a run that let one escape (ADR-0067).
+ */
+const recordedResponse = z.union([oneResponse, z.array(oneResponse).min(1)])
+
+/** One answer — the file or the status form — as distinct from a sequence of them. */
+export type OneResponse = z.infer<typeof oneResponse>
 
 /**
  * A Golden Case, as `fixtures/eval/<NN>-<slug>/case.json` states it.
