@@ -32,6 +32,15 @@ export const RATINGS = ['Nope', 'OK', 'Rotate', 'AOTY'] as const
 
 export type Rating = (typeof RATINGS)[number]
 
+/**
+ * A `Rating` as Notion gives it, or `undefined` for anything else.
+ *
+ * Matched here rather than parsed by `z.enum`: a fifth option Ben adds to his
+ * own column must make a row unrated, not abort the command reading it.
+ */
+export const ratingNamed = (name: string | undefined): Rating | undefined =>
+  RATINGS.find((option) => option === name)
+
 /** One Notion row, as much of it as curation reads. */
 export interface CuratedRow {
   readonly artist: string

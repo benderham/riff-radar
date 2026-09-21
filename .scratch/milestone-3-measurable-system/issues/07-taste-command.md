@@ -4,7 +4,7 @@
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## Why
 
@@ -24,14 +24,48 @@ All three per `profile_version`, with **n** stated. A profile edit invalidates c
 
 ## Acceptance criteria
 
-- [ ] `npm run taste` prints all three per `profile_version` with n
-- [ ] Unrated proposals reported as their own bucket
-- [ ] Fill Rate printed unconditionally, never behind a flag
-- [ ] Its read-only schema names `Rating`; `NOTION_PROPERTIES` does not
-- [ ] No write path in the command; provable by inspection
-- [ ] Pages to the end the way `suppressedReleases` does
-- [ ] The arithmetic is pure and unit-tested; the Notion call is not in `npm test`
+- [x] `npm run taste` prints all three per `profile_version` with n
+- [x] Unrated proposals reported as their own bucket
+- [x] Fill Rate printed unconditionally, never behind a flag
+- [x] Its read-only schema names `Rating`; `NOTION_PROPERTIES` does not
+- [x] No write path in the command; provable by inspection
+- [x] Pages to the end the way `suppressedReleases` does
+- [x] The arithmetic is pure and unit-tested; the Notion call is not in `npm test`
 
 ## Notes
 
 ADR-0060, ADR-0061. Gates nothing. A quiet week of mediocre metal would otherwise fail a milestone for reasons unrelated to the agent.
+
+## What the build found
+
+**`profile_version` is not in Notion.** It is joined on `Run ID` against the
+store — and against the trace exports in `docs/evidence/`, because the
+milestone-1 database was deleted at milestone 2's schema change and of the four
+runs that have ever written to Notion, `riff-radar.db` remembers one. Run
+`530ebea6` survives nowhere and its five proposals are bucketed `unknown`
+(ADR-0068).
+
+**The ticket's premise is stale.** "Nine records sit at `Proposed`, unjudged" —
+all fifteen are now judged and rated. Nothing is `Rejected`, so Acceptance is
+100% and says only that Ben has rejected nothing outright; Yield is the number
+with something to say.
+
+**The Fill Rate denominator was wrong in the first build** and the spec review
+caught it. It counted runs that wrote to Notion, which silently excludes the
+run that proposed nothing — precisely the behaviour the denominator exists to
+expose. It now counts every run that reached a shortlist decision, and the
+reading moved from 33% of 3 to 17% of 6.
+
+## Evidence
+
+One live reading on 21 September 2026, 288 rows paged from Notion:
+
+```
+profile   n   Acceptance          Taste Yield                  Fill Rate
+v2       10   100% (0 unjudged)    10% of 10 rated (0 unrated)   17% of 6 run(s)
+unknown   5   100% (0 unjudged)    20% of 5 rated (0 unrated)   100% of 1 run(s)
+```
+
+One of fifteen proposals is a `Rotate` or an `AOTY`. `n` is too small to read
+as a trend and the ticket says so in advance; this is the instrument and its
+first reading. 584 tests, `npm run check` green and offline.
