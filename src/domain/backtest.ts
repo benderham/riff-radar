@@ -19,7 +19,7 @@
 
 import { SHORTLIST_SIZE } from '../../config.ts'
 import { artistTitleIdentity } from './candidates.ts'
-import type { KnownRelease, KnownWeek } from './known-set.ts'
+import { isPreferred, type KnownRelease, type KnownWeek } from './known-set.ts'
 import type { ShortlistItem } from './shortlist.ts'
 
 /** A Golden Case's window: seven days ending on the week's Friday. */
@@ -72,13 +72,7 @@ export const backtest = (
     k: week.k,
     hits: found.length,
     score: available === 0 ? 0 : found.length / available,
-    ...(week.k > SHORTLIST_SIZE
-      ? {
-          preferred: found.filter(
-            (release) => release.rating === 'Rotate' || release.rating === 'AOTY',
-          ).length,
-        }
-      : {}),
+    ...(week.k > SHORTLIST_SIZE ? { preferred: found.filter(isPreferred).length } : {}),
   }
 }
 

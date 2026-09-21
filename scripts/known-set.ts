@@ -27,7 +27,7 @@ import { writeFileSync } from 'node:fs'
 import process from 'node:process'
 import { z } from 'zod'
 
-import { NOTION_ENDPOINT, NOTION_PAGE_SIZE, NOTION_VERSION } from '../config.ts'
+import { NOTION_ENDPOINT, NOTION_PAGE_SIZE, NOTION_VERSION, SHORTLIST_SIZE } from '../config.ts'
 import { systemClock } from '../src/adapters/clock.ts'
 import { httpAdapter } from '../src/adapters/http.ts'
 import type { CuratedRow } from '../src/domain/known-set.ts'
@@ -167,8 +167,8 @@ for (const week of known.weeks) {
 
 // The `Rotate`/`AOTY` number is printed only where the cap forced a choice,
 // which is the only place ADR-0063 says it means anything.
-const busy = known.weeks.filter((week) => week.k > 5)
-console.log(`\n${busy.length} week(s) hold more than five, where the cap forced a choice:`)
+const busy = known.weeks.filter((week) => week.k > SHORTLIST_SIZE)
+console.log(`\n${busy.length} week(s) hold more than ${SHORTLIST_SIZE}, where the cap forced a choice:`)
 for (const week of busy) {
   console.log(`${week.weekEnding}   k ${week.k}, ${preferredCount(week)} rated Rotate or AOTY`)
 }

@@ -17,13 +17,13 @@
  * live in `src/domain/eval.ts`, where the suite tests them.
  */
 
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import process from 'node:process'
 import { parseArgs } from 'node:util'
 import { z } from 'zod'
 
-import { KNOWN_SET_PATH, MODEL_ID, PROMPT_VERSION, SOURCES, TASTE_PROFILE_PATH } from '../config.ts'
+import { KNOWN_SET_PATH, MODEL_ID, PROMPT_VERSION, SHORTLIST_SIZE, SOURCES, TASTE_PROFILE_PATH } from '../config.ts'
 import type { SourceId } from '../config.ts'
 import { fireworksModel } from '../src/adapters/fireworks.ts'
 import { runRiffRadar } from '../src/agents/riff-radar.ts'
@@ -31,11 +31,10 @@ import { parseCliArgs } from '../src/domain/cli-args.ts'
 import { backtest } from '../src/domain/backtest.ts'
 import type { CaseResult, EvalCase } from '../src/domain/eval.ts'
 import { aggregate, caseSchema, gradeRun } from '../src/domain/eval.ts'
-import { knownSetWeeks } from '../src/domain/known-set.ts'
+import { knownSetWeeks, type KnownWeek } from '../src/domain/known-set.ts'
 import { tasteProfileSchema } from '../src/domain/taste-profile.ts'
 import type { HttpPort, HttpResponse } from '../src/ports.ts'
 import { openStore } from '../src/store/store.ts'
-import type { KnownWeek } from '../src/domain/known-set.ts'
 
 const FIXTURES = new URL('../fixtures/', import.meta.url)
 const CASES = new URL('eval/', FIXTURES)
@@ -174,22 +173,13 @@ export const readCase = (slug: string): EvalCase => {
  * runs and reports no back-test, because the Golden Cases grade defects with or
  * without Ben's reference set.
  */
-const knownWeeks = (): Map<string, KnownWeek> => {
-  let frozen
-  try {
-    frozen = readFileSync(KNOWN_SET_PATH, 'utf8')
-  } catch (error) {
-    // Absent is a fine answer — the Golden Cases grade defects with or without
-    // Ben's reference set. Unreadable for any other reason is not.
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    return new Map()
-  }
-
-  // A file that is not a frozen set is refused rather than read as empty: a
-  // silent empty Map would report "no back-test" for a corrupt one exactly as
-  // it does for an absent one.
-  return knownSetWeeks(JSON.parse(frozen))
-}
+const knownWeeks = (): Map<string, KnownWeek> =>
+  // Absent is a fine answer. A file that is *not* a frozen set is refused
+  // rather than read as empty, because a silent empty Map would report "no
+  // back-test" for a corrupt file exactly as it does for an absent one.
+  existsSync(KNOWN_SET_PATH)
+    ? knownSetWeeks(JSON.parse(readFileSync(KNOWN_SET_PATH, 'utf8')))
+    : new Map()
 
 const readProfile = () =>
   tasteProfileSchema.parse(JSON.parse(readFileSync(TASTE_PROFILE_PATH, 'utf8')))
@@ -312,7 +302,7 @@ if (process.argv[1]?.endsWith('eval.ts')) {
     if (result.backtest !== undefined) {
       const { hits, k, score, preferred } = result.backtest
       console.log(
-        `  back-test ${hits}/${Math.min(k, 5)} = ${score.toFixed(2)}  (k ${k}` +
+        `  back-test ${hits}/${Math.min(k, SHORTLIST_SIZE)} = ${score.toFixed(2)}  (k ${k}` +
           `${preferred === undefined ? '' : `, ${preferred} rated Rotate or AOTY`})`,
       )
     }

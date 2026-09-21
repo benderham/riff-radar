@@ -134,9 +134,7 @@ const served = (file: string, contentType: string): HttpResponse => ({
   body: readFileSync(new URL(file, FIXTURES), 'utf8'),
 })
 
-type Recording = string | { status: number; headers: Record<string, string>; file: string }
-
-const recordings: Record<string, Recording> = {}
+const recordings: Record<string, string> = {}
 let recorded = 0
 
 const live = httpAdapter(systemClock)
@@ -160,19 +158,18 @@ const harvestingHttp: HttpPort = {
       // request a second under MusicBrainz's rate limit, and it stops the case
       // directory filling with bodies nothing references.
       const already = recordings[url]
-      if (already !== undefined) {
-        const body = typeof already === 'string' ? already : already.file
-        return { ...served(body, 'application/json'), status: typeof already === 'string' ? 200 : already.status }
-      }
+      if (already !== undefined) return served(already, 'application/json')
 
       const response = await live.get(url)
       const file = `eval/${slug}/responses/mb-${String(++recorded).padStart(3, '0')}.json`
       writeFileSync(new URL(file, FIXTURES), response.body)
-      // A bare path means 200 to the runner, so anything else is recorded in
-      // the object form: a 503 frozen into a case as a valid answer would grade
-      // as the agent mishandling a body MusicBrainz never sent (ADR-0058).
-      recordings[url] =
-        response.status === 200 ? file : { status: response.status, headers: response.headers, file }
+      // A bare path means 200 to the runner. `case.json` can also carry an
+      // object form naming a status, and ticket 06's failed-tool cases are
+      // written that way by hand; nothing here emits one. The adapter has
+      // already exhausted its retries by this point, and a harvest that froze
+      // an exhausted 503 as a case's valid answer is one to re-harvest rather
+      // than one to keep (ADR-0058).
+      recordings[url] = file
       return response
     }
 

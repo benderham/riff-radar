@@ -114,6 +114,10 @@ export const weekEnding = (releaseDate: string): string => {
 /** A date this can bucket. Anything else is a row reported as undated. */
 const DATED = /^\d{4}-\d{2}-\d{2}$/
 
+/** ADR-0063's bar for the secondary number. Membership is `not Nope`; this is narrower. */
+export const isPreferred = (release: KnownRelease): boolean =>
+  release.rating === 'Rotate' || release.rating === 'AOTY'
+
 /**
  * How many of a week's releases Ben rated `Rotate` or `AOTY`.
  *
@@ -122,8 +126,7 @@ const DATED = /^\d{4}-\d{2}-\d{2}$/
  * for every week in the curation record, because that table is the record
  * rather than the measure, and read by the Back-test only above the cap.
  */
-export const preferredCount = (week: KnownWeek): number =>
-  week.releases.filter((release) => release.rating === 'Rotate' || release.rating === 'AOTY').length
+export const preferredCount = (week: KnownWeek): number => week.releases.filter(isPreferred).length
 
 /**
  * The Known Set, and an account of everything left out of it.
