@@ -27,11 +27,12 @@ import { writeFileSync } from 'node:fs'
 import process from 'node:process'
 import { z } from 'zod'
 
-import { NOTION_ENDPOINT, NOTION_PAGE_SIZE, NOTION_VERSION, SHORTLIST_SIZE } from '../config.ts'
+import { SHORTLIST_SIZE } from '../config.ts'
 import { systemClock } from '../src/adapters/clock.ts'
 import { httpAdapter } from '../src/adapters/http.ts'
 import type { CuratedRow } from '../src/domain/known-set.ts'
-import { RATINGS, curate, preferredCount } from '../src/domain/known-set.ts'
+import { curate, preferredCount, ratingNamed } from '../src/domain/known-set.ts'
+import { allRows, joined, richText, selected } from './notion-read.ts'
 
 /** Committed, and not configurable: see the note above about `--out`. */
 const OUT = 'known-set.json'
@@ -51,41 +52,24 @@ const http = httpAdapter(systemClock)
  * database, and a renamed column must come back as a row that fails the rule
  * rather than as a parse error over the whole page.
  */
-const text = z.array(z.object({ plain_text: z.string() })).optional()
-
-const querySchema = z.object({
-  results: z.array(
-    z.object({
-      properties: z
-        .object({
-          Album: z.object({ title: text }).optional(),
-          Artist: z.object({ rich_text: text }).optional(),
-          'MusicBrainz ID': z.object({ rich_text: text }).optional(),
-          'Run ID': z.object({ rich_text: text }).optional(),
-          'Release Date': z
-            .object({ date: z.object({ start: z.string() }).nullable() })
-            .optional(),
-          // The name is read as a string and matched here rather than by
-          // `z.enum`: a fifth option Ben adds to his own column must make a row
-          // unrated, not abort the freeze half way through the database.
-          Rating: z.object({ select: z.object({ name: z.string() }).nullable() }).optional(),
-        })
-        .optional(),
-    }),
-  ),
-  has_more: z.boolean().optional(),
-  next_cursor: z.string().nullable().optional(),
+const pageSchema = z.object({
+  properties: z
+    .object({
+      Album: z.object({ title: richText }).optional(),
+      Artist: z.object({ rich_text: richText }).optional(),
+      'MusicBrainz ID': z.object({ rich_text: richText }).optional(),
+      'Run ID': z.object({ rich_text: richText }).optional(),
+      'Release Date': z.object({ date: z.object({ start: z.string() }).nullable() }).optional(),
+      Rating: selected,
+    })
+    .optional(),
 })
 
-const joined = (parts: { plain_text: string }[] | undefined): string =>
-  (parts ?? []).map((part) => part.plain_text).join('').trim()
-
-const rowOf = (page: z.infer<typeof querySchema>['results'][number]): CuratedRow => {
+const rowOf = (page: z.infer<typeof pageSchema>): CuratedRow => {
   const properties = page.properties
   // A Notion date is a day or a range; only the start is a release date.
   const releaseDate = properties?.['Release Date']?.date?.start?.slice(0, 10)
-  const name = properties?.Rating?.select?.name
-  const rating = RATINGS.find((option) => option === name)
+  const rating = ratingNamed(properties?.Rating?.select?.name)
   const musicbrainzId = joined(properties?.['MusicBrainz ID']?.rich_text)
 
   return {
@@ -98,51 +82,17 @@ const rowOf = (page: z.infer<typeof querySchema>['results'][number]): CuratedRow
   }
 }
 
-/**
- * Every row in the database, paged to the end.
- *
- * Not sampled and not filtered by date: a read that misses half the database
- * produces a Known Set that is half the size, which looks exactly like a thin
- * reference set rather than like a bug.
- */
-const allRows = async (): Promise<CuratedRow[]> => {
-  const rows: CuratedRow[] = []
-  let cursor: string | undefined
-
-  do {
-    // Through the HTTP adapter rather than `fetch`, so a 429 part way through
-    // the database is retried and backed off the way every other provider call
-    // is, instead of losing the whole read.
-    const response = await http.post(
-      `${NOTION_ENDPOINT}/databases/${databaseId}/query`,
-      JSON.stringify({
-        page_size: NOTION_PAGE_SIZE,
-        ...(cursor === undefined ? {} : { start_cursor: cursor }),
-      }),
-      {
-        authorization: `Bearer ${token}`,
-        'notion-version': NOTION_VERSION,
-        'content-type': 'application/json',
-      },
-    )
-
-    if (response.status < 200 || response.status >= 300) {
-      // The body is not printed: Notion echoes the request in its errors, and
-      // the request carries the database id and could carry the token.
-      console.error(`Notion answered HTTP ${response.status}; nothing was frozen`)
-      process.exit(1)
-    }
-
-    const parsed = querySchema.parse(JSON.parse(response.body))
-    for (const page of parsed.results) rows.push(rowOf(page))
-    cursor = parsed.has_more === true ? (parsed.next_cursor ?? undefined) : undefined
-  } while (cursor !== undefined)
-
-  return rows
-}
-
 const at = new Date()
-const known = curate(await allRows())
+// Not sampled and not filtered by date: a read that misses half the database
+// produces a Known Set that is half the size, which looks exactly like a thin
+// reference set rather than like a bug.
+const pages = await allRows(http, {
+  token,
+  databaseId,
+  rowSchema: pageSchema,
+  failureMessage: 'nothing was frozen',
+})
+const known = curate(pages.map(rowOf))
 
 writeFileSync(OUT, `${JSON.stringify({ frozenAt: at.toISOString(), ...known }, undefined, 2)}\n`)
 
