@@ -416,12 +416,6 @@ const recordedResponse = z.union([oneResponse, z.array(oneResponse).min(1)])
 /** One answer — the file or the status form — as distinct from a sequence of them. */
 export type OneResponse = z.infer<typeof oneResponse>
 
-/** Every file a recording names, sequence or not: what a test checks exists. */
-export const filesNamed = (recorded: z.infer<typeof recordedResponse>): string[] =>
-  (Array.isArray(recorded) ? recorded : [recorded])
-    .map((each) => (typeof each === 'string' ? each : each.file))
-    .filter((file): file is string => file !== undefined)
-
 /**
  * A Golden Case, as `fixtures/eval/<NN>-<slug>/case.json` states it.
  *

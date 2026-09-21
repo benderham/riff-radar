@@ -68,9 +68,9 @@ arrangement where a stated date decides anything.
 
 ## Evidence
 
-Eight replays on 21 September 2026, one per case, $0.0219 for the eight, all
-`completed`, no defects in any of them, and a further $0.0069 on the three
-replays the rebuilt cases superseded. What the silence is worth per case is
+Eight replays on 21 September 2026, one per case, $0.0211 for the eight, all
+`completed`, no defects in any of them, and a further $0.0137 on the replays
+that the rebuilt cases and an over-engineering review superseded. What the silence is worth per case is
 written up in `fixtures/eval/README.md`, including the two cases where it is
 worth less than the others. The reports were not committed: ticket 08's
 baseline runs all twenty, and that is the pass the milestone reports.

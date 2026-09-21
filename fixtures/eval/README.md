@@ -132,8 +132,16 @@ MusicBrainz cannot settle — `03-conflicting`, `04-degraded` and the two
 unheard-of releases in `08-unverified` — where eligibility turns on the format
 and the dates the model extracts from the page, and those are proved by replay.
 
+Only the bodies a case's claim rests on are its own. A release's genres and its
+band's members are adjacency, which feeds ranking and settles no label, so
+outside `07-always-list` every case points those two URLs at the shared
+`musicbrainz-genres.json` and `musicbrainz-artist-rels.json` rather than
+carrying twenty-two near-identical files. `07` keeps its own, because the
+genres and labels of its six competitors are exactly what they outscore the
+guaranteed release with.
+
 Each replayed once on 21 September 2026: all eight `completed`, **no defects in
-any of them**, 6 to 11 steps, 19 to 67 seconds, $0.0015 to $0.0052, $0.0219 for
+any of them**, 6 to 11 steps, 19 to 67 seconds, $0.0015 to $0.0052, $0.0211 for
 the eight. What that silence is worth differs by case, and it is worth writing
 down which claims it actually supports.
 

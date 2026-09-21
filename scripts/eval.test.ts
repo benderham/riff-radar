@@ -9,7 +9,6 @@ import { isEligible } from '../src/domain/eligibility.ts'
 import { tasteProfileSchema } from '../src/domain/taste-profile.ts'
 import { resolveWindow } from '../src/domain/window.ts'
 import type { Ports } from '../src/ports.ts'
-import { filesNamed } from '../src/domain/eval.ts'
 import type { EvalCase } from '../src/domain/eval.ts'
 import { readCase, recordedHttp } from './eval.ts'
 
@@ -165,8 +164,10 @@ test('every committed case parses, and names files that exist', () => {
 
     const named = [
       ...Object.values(parsed.sources),
-      ...Object.values(parsed.responses).flatMap(filesNamed),
-    ]
+      ...Object.values(parsed.responses)
+        .flatMap((body) => (Array.isArray(body) ? body : [body]))
+        .map((body) => (typeof body === 'string' ? body : body.file)),
+    ].filter((file): file is string => file !== undefined)
 
     for (const file of named) {
       assert.ok(
@@ -205,7 +206,7 @@ test('the harvested twelve label their weeks eligible and nothing ineligible', (
 // `08-unverified` — eligibility turns on the format the model extracts from the
 // page, which no offline test has, and the live replay is what proves those.
 
-test('every mutated label MusicBrainz settles agrees with isEligible', async (t) => {
+test('every mutated label MusicBrainz settles agrees with isEligible', async () => {
   const mutated = readdirSync(new URL('../fixtures/eval/', import.meta.url), { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && /^0[1-8]-/.test(entry.name))
     .map((entry) => readCase(entry.name))
@@ -250,14 +251,9 @@ test('every mutated label MusicBrainz settles agrees with isEligible', async (t)
     }
   }
 
-  t.diagnostic(`${checked} labels re-derived from their recordings`)
-  // Exact rather than a floor, so a case that stops recording a lookup is a
-  // failure here rather than a quieter test. The eleven are every label
-  // MusicBrainz settles: two each in `01` and `02`, four in `06`, and one each
-  // in `05`, `07` and `08`. `03-conflicting` and `04-degraded` settle none —
-  // both are about what happens when MusicBrainz says nothing — and
-  // `05-recovers` spends its first ask on the 503 the case is about, which is
-  // what the test below picks up.
+  // Exact rather than a floor: a case that stops recording a lookup fails here
+  // instead of quietly checking less. `03` and `04` settle none — both are
+  // about MusicBrainz saying nothing — and `05` spends its first ask on its 503.
   assert.equal(checked, 11, `${checked} labels checked`)
 })
 
@@ -270,23 +266,23 @@ test('the EP thresholds are crossed in both directions, by four recorded EPs', a
   const ports = portsFor(boundary)
 
   const measured = await Promise.all(
-    [...boundary.labels.eligible, ...boundary.labels.ineligible].map(async (labelled) => {
+    [...boundary.labels.ineligible, ...boundary.labels.eligible].map(async (labelled) => {
       const { artist, title } = splitIdentity(labelled)
       const { lookup } = await lookupRelease(ports, artist, title)
-      assert.ok(lookup.found, `${labelled} was not found`)
-      assert.equal(lookup.primaryType, 'EP')
-      return { trackCount: lookup.trackCount ?? 0, minutes: (lookup.durationMs ?? 0) / 60_000 }
+      assert.ok(lookup.found && lookup.primaryType === 'EP', `${labelled} is not a recorded EP`)
+      return [lookup.trackCount, Math.round((lookup.durationMs ?? 0) / 60_000)]
     }),
   )
 
-  assert.ok(
-    measured.some((one) => one.trackCount < 4) && measured.some((one) => one.trackCount >= 4),
-    'both sides of the four-track threshold',
-  )
-  assert.ok(
-    measured.some((one) => one.minutes < 20) && measured.some((one) => one.minutes >= 20),
-    'both sides of the twenty-minute threshold',
-  )
+  // Labels first, so the order is the case's: the two it refuses, then the two
+  // it allows. Three tracks and four-at-eighteen are below; four-at-twenty-one
+  // and six-at-forty-five are above.
+  assert.deepEqual(measured, [
+    [3, 25],
+    [4, 18],
+    [4, 21],
+    [6, 45],
+  ])
 })
 
 test('05-recovers fails a lookup once and finds the release on the ask after', async () => {
