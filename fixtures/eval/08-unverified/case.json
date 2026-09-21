@@ -1,0 +1,35 @@
+{
+  "slug": "08-unverified",
+  "args": [
+    "run",
+    "--last-days=7"
+  ],
+  "now": "2026-01-16T12:00:00Z",
+  "sources": {
+    "loudwire": "eval/08-unverified/loudwire.html"
+  },
+  "labels": {
+    "eligible": [
+      "hollow ash|long winter",
+      "nettlewine|stone fruit"
+    ],
+    "ineligible": [
+      "barrow light|faint choir"
+    ]
+  },
+  "budget": {
+    "steps": 25,
+    "costUsd": 0.05
+  },
+  "responses": {
+    "https://musicbrainz.org/ws/2/release-group?query=": "musicbrainz-not-found.json",
+    "https://musicbrainz.org/ws/2/release-group?query=artist%3A%22Nettlewine%22%20AND%20releasegroup%3A%22Stone%20Fruit%22&fmt=json&limit=5": "eval/08-unverified/responses/nettlewine-stone-fruit-search.json",
+    "https://musicbrainz.org/ws/2/release?release-group=aa1e0c7a-0010-4000-8000-000000000010&inc=recordings+labels&fmt=json&limit=1": "eval/08-unverified/responses/nettlewine-stone-fruit-release.json",
+    "https://musicbrainz.org/ws/2/release-group/aa1e0c7a-0010-4000-8000-000000000010?inc=genres&fmt=json": "eval/08-unverified/responses/nettlewine-stone-fruit-genres.json",
+    "https://musicbrainz.org/ws/2/artist/aa1e0c7a-9010-4000-8000-000000000010?inc=artist-rels&fmt=json": "eval/08-unverified/responses/nettlewine-stone-fruit-artist.json",
+    "https://api.tavily.com/search": "tavily-search.json",
+    "https://api.notion.com/v1/databases/eval-database/query": "notion-query-empty.json",
+    "https://api.notion.com/v1/databases/eval-database": "notion-schema.json",
+    "https://api.notion.com/v1/pages": "notion-page-created.json"
+  }
+}

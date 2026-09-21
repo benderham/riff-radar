@@ -29,7 +29,7 @@ import { fireworksModel } from '../src/adapters/fireworks.ts'
 import { runRiffRadar } from '../src/agents/riff-radar.ts'
 import { parseCliArgs } from '../src/domain/cli-args.ts'
 import { backtest } from '../src/domain/backtest.ts'
-import type { CaseResult, EvalCase } from '../src/domain/eval.ts'
+import type { CaseResult, EvalCase, OneResponse } from '../src/domain/eval.ts'
 import { aggregate, caseSchema, gradeRun } from '../src/domain/eval.ts'
 import { knownSetWeeks, type KnownWeek } from '../src/domain/known-set.ts'
 import { tasteProfileSchema } from '../src/domain/taste-profile.ts'
@@ -87,6 +87,21 @@ export const recordedHttp = (evalCase: EvalCase): HttpPort => {
 
   const configured: readonly string[] = Object.values(SOURCES)
 
+  // Where each sequence has got to. The port is the smallest place this can
+  // live and the right one: it is built per case, so no pass carries a
+  // position into the next run.
+  const asked = new Map<string, number>()
+
+  const next = (prefix: string, sequence: readonly OneResponse[]): OneResponse => {
+    const index = asked.get(prefix) ?? 0
+    asked.set(prefix, index + 1)
+    const entry = sequence[Math.min(index, sequence.length - 1)]
+    // The schema refuses an empty sequence, so this is `noUncheckedIndexedAccess`
+    // being satisfied rather than a case anyone can write.
+    if (entry === undefined) throw new Error(`${evalCase.slug}: ${prefix} records an empty sequence`)
+    return entry
+  }
+
   const answer = (url: string): HttpResponse => {
     const source = sourceUrls.get(url)
     if (source !== undefined) {
@@ -116,8 +131,11 @@ export const recordedHttp = (evalCase: EvalCase): HttpPort => {
 
     // A bare path is the ordinary recording and means 200. The object form
     // carries the status, which is how a case records a refusal or a rate
-    // limit — the failures two of the seven Defects are about.
-    const body = recorded[1]
+    // limit — the failures two of the seven Defects are about. An array is a
+    // sequence: successive asks walk it and the last entry repeats, which is
+    // how a case says a lookup failed and then answered (ADR-0067).
+    const [prefix, recording] = recorded
+    const body = Array.isArray(recording) ? next(prefix, recording) : recording
     if (typeof body === 'string') {
       return {
         status: 200,

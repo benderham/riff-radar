@@ -64,3 +64,13 @@ The case is a symptom rather than the problem. A real run on 2 January reads the
 Deliberately not fixed here, for the same reason as item 1: this is Source coverage, and the milestone is about measurement. The fix is a Source URL that varies with the window's years rather than one fixed page — `sources.ts` would fetch both the 2025 and 2026 calendars for a window that straddles them — and it needs a second captured fixture per Source before it can be tested. Ben raised it as the general case: the situation recurs every year and the answer is updated Sources rather than a special case for one week.
 
 Evidence: harvest of `2026-01-02`, window `2025-12-27..2026-01-02`, one release visible against `k = 1`.
+
+## 7. A MusicBrainz namesake is settled by document order, not by the question asked
+
+Found on 21 September 2026 while building the `02-ambiguous` Golden Case. `lookupRelease` identifies a release with `find` over the answer's release groups: the first group scoring at least 90 whose title and artist keys match. Two distinct bands of the same name with an album of the same title both score 100, and MusicBrainz's ordering between them is its own business — so identification is settled by where the answer happened to put them, and the calendar's stated release date, which would separate a 2026 release from a 2011 one instantly, is never consulted.
+
+The case as first written put the 2011 namesake first and was, in effect, unwinnable: the run identified the wrong release group, judged it a reissue by its first-release date, and dropped a release the case labelled eligible. It was reordered, because a Golden Case the system provably cannot pass would bake one permanent `missed` into every pass ADR-0065's budgets are read against, and the baseline's whole value is comparison.
+
+Not fixed here: it is a change to identification, this milestone's one controlled change is ticket 01, and a second deterministic change in the same before-and-after would make neither readable. The fix is small — prefer a group whose `first-release-date` falls inside the window when several match equally — and it wants its own case, which is the one that was reordered.
+
+Evidence: `fixtures/eval/02-ambiguous/responses/nova-event-horizon-search.json`, five answers with two at score 100; `src/clients/musicbrainz.ts` `match`; `MUSICBRAINZ_MIN_SCORE = 90`.

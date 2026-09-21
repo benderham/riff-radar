@@ -1,0 +1,37 @@
+{
+  "slug": "02-ambiguous",
+  "args": [
+    "run",
+    "--last-days=7"
+  ],
+  "now": "2026-01-16T12:00:00Z",
+  "sources": {
+    "loudwire": "eval/02-ambiguous/loudwire.html"
+  },
+  "labels": {
+    "eligible": [
+      "nova|event horizon",
+      "cindergarden|salt vigil"
+    ],
+    "ineligible": []
+  },
+  "budget": {
+    "steps": 25,
+    "costUsd": 0.05
+  },
+  "responses": {
+    "https://musicbrainz.org/ws/2/release-group?query=": "musicbrainz-not-found.json",
+    "https://musicbrainz.org/ws/2/release-group?query=artist%3A%22Nova%22%20AND%20releasegroup%3A%22Event%20Horizon%22&fmt=json&limit=5": "eval/02-ambiguous/responses/nova-event-horizon-search.json",
+    "https://musicbrainz.org/ws/2/release?release-group=aa1e0c7a-0003-4000-8000-000000000003&inc=recordings+labels&fmt=json&limit=1": "eval/02-ambiguous/responses/nova-event-horizon-release.json",
+    "https://musicbrainz.org/ws/2/release-group/aa1e0c7a-0003-4000-8000-000000000003?inc=genres&fmt=json": "eval/02-ambiguous/responses/nova-event-horizon-genres.json",
+    "https://musicbrainz.org/ws/2/artist/aa1e0c7a-9003-4000-8000-000000000003?inc=artist-rels&fmt=json": "eval/02-ambiguous/responses/nova-event-horizon-artist.json",
+    "https://musicbrainz.org/ws/2/release-group?query=artist%3A%22Cindergarden%22%20AND%20releasegroup%3A%22Salt%20Vigil%22&fmt=json&limit=5": "eval/02-ambiguous/responses/cindergarden-salt-vigil-search.json",
+    "https://musicbrainz.org/ws/2/release?release-group=aa1e0c7a-0004-4000-8000-000000000004&inc=recordings+labels&fmt=json&limit=1": "eval/02-ambiguous/responses/cindergarden-salt-vigil-release.json",
+    "https://musicbrainz.org/ws/2/release-group/aa1e0c7a-0004-4000-8000-000000000004?inc=genres&fmt=json": "eval/02-ambiguous/responses/cindergarden-salt-vigil-genres.json",
+    "https://musicbrainz.org/ws/2/artist/aa1e0c7a-9004-4000-8000-000000000004?inc=artist-rels&fmt=json": "eval/02-ambiguous/responses/cindergarden-salt-vigil-artist.json",
+    "https://api.tavily.com/search": "tavily-search.json",
+    "https://api.notion.com/v1/databases/eval-database/query": "notion-query-empty.json",
+    "https://api.notion.com/v1/databases/eval-database": "notion-schema.json",
+    "https://api.notion.com/v1/pages": "notion-page-created.json"
+  }
+}

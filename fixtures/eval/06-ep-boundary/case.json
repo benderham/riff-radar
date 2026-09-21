@@ -1,0 +1,48 @@
+{
+  "slug": "06-ep-boundary",
+  "args": [
+    "run",
+    "--last-days=7"
+  ],
+  "now": "2026-01-16T12:00:00Z",
+  "sources": {
+    "loudwire": "eval/06-ep-boundary/loudwire.html"
+  },
+  "labels": {
+    "eligible": [
+      "pale assembly|ninefold",
+      "vast arrears|cold rooms"
+    ],
+    "ineligible": [
+      "vellichor|threadbare",
+      "hollow coast|saltmarsh"
+    ]
+  },
+  "budget": {
+    "steps": 25,
+    "costUsd": 0.05
+  },
+  "responses": {
+    "https://musicbrainz.org/ws/2/release-group?query=": "musicbrainz-not-found.json",
+    "https://musicbrainz.org/ws/2/release-group?query=artist%3A%22Vellichor%22%20AND%20releasegroup%3A%22Threadbare%22&fmt=json&limit=5": "eval/06-ep-boundary/responses/vellichor-threadbare-search.json",
+    "https://musicbrainz.org/ws/2/release?release-group=aa1e0c7a-0009-4000-8000-000000000009&inc=recordings+labels&fmt=json&limit=1": "eval/06-ep-boundary/responses/vellichor-threadbare-release.json",
+    "https://musicbrainz.org/ws/2/release-group/aa1e0c7a-0009-4000-8000-000000000009?inc=genres&fmt=json": "eval/06-ep-boundary/responses/vellichor-threadbare-genres.json",
+    "https://musicbrainz.org/ws/2/artist/aa1e0c7a-9009-4000-8000-000000000009?inc=artist-rels&fmt=json": "eval/06-ep-boundary/responses/vellichor-threadbare-artist.json",
+    "https://musicbrainz.org/ws/2/release-group?query=artist%3A%22Hollow%20Coast%22%20AND%20releasegroup%3A%22Saltmarsh%22&fmt=json&limit=5": "eval/06-ep-boundary/responses/hollow-coast-saltmarsh-search.json",
+    "https://musicbrainz.org/ws/2/release?release-group=aa1e0c7a-000a-4000-8000-00000000000a&inc=recordings+labels&fmt=json&limit=1": "eval/06-ep-boundary/responses/hollow-coast-saltmarsh-release.json",
+    "https://musicbrainz.org/ws/2/release-group/aa1e0c7a-000a-4000-8000-00000000000a?inc=genres&fmt=json": "eval/06-ep-boundary/responses/hollow-coast-saltmarsh-genres.json",
+    "https://musicbrainz.org/ws/2/artist/aa1e0c7a-900a-4000-8000-00000000000a?inc=artist-rels&fmt=json": "eval/06-ep-boundary/responses/hollow-coast-saltmarsh-artist.json",
+    "https://musicbrainz.org/ws/2/release-group?query=artist%3A%22Pale%20Assembly%22%20AND%20releasegroup%3A%22Ninefold%22&fmt=json&limit=5": "eval/06-ep-boundary/responses/pale-assembly-ninefold-search.json",
+    "https://musicbrainz.org/ws/2/release?release-group=aa1e0c7a-000b-4000-8000-00000000000b&inc=recordings+labels&fmt=json&limit=1": "eval/06-ep-boundary/responses/pale-assembly-ninefold-release.json",
+    "https://musicbrainz.org/ws/2/release-group/aa1e0c7a-000b-4000-8000-00000000000b?inc=genres&fmt=json": "eval/06-ep-boundary/responses/pale-assembly-ninefold-genres.json",
+    "https://musicbrainz.org/ws/2/artist/aa1e0c7a-900b-4000-8000-00000000000b?inc=artist-rels&fmt=json": "eval/06-ep-boundary/responses/pale-assembly-ninefold-artist.json",
+    "https://musicbrainz.org/ws/2/release-group?query=artist%3A%22Vast%20Arrears%22%20AND%20releasegroup%3A%22Cold%20Rooms%22&fmt=json&limit=5": "eval/06-ep-boundary/responses/vast-arrears-cold-rooms-search.json",
+    "https://musicbrainz.org/ws/2/release?release-group=aa1e0c7a-000c-4000-8000-00000000000c&inc=recordings+labels&fmt=json&limit=1": "eval/06-ep-boundary/responses/vast-arrears-cold-rooms-release.json",
+    "https://musicbrainz.org/ws/2/release-group/aa1e0c7a-000c-4000-8000-00000000000c?inc=genres&fmt=json": "eval/06-ep-boundary/responses/vast-arrears-cold-rooms-genres.json",
+    "https://musicbrainz.org/ws/2/artist/aa1e0c7a-900c-4000-8000-00000000000c?inc=artist-rels&fmt=json": "eval/06-ep-boundary/responses/vast-arrears-cold-rooms-artist.json",
+    "https://api.tavily.com/search": "tavily-search.json",
+    "https://api.notion.com/v1/databases/eval-database/query": "notion-query-empty.json",
+    "https://api.notion.com/v1/databases/eval-database": "notion-schema.json",
+    "https://api.notion.com/v1/pages": "notion-page-created.json"
+  }
+}

@@ -752,3 +752,22 @@ The **frozen set itself** names the albums Ben likes and the ones he does not, o
 A week is named by the **Friday its seven-day window closes on**. `resolveWindow(now, 7)` is the six days before `now` plus `now`, so a Friday-morning run covers Saturday through Friday and holds exactly one release Friday; bucketing on the closing Friday therefore produces the same partition a weekly Golden Case asks for, and the bucket's name is the `now` that case is run at.
 
 **Consequences:** the Back-test is reproducible from the repository, at the cost of publishing 120 album-and-rating pairs; that is Ben's call to make and it is recorded here rather than assumed. Re-running the command after rating more rows would silently produce a different reference set under the same declaration, so a re-run is a new freeze with a new date and a new record — stated in the record itself, because the freeze is the one rule of ADR-0063 that an ordinary convenience could quietly break. `Rating` is now named by a second read-only path, which is what ADR-0061 permits and what the comment in `config.ts` had to be corrected to say.
+
+## ADR-0067: A recorded response may be a sequence, so a case can record a recovery
+
+**Status:** ACCEPTED — 21 September 2026, while building ticket 06's mutated cases.
+
+ADR-0058 makes a Golden Case a set of recorded HTTP responses keyed by URL prefix, and ticket 03 widened a recording from a file to either a file or a status and headers, so a case could record a refusal. Both forms are **stateless**: a URL answers the same way however often it is asked. Ticket 06 asks for a case in which MusicBrainz "recovers after one failure", and that cannot be written at all in a stateless format — the second ask has to differ from the first.
+
+A recording may therefore also be an **array**: successive asks walk it and the last entry repeats forever.
+
+```json
+"https://musicbrainz.org/ws/2/release-group?query=artist%3A%22Ember%20Wake%22...": [
+  { "status": 503, "headers": { "retry-after": "1" } },
+  "eval/05-recovers/responses/ember-wake-tidal-flats-search.json"
+]
+```
+
+The alternative considered and rejected was to record a 200 carrying `attempts: 2`, which is what the real `httpAdapter` returns after retrying a 503 itself. It is one field rather than a format change, and it is a lie about a different layer: the evaluation replaces the adapter with a fake, so no retry ever happens and the recording would be asserting one that did not. The sequence records what the case actually means — this URL failed and then answered — and leaves it to the run to decide whether to ask again. Case `05-recovers` shows it does: the model reissues the lookup, the second ask is answered, and the release reaches the shortlist rather than being refused as unverified.
+
+**Consequences:** the position lives in the fake port, which is built per case, so nothing carries between cases or between passes and a case remains a fixed question. A sequence is still frozen bytes and the replay is still deterministic, because the ordering is the case's rather than the clock's. The cost is that a sequenced URL is no longer idempotent inside one run, so a case using one is read differently by a run that asks twice for its own reasons; that is exactly the behaviour being measured here and it is confined to the one case that asks for it. `filesNamed` exists so the test that checks every recorded file is present reads a sequence the same as a single recording.

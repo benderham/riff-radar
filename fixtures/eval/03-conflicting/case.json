@@ -1,0 +1,30 @@
+{
+  "slug": "03-conflicting",
+  "args": [
+    "run",
+    "--last-days=7"
+  ],
+  "now": "2026-01-16T12:00:00Z",
+  "sources": {
+    "loudwire": "eval/03-conflicting/loudwire.html",
+    "wikipedia": "eval/03-conflicting/wikipedia.html"
+  },
+  "labels": {
+    "eligible": [
+      "grave tide|salt and ember",
+      "longbarrow|fen psalms"
+    ],
+    "ineligible": []
+  },
+  "budget": {
+    "steps": 25,
+    "costUsd": 0.05
+  },
+  "responses": {
+    "https://musicbrainz.org/ws/2/release-group?query=": "musicbrainz-not-found.json",
+    "https://api.tavily.com/search": "tavily-search.json",
+    "https://api.notion.com/v1/databases/eval-database/query": "notion-query-empty.json",
+    "https://api.notion.com/v1/databases/eval-database": "notion-schema.json",
+    "https://api.notion.com/v1/pages": "notion-page-created.json"
+  }
+}
