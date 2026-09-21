@@ -151,6 +151,17 @@ export const normaliseCandidate = (
 export const artistTitleIdentity = (artist: string, title: string): string =>
   `${artist.trim().toLowerCase()}|${title.trim().toLowerCase()}`
 
+/**
+ * The two halves back out of an identity, for the readers that hold one and
+ * need an artist and a title: a case's labels, and a lookup seeded from the
+ * Known Set. Kept beside the function that joins them so the separator is
+ * written once.
+ */
+export const splitIdentity = (identity: string): { artist: string; title: string } => {
+  const [artist = '', title = ''] = identity.split('|')
+  return { artist, title }
+}
+
 export const candidateIdentity = (candidate: Candidate): string =>
   artistTitleIdentity(candidate.artist, candidate.title)
 

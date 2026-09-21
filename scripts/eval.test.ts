@@ -1,3 +1,4 @@
+import { existsSync, readdirSync } from 'node:fs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
@@ -37,7 +38,7 @@ test('the longest matching prefix wins, so a broad recording is a fallback', asy
       responses: {
         'https://musicbrainz.org/ws/2/release-group?query=': 'musicbrainz-not-found.json',
         'https://musicbrainz.org/ws/2/release-group?query=Edenbridge':
-          'eval/00-smoke/responses/notion-schema.json',
+          'notion-schema.json',
       },
     }),
   )
@@ -86,4 +87,63 @@ test('a case naming a file that is not there says so, with the case and the path
     () => recordedHttp(evalCase({ sources: { loudwire: 'nowhere.html' } })).get(SOURCES.loudwire),
     /test-case: fixtures\/nowhere\.html is named by case\.json and is not there/,
   )
+})
+
+test('a recording matches whatever the capitalisation, because the query travels in the URL', async () => {
+  const port = recordedHttp(
+    evalCase({
+      responses: {
+        'https://musicbrainz.org/ws/2/release-group?query=soen%20reliance': 'musicbrainz-release-group.json',
+      },
+    }),
+  )
+
+  const asked = await port.get('https://musicbrainz.org/ws/2/release-group?query=Soen%20Reliance')
+
+  assert.match(asked.body, /"release-groups"/)
+})
+
+// ── Every committed case, checked without the model ──────────────────────────
+// A pass costs money and twenty minutes, so the failures a pass should never be
+// the first to find — a manifest that stopped parsing, a recording whose file
+// moved — are found here instead.
+
+test('every committed case parses, and names files that exist', () => {
+  const cases = readdirSync(new URL('../fixtures/eval/', import.meta.url), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+
+  assert.ok(cases.length >= 12, `${cases.length} cases, expected the twelve and the smoke case`)
+
+  for (const slug of cases) {
+    const parsed = readCase(slug)
+    assert.equal(parsed.slug, slug)
+
+    const named = [
+      ...Object.values(parsed.sources),
+      ...Object.values(parsed.responses).map((body) => (typeof body === 'string' ? body : body.file)),
+    ].filter((file): file is string => file !== undefined)
+
+    for (const file of named) {
+      assert.ok(
+        existsSync(new URL(`../fixtures/${file}`, import.meta.url)),
+        `${slug} names fixtures/${file}, which is not there`,
+      )
+    }
+  }
+})
+
+test('the harvested twelve label their weeks eligible and nothing ineligible', () => {
+  const harvested = readdirSync(new URL('../fixtures/eval/', import.meta.url), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith('2026-'))
+    .map((entry) => readCase(entry.name))
+
+  assert.equal(harvested.length, 12)
+
+  for (const each of harvested) {
+    assert.ok(each.labels.eligible.length > 0, `${each.slug} labels nothing eligible`)
+    // Eligibility only, and derived: the twelve carry no hand-written
+    // ineligible list, which is ticket 06's eight mutated cases (ADR-0060).
+    assert.deepEqual(each.labels.ineligible, [])
+  }
 })

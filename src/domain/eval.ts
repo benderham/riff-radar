@@ -28,10 +28,11 @@
 import { z } from 'zod'
 
 import { SOURCES } from '../../config.ts'
+import type { BacktestResult } from './backtest.ts'
 import type { Candidate } from './candidates.ts'
 import type { Usage } from './cost.ts'
 import { NO_USAGE, addUsage } from './cost.ts'
-import { artistTitleIdentity, normaliseName } from './candidates.ts'
+import { artistTitleIdentity, normaliseName, splitIdentity } from './candidates.ts'
 import { isRetryable } from './failure.ts'
 import { htmlToText } from './html-text.ts'
 import { citedVibes, rankShortlist } from './ranking.ts'
@@ -107,14 +108,8 @@ export interface GradedRun {
 const identityOf = (item: ShortlistItem): string =>
   artistTitleIdentity(item.artist ?? '', item.title ?? '')
 
-/** A label as it was written, and the two halves a page has to carry. */
-const parseLabel = (label: string): { readonly artist: string; readonly title: string } => {
-  const [artist = '', title = ''] = label.split('|')
-  return { artist, title }
-}
-
 const normalisedLabel = (label: string): string => {
-  const { artist, title } = parseLabel(label)
+  const { artist, title } = splitIdentity(label)
   return artistTitleIdentity(artist, title)
 }
 
@@ -144,7 +139,7 @@ export const unlisted = (run: GradedRun): Finding[] => {
 
   return run.labels.eligible
     .filter((label) => {
-      const { artist, title } = parseLabel(label)
+      const { artist, title } = splitIdentity(label)
       const [one, other] = [normaliseName(artist), normaliseName(title)]
       return !lines.some((line) => line.includes(one) && line.includes(other))
     })
@@ -446,6 +441,13 @@ export interface CaseResult {
   readonly runId: string
   readonly terminationReason: TerminationReason
   readonly defects: readonly Finding[]
+  /**
+   * How much of the week's Known Set the shortlist found, where the case is a
+   * harvested week and the frozen set holds it. Reported, never a Defect: the
+   * Known Set is what Ben's taste drew from rather than the whole of what he
+   * would have wanted (ADR-0062).
+   */
+  readonly backtest?: BacktestResult
   readonly steps: number
   /** Wall clock around the run. Real, because the model in a pass is real (ADR-0058). */
   readonly latencyMs: number
