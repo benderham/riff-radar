@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 import type { ProposalRow, RunProfile } from './taste.ts'
 import { ratingNamed } from './known-set.ts'
-import { measure, share } from './taste.ts'
+import { measure } from './taste.ts'
 
 const SHORTLIST = 5
 
@@ -60,7 +60,6 @@ test('Acceptance Rate counts everything not Rejected, including the unjudged', (
 
   assert.equal(reading.proposals, 4)
   assert.equal(reading.accepted, 3)
-  assert.equal(share(reading.accepted, reading.proposals), 0.75)
 })
 
 test('the unjudged are counted beside the rate, and an empty Status is unjudged', () => {
@@ -82,14 +81,15 @@ test('Taste Yield divides by rated proposals, never by all of them', () => {
   assert.equal(reading.proposals, 6)
   assert.equal(reading.rated, 4)
   assert.equal(reading.preferred, 2)
-  assert.equal(share(reading.preferred, reading.rated), 0.5)
 })
 
 test('nothing rated is no yield rather than a yield of zero', () => {
   const reading = only([row(), row()])
 
+  // The denominator, not the rate: a yield over nothing rated has no value,
+  // and the command prints a dash for it.
   assert.equal(reading.rated, 0)
-  assert.equal(share(reading.preferred, reading.rated), undefined)
+  assert.equal(reading.preferred, 0)
 })
 
 test('Fill Rate is runs that proposed the full five, over runs that decided', () => {
@@ -99,7 +99,6 @@ test('Fill Rate is runs that proposed the full five, over runs that decided', ()
 
   assert.equal(reading.runs, 2)
   assert.equal(reading.full, 1)
-  assert.equal(share(reading.full, reading.runs), 0.5)
 })
 
 test('a completed run that proposed nothing is in the denominator', () => {

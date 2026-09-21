@@ -17,6 +17,24 @@ import { z } from 'zod'
 import { NOTION_ENDPOINT, NOTION_PAGE_SIZE, NOTION_VERSION } from '../config.ts'
 import type { HttpPort } from '../src/ports.ts'
 
+/**
+ * The two environment variables every Notion command needs, or an exit.
+ *
+ * Refused before anything is requested, which is the contract the credential
+ * checks elsewhere keep: nothing spent and nothing written.
+ */
+export const notionCredentials = (): { token: string; databaseId: string } => {
+  const token = process.env['NOTION_TOKEN'] ?? ''
+  const databaseId = process.env['NOTION_DATABASE_ID'] ?? ''
+
+  if (token === '' || databaseId === '') {
+    console.error('NOTION_TOKEN and NOTION_DATABASE_ID must be set; nothing was requested')
+    process.exit(1)
+  }
+
+  return { token, databaseId }
+}
+
 /** Notion's rich text, as every read-only command receives it. */
 export const richText = z.array(z.object({ plain_text: z.string() })).optional()
 

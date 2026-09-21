@@ -81,10 +81,6 @@ export interface TasteMetrics {
   readonly handEntered: number
 }
 
-/** A share, or `undefined` where the denominator is zero and no share exists. */
-export const share = (numerator: number, denominator: number): number | undefined =>
-  denominator === 0 ? undefined : numerator / denominator
-
 interface Bucket {
   proposals: number
   accepted: number
@@ -94,15 +90,6 @@ interface Bucket {
   /** How many proposals each run of this version wrote. */
   readonly perRun: Map<string, number>
 }
-
-const empty = (): Bucket => ({
-  proposals: 0,
-  accepted: 0,
-  unjudged: 0,
-  rated: 0,
-  preferred: 0,
-  perRun: new Map(),
-})
 
 /**
  * The Termination Reasons that mean the run chose what to propose.
@@ -140,7 +127,14 @@ export const measure = (
   let handEntered = 0
 
   const bucketFor = (version: ProfileVersion): Bucket => {
-    const bucket = buckets.get(version) ?? empty()
+    const bucket = buckets.get(version) ?? {
+      proposals: 0,
+      accepted: 0,
+      unjudged: 0,
+      rated: 0,
+      preferred: 0,
+      perRun: new Map<string, number>(),
+    }
     buckets.set(version, bucket)
 
     return bucket
