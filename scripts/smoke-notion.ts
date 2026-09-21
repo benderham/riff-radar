@@ -22,14 +22,9 @@ import { NOTION_ENDPOINT, NOTION_VERSION } from '../config.ts'
 import { preflightSchema, suppressedReleases } from '../src/clients/notion.ts'
 import { notionPage } from '../src/domain/notion-page.ts'
 import type { Ports } from '../src/ports.ts'
+import { notionCredentials } from './notion-read.ts'
 
-const token = process.env['NOTION_TOKEN'] ?? ''
-const databaseId = process.env['NOTION_DATABASE_ID'] ?? ''
-
-if (token === '' || databaseId === '') {
-  console.error('NOTION_TOKEN and NOTION_DATABASE_ID must be set; nothing was requested')
-  process.exit(1)
-}
+const { token, databaseId } = notionCredentials()
 
 const ports = { http: httpAdapter(systemClock), clock: systemClock } as Ports
 
