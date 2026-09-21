@@ -33,16 +33,10 @@ import { httpAdapter } from '../src/adapters/http.ts'
 import { openStore } from '../src/store/store.ts'
 import { ratingNamed } from '../src/domain/known-set.ts'
 import type { ProposalRow, RunProfile } from '../src/domain/taste.ts'
-import { measure, share } from '../src/domain/taste.ts'
-import { allRows, joined, richText, selected } from './notion-read.ts'
+import { measure } from '../src/domain/taste.ts'
+import { allRows, joined, notionCredentials, richText, selected } from './notion-read.ts'
 
-const token = process.env['NOTION_TOKEN'] ?? ''
-const databaseId = process.env['NOTION_DATABASE_ID'] ?? ''
-
-if (token === '' || databaseId === '') {
-  console.error('NOTION_TOKEN and NOTION_DATABASE_ID must be set; nothing was requested')
-  process.exit(1)
-}
+const { token, databaseId } = notionCredentials()
 
 /**
  * The three properties these numbers read, each one optional: this is somebody
@@ -73,12 +67,9 @@ const rowOf = (page: z.infer<typeof pageSchema>): ProposalRow => {
   }
 }
 
-/** A share as a percentage, or a dash where the denominator is zero. */
-const percent = (numerator: number, denominator: number): string => {
-  const value = share(numerator, denominator)
-
-  return value === undefined ? '  — ' : `${(value * 100).toFixed(0).padStart(3)}%`
-}
+/** A share as a percentage, or a dash where there is no share to take. */
+const percent = (numerator: number, denominator: number): string =>
+  denominator === 0 ? '  — ' : `${((numerator / denominator) * 100).toFixed(0).padStart(3)}%`
 
 /** Committed trace exports: the only record of runs whose database is gone. */
 const EVIDENCE = 'docs/evidence'
@@ -116,19 +107,13 @@ const exportSchema = z.object({
 // reason to abandon a reading of the whole database.
 for (const name of readdirSync(EVIDENCE)) {
   if (!name.endsWith('.json')) continue
-  const parsed = z
-    .string()
-    .transform((body, context) => {
-      try {
-        return JSON.parse(body) as unknown
-      } catch {
-        context.addIssue({ code: 'custom', message: `${name} is not JSON` })
-
-        return z.NEVER
-      }
-    })
-    .pipe(exportSchema)
-    .safeParse(readFileSync(`${EVIDENCE}/${name}`, 'utf8'))
+  let body: unknown
+  try {
+    body = JSON.parse(readFileSync(`${EVIDENCE}/${name}`, 'utf8'))
+  } catch {
+    continue
+  }
+  const parsed = exportSchema.safeParse(body)
   if (!parsed.success) continue
   const exported = parsed.data.run
   if (runs.some((run) => run.runId === exported.run_id)) continue
@@ -170,9 +155,3 @@ for (const reading of metrics.byProfileVersion) {
       `${acceptance.padEnd(20)}${yielded.padEnd(29)}${fill}`,
   )
 }
-
-console.log(
-  `\nAcceptance counts a proposal Ben has not judged; Yield divides by the rated` +
-    `\nalone; Fill Rate counts every run that decided, including one that proposed` +
-    `\nnothing. A run no record names a profile version for is bucketed unknown.`,
-)

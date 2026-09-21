@@ -32,18 +32,12 @@ import { systemClock } from '../src/adapters/clock.ts'
 import { httpAdapter } from '../src/adapters/http.ts'
 import type { CuratedRow } from '../src/domain/known-set.ts'
 import { curate, preferredCount, ratingNamed } from '../src/domain/known-set.ts'
-import { allRows, joined, richText, selected } from './notion-read.ts'
+import { allRows, joined, notionCredentials, richText, selected } from './notion-read.ts'
 
 /** Committed, and not configurable: see the note above about `--out`. */
 const OUT = 'known-set.json'
 
-const token = process.env['NOTION_TOKEN'] ?? ''
-const databaseId = process.env['NOTION_DATABASE_ID'] ?? ''
-
-if (token === '' || databaseId === '') {
-  console.error('NOTION_TOKEN and NOTION_DATABASE_ID must be set; nothing was requested')
-  process.exit(1)
-}
+const { token, databaseId } = notionCredentials()
 
 const http = httpAdapter(systemClock)
 
